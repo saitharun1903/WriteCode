@@ -12,7 +12,7 @@ A browser-native IDE that compiles and runs real code in isolated sandboxes. No 
 | Local projects (IndexedDB), autosave, reload recovery | Working, E2E-tested |
 | File explorer (create, rename, move, delete, context menus) | Working, E2E-tested |
 | Project search, snapshots with diff, run history | Working |
-| Execution API, queue, sandbox worker | Implemented and unit-tested. The full Docker path is exercised by `e2e/execution.spec.ts` |
+| Real execution: Java, Python, C++, C, JavaScript, TypeScript | Working, E2E-tested against Docker (compile errors, stdin, time/memory/output limits, no network) |
 | Debugger (JDWP / DAP) | Not started (planned) |
 | Visualizer (execution events) | Not started (planned) |
 
@@ -49,6 +49,7 @@ User code is treated as hostile. Each execution gets a fresh container:
 
 - no network (`NetworkMode=none`)
 - runs as `nobody` (65534), all Linux capabilities dropped, `no-new-privileges`
+- memory is reported (cgroup `memory.peak`) only for interpreted languages, because for compiled ones the figure would include the compiler
 - read-only root filesystem; `/workspace` and `/tmp` are size-limited tmpfs, so writes count against memory
 - limits: memory (no swap), CPU, PIDs (fork bombs), open files, max file size, no core dumps
 - wall-clock timeouts for compile and run, an output byte cap and cancellation, each of which kills the container
