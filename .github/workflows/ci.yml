@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          # pnpm is installed in the next step, so setup-node cannot cache it.
+          package-manager-cache: false
       - run: npm install -g pnpm@${{ env.PNPM_VERSION }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -59,6 +61,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          # pnpm is installed in the next step, so setup-node cannot cache it.
+          package-manager-cache: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
