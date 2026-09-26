@@ -1,0 +1,59 @@
+// Server-side persistence. V1 has no accounts: projects live in the browser,
+// and the server records executions for status lookups and operations.
+// Nullable ownership columns can be added later without rewriting callers.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ExecutionStatus {
+  QUEUED
+  COMPILING
+  RUNNING
+  SUCCESS
+  COMPILATION_ERROR
+  RUNTIME_ERROR
+  TIME_LIMIT
+  MEMORY_LIMIT
+  OUTPUT_LIMIT
+  CANCELLED
+  SYSTEM_ERROR
+}
+
+model Execution {
+  id             String          @id @db.Uuid
+  language       String          @db.VarChar(32)
+  status         ExecutionStatus @default(QUEUED)
+  entryFile      String          @map("entry_file") @db.VarChar(200)
+  fileCount      Int             @map("file_count")
+  sourceBytes    Int             @map("source_bytes")
+  runtimeVersion String          @map("runtime_version") @db.VarChar(64)
+  exitCode       Int?            @map("exit_code")
+  /// Milliseconds.
+  executionTime  Int?            @map("execution_time")
+  /// Milliseconds.
+  compileTime    Int?            @map("compile_time")
+  /// Bytes.
+  memoryUsed     BigInt?         @map("memory_used")
+  message        String?
+  /// Output is truncated before storage; the live stream carries the full text.
+  stdout         String          @default("")
+  stderr         String          @default("")
+  compileOutput  String          @default("") @map("compile_output")
+  outputTruncated Boolean        @default(false) @map("output_truncated")
+  /// SHA-256 of client IP + server salt. Used for abuse analysis without storing raw IPs.
+  clientHash     String?         @map("client_hash") @db.VarChar(64)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  startedAt      DateTime?       @map("started_at")
+  finishedAt     DateTime?       @map("finished_at")
+
+  @@index([createdAt])
+  @@index([status])
+  @@map("executions")
+}
