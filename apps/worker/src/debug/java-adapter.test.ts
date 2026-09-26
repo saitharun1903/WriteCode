@@ -26,6 +26,8 @@ const PROGRAM = `public class Main {
         }
         System.out.println("total=" + total);
     }
+    static int calls = 0;
+    static final String NAME = "demo";
 }
 `;
 
@@ -95,6 +97,10 @@ describe.skipIf(!hasJdk)("Java debug adapter (host JDK)", () => {
 
     const vars = (await request("variables", { ref: frames[0]!.localsRef })).variables as { name: string; value: string; ref: number }[];
     expect(vars.map((v) => `${v.name}=${v.value}`)).toEqual(expect.arrayContaining(["total=0", "n=3", "nums=int[3]"]));
+    const statics = vars.find((v) => v.name === "static")!;
+    expect(statics.value).toBe("Main (2 fields)");
+    const fields = (await request("variables", { ref: statics.ref })).variables as { name: string; value: string }[];
+    expect(fields.map((v) => `${v.name}=${v.value}`)).toEqual(["calls=0", 'NAME="demo"']);
     const nums = (await request("variables", { ref: vars.find((v) => v.name === "nums")!.ref })).variables as { value: string }[];
     expect(nums.map((v) => v.value)).toEqual(["3", "1", "2"]);
 

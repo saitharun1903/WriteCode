@@ -107,6 +107,7 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
         entryFile: request.entry,
         fileCount: request.files.length,
         sourceBytes: request.files.reduce((n, f) => n + utf8ByteLength(f.content), 0),
+        interactive: request.interactive === true,
         runtimeVersion: lang.version,
         clientHash: client,
       },
@@ -149,12 +150,29 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     return { ok: true };
   }
 
+  /**
+   * True when `client` created the execution. Controls that act on a running
+   * program (debug commands, typed input) are only accepted from its creator.
+   */
+  async isOwner(id: string, client: string): Promise<boolean> {
+    return (await this.redis.get(`exec:${id}:client`)) === client;
+  }
+
   /** Forwards a debug command to the worker running the session. Returns an error message or null. */
   async sendDebugCommand(id: string, requestId: string, command: unknown): Promise<string | null> {
     const result = await this.store.getResult(id);
     if (!result) return "Execution not found.";
     if (isTerminalStatus(result.status)) return "The debug session has ended.";
     await this.store.appendCommand(id, { requestId, command });
+    return null;
+  }
+
+  /** Forwards typed input (and optionally end-of-file) to a running program. Returns an error message or null. */
+  async sendInput(id: string, stdin: string, eof: boolean): Promise<string | null> {
+    const result = await this.store.getResult(id);
+    if (!result) return "Execution not found.";
+    if (isTerminalStatus(result.status)) return "The program has finished.";
+    await this.store.appendCommand(id, { stdin, eof });
     return null;
   }
 

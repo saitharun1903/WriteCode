@@ -9,7 +9,7 @@ import {
   type ExecutionStreamEvent,
 } from "@cw/shared";
 
-type ChunkType = "stdout" | "stderr" | "compile";
+type ChunkType = "stdout" | "stderr" | "compile" | "stdin";
 
 /** Cap on stream entries per execution; chunks are coalesced so this is rarely reached. */
 const MAX_STREAM_ENTRIES = 5000;

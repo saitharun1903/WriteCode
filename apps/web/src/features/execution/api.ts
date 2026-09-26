@@ -56,6 +56,8 @@ export interface ExecutionStream {
   close: () => void;
   /** Sends a debug command; resolves false if the socket is not open. */
   sendDebug: (requestId: string, command: DebugCommand) => boolean;
+  /** Sends typed input to the running program; `eof` closes its stdin. False if the socket is not open. */
+  sendInput: (data: string, eof?: boolean) => boolean;
 }
 
 /**
@@ -69,6 +71,7 @@ export function streamExecution(
     onEvent: (e: ExecutionStreamEvent) => void;
     onError: (message: string) => void;
     onDebugError?: (requestId: string, message: string) => void;
+    onInputError?: (message: string) => void;
   },
 ): ExecutionStream {
   const ws = new WebSocket(`${WS_URL}/ws`);
@@ -76,7 +79,10 @@ export function streamExecution(
 
   ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", executionId }));
   ws.onmessage = (msg) => {
-    let event: ExecutionStreamEvent | { type: "debug-error"; executionId: string; requestId: string; message: string };
+    let event:
+      | ExecutionStreamEvent
+      | { type: "debug-error"; executionId: string; requestId: string; message: string }
+      | { type: "input-error"; executionId: string; message: string };
     try {
       event = JSON.parse(String(msg.data)) as typeof event;
     } catch {
@@ -84,6 +90,7 @@ export function streamExecution(
     }
     if (event.executionId !== executionId) return;
     if (event.type === "debug-error") return handlers.onDebugError?.(event.requestId, event.message);
+    if (event.type === "input-error") return handlers.onInputError?.(event.message);
     handlers.onEvent(event);
     if (event.type === "result") {
       done = true;
@@ -109,6 +116,11 @@ export function streamExecution(
     sendDebug: (requestId, command) => {
       if (ws.readyState !== WebSocket.OPEN) return false;
       ws.send(JSON.stringify({ type: "debug", executionId, requestId, command }));
+      return true;
+    },
+    sendInput: (data, eof = false) => {
+      if (ws.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify({ type: "stdin", executionId, data, eof }));
       return true;
     },
   };

@@ -78,6 +78,10 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     stdin = body.stdin;
   }
 
+  if (body.interactive !== undefined && typeof body.interactive !== "boolean") return { ok: false, error: "interactive must be a boolean." };
+  const interactive = body.interactive === true;
+  if (interactive && stdin) return { ok: false, error: "Interactive runs take input while running; do not send stdin as well." };
+
   const mode = body.mode ?? "run";
   if (mode !== "run" && mode !== "debug") return { ok: false, error: "mode must be 'run' or 'debug'." };
   let breakpoints: Record<string, number[]> | undefined;
@@ -103,5 +107,5 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     }
   }
 
-  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin, mode, breakpoints } };
+  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin, interactive, mode, breakpoints } };
 }

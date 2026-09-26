@@ -1,7 +1,7 @@
 "use client";
 
 import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Square, Sun } from "lucide-react";
-import { PRODUCT, getLanguage } from "@cw/shared";
+import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
@@ -28,7 +28,7 @@ const MENUS: { label: string; items: (string | "-")[] }[] = [
   { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
   { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format", "edit.goToLine"] },
   { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
-  { label: "Run", items: ["run.execute", "debug.startOrContinue", "run.cancel", "-", "run.clearOutput", "view.input"] },
+  { label: "Run", items: ["run.execute", "run.currentFile", "debug.startOrContinue", "run.cancel", "-", "run.clearOutput", "view.input"] },
   {
     label: "Debug",
     items: ["debug.startOrContinue", "debug.pause", "debug.stepOver", "debug.stepIn", "debug.stepOut", "-", "debug.restart", "run.cancel", "-", "debug.toggleBreakpoint", "debug.clearBreakpoints"],
@@ -52,21 +52,26 @@ function RunControls() {
   const run = useExecution((s) => s.run);
   const running = isRunning(run);
   const lang = getLanguage(project.language);
-  const runnable = lang ? project.files.filter((f) => lang.extensions.some((e) => f.path.toLowerCase().endsWith(e))) : [];
+  // Compiled languages list their main functions; interpreted ones can run any source file.
+  const runnable = !lang
+    ? []
+    : anyFileIsRunnable(lang.id)
+      ? project.files.filter((f) => lang.extensions.some((e) => f.path.toLowerCase().endsWith(e))).map((f) => ({ file: f.path, label: f.path }))
+      : findEntryPoints(lang.id, project.files).map((e) => ({ file: e.file, label: e.mainClass ? `${e.label}  (${e.file})` : e.file }));
 
   return (
     <div className="flex h-8 items-center rounded-[7px] border border-line-strong bg-surface-2 p-0.5">
       <DropdownMenu
         align="end"
         entries={[
-          { kind: "label", label: "Entry file" },
+          { kind: "label", label: "Entry point" },
           ...(runnable.length
-            ? runnable.map((f) => ({
-                label: f.path,
-                checked: f.path === project.entryFile,
-                onSelect: () => useWorkspace.getState().setEntryFile(f.path),
+            ? runnable.map((r) => ({
+                label: r.label,
+                checked: r.file === project.entryFile,
+                onSelect: () => useWorkspace.getState().setEntryFile(r.file),
               }))
-            : [{ label: `No ${lang?.name ?? ""} files`, disabled: true, onSelect: () => {} }]),
+            : [{ label: anyFileIsRunnable(project.language) ? `No ${lang?.name ?? ""} files` : "No main function found", disabled: true, onSelect: () => {} }]),
           { kind: "separator" },
           { label: "Program input (stdin)…", onSelect: () => runCommand("view.input") },
         ]}

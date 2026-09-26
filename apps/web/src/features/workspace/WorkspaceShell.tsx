@@ -14,6 +14,7 @@ import { useExecution } from "@/features/execution/store";
 import { CompareDialog } from "@/features/history/CompareDialog";
 import { HistoryPanel } from "@/features/history/HistoryPanel";
 import { NewProjectDialog } from "@/features/projects/NewProjectDialog";
+import { EntryPointDialog } from "@/features/execution/EntryPointDialog";
 import { StartScreen } from "@/features/projects/StartScreen";
 import { useWorkspace } from "@/features/projects/store";
 import { SearchPanel } from "@/features/search/SearchPanel";
@@ -261,6 +262,7 @@ export function WorkspaceShell() {
       <NewProjectDialog />
       <SettingsDialog />
       <CompareDialog />
+      <EntryPointDialog />
       <Toaster />
     </TooltipProvider>
   );

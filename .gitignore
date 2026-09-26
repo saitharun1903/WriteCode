@@ -10,3 +10,7 @@ coverage/
 .DS_Store
 test-results/
 playwright-report/
+
+# Python bytecode (from running debug adapters on the host)
+__pycache__/
+*.pyc

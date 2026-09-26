@@ -28,6 +28,7 @@ import json
 import os
 import queue
 import runpy
+import select
 import sys
 import threading
 import traceback
@@ -484,6 +485,29 @@ class Evaluator:
 # ---------------------------------------------------------------- adapter
 
 
+class WatchedStdin(io.FileIO):
+    """The program's raw stdin. Reports when a read is about to block, so the
+    worker can show that the program is waiting for input (and not count the
+    wait as running time)."""
+
+    def __init__(self, fd, report):
+        super().__init__(fd, "r", closefd=False)
+        self._report = report
+
+    def readinto(self, buffer):
+        try:
+            ready = select.select([self.fileno()], [], [], 0)[0]
+        except (OSError, ValueError):
+            ready = True  # select unsupported for this fd (e.g. a file on Windows)
+        if ready:
+            return super().readinto(buffer)
+        self._report(True)
+        try:
+            return super().readinto(buffer)
+        finally:
+            self._report(False)
+
+
 class Adapter:
     def __init__(self, proto_out):
         self.out = proto_out
@@ -768,18 +792,30 @@ class Adapter:
         d["name"] = name
         return d
 
+    @staticmethod
+    def module_globals(frame):
+        """The module's own names: not dunders or imported modules."""
+        return [(k, v) for k, v in dict.items(frame.f_globals)
+                if not (k.startswith("__") and k.endswith("__")) and not isinstance(v, types.ModuleType)]
+
     def variables(self, ref):
         target = self.refs.get(ref)
         if target is None:
             raise RuntimeError("variable reference expired; the program has resumed")
         kind, obj = target
+        if kind == "globals":
+            items = self.module_globals(obj)
+            return [self.describe(k, v) for k, v in items[:MAX_CHILDREN]]
         if kind == "frame":
             if obj.f_code.co_name == "<module>":
-                items = [(k, v) for k, v in dict.items(obj.f_globals)
-                         if not (k.startswith("__") and k.endswith("__")) and not isinstance(v, types.ModuleType)]
-            else:
-                items = list(obj.f_locals.items())
-            return [self.describe(k, v) for k, v in items[:MAX_CHILDREN]]
+                items = self.module_globals(obj)
+                return [self.describe(k, v) for k, v in items[:MAX_CHILDREN]]
+            out = [self.describe(k, v) for k, v in list(obj.f_locals.items())[:MAX_CHILDREN]]
+            count = len(self.module_globals(obj))
+            if count:
+                out.append({"name": "globals", "value": f"module {obj.f_globals.get('__name__', '?')} ({count})", "type": "",
+                            "ref": self.register(("globals", obj))})
+            return out
         items, total = children(obj)
         out = [self.describe(k, v) for k, v in items]
         if total > len(items):
@@ -813,7 +849,8 @@ class Adapter:
             t = threading.Thread(target=self.pump, args=(r, stream), name=f"cw-{stream}", daemon=True)
             t.start()
             self.pumps.append(t)
-        sys.stdin = sys.__stdin__ = io.TextIOWrapper(io.FileIO(0, "r", closefd=False), encoding="utf-8")
+        raw = WatchedStdin(0, lambda waiting: self.event("input", waiting=waiting))
+        sys.stdin = sys.__stdin__ = io.TextIOWrapper(io.BufferedReader(raw), encoding="utf-8")
         # newline="\n" keeps output identical to the Linux sandbox when tested on other hosts.
         for fd, name in ((1, "stdout"), (2, "stderr")):
             stream = io.TextIOWrapper(io.FileIO(fd, "w", closefd=False), encoding="utf-8", errors="backslashreplace", newline="\n", write_through=True)

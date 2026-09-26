@@ -1,6 +1,6 @@
 "use client";
 
-import { getLanguage, parentOf } from "@cw/shared";
+import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 import { useDebug } from "@/features/debug/store";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
@@ -46,7 +46,18 @@ function showSide(view: SideView) {
   useUI.getState().setDrawer("sidebar");
 }
 
-function showBottom(tab: BottomTab) {
+/** True when the active file can be run on its own: it has a main function, or the language runs any file. */
+function activeFileRunnable(): boolean {
+  const { project, activeFile } = useWorkspace.getState();
+  if (!project || !activeFile) return false;
+  const lang = getLanguage(project.language);
+  if (!lang?.extensions.some((e) => activeFile.toLowerCase().endsWith(e))) return false;
+  if (anyFileIsRunnable(project.language)) return true;
+  const file = project.files.find((f) => f.path === activeFile);
+  return !!file && findEntryPoints(project.language, [file]).length > 0;
+}
+
+export function showBottom(tab: BottomTab) {
   useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: tab });
   useUI.getState().setDrawer("bottom");
 }
@@ -61,6 +72,19 @@ export const COMMANDS: Command[] = [
     run: () => {
       showBottom("run");
       void useExecution.getState().execute();
+    },
+  },
+  {
+    id: "run.currentFile",
+    title: "Run Current File",
+    category: "Run",
+    shortcut: "Mod+Shift+F10",
+    enabled: () => activeFileRunnable() && !isRunning(useExecution.getState().run),
+    run: () => {
+      const file = useWorkspace.getState().activeFile;
+      if (!file) return;
+      showBottom("run");
+      void useExecution.getState().execute({ entry: file });
     },
   },
   {

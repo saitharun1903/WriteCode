@@ -1,14 +1,16 @@
-import { AlertTriangle, Ban, CheckCircle2, Clock, Cpu, HardDrive, Loader2, OctagonX, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Clock, Cpu, HardDrive, Keyboard, Loader2, OctagonX, XCircle } from "lucide-react";
 import type { ExecutionStatus } from "@cw/shared";
 import { cn } from "@/lib/cn";
 
-type Tone = "neutral" | "running" | "success" | "danger" | "warning";
+type Tone = "neutral" | "running" | "input" | "success" | "danger" | "warning";
 
 export const STATUS_META: Record<ExecutionStatus | "SUBMITTING", { label: string; tone: Tone; hint?: string }> = {
   SUBMITTING: { label: "Starting", tone: "running" },
   QUEUED: { label: "Queued", tone: "running", hint: "Waiting for a free sandbox." },
+  STARTING: { label: "Starting", tone: "running", hint: "Creating the sandbox." },
   COMPILING: { label: "Compiling", tone: "running" },
   RUNNING: { label: "Running", tone: "running" },
+  WAITING_FOR_INPUT: { label: "Waiting for input", tone: "input", hint: "The program is waiting for you to type input." },
   SUCCESS: { label: "Success", tone: "success" },
   COMPILATION_ERROR: { label: "Compilation error", tone: "danger", hint: "The compiler rejected the program. See Problems for locations." },
   RUNTIME_ERROR: { label: "Runtime error", tone: "danger", hint: "The program exited with a non-zero status or crashed." },
@@ -22,6 +24,7 @@ export const STATUS_META: Record<ExecutionStatus | "SUBMITTING", { label: string
 const toneClass: Record<Tone, string> = {
   neutral: "bg-hover text-fg-muted",
   running: "bg-info-soft text-info",
+  input: "bg-warning-soft text-warning",
   success: "bg-success-soft text-success",
   danger: "bg-danger-soft text-danger",
   warning: "bg-warning-soft text-warning",
@@ -32,6 +35,8 @@ function StatusIcon({ status }: { status: ExecutionStatus | "SUBMITTING" }) {
   switch (STATUS_META[status].tone) {
     case "running":
       return <Loader2 className={cn(cls, "animate-spin")} />;
+    case "input":
+      return <Keyboard className={cls} />;
     case "success":
       return <CheckCircle2 className={cls} />;
     case "warning":

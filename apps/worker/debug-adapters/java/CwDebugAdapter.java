@@ -324,6 +324,8 @@ public final class CwDebugAdapter {
         String classpath = (String) req.get("classpath");
         String vmOptions = req.get("vmOptions") == null ? "" : (String) req.get("vmOptions");
         String stdinPath = (String) req.get("stdinPath");
+        // Optional launcher home whose bin/java wrapper redirects the program's stdin itself.
+        String javaHome = (String) req.get("javaHome");
         for (Object f : (List<Object>) req.get("files")) projectFiles.add((String) f);
         Map<String, Object> bps = (Map<String, Object>) req.get("breakpoints");
         if (bps != null) {
@@ -339,6 +341,7 @@ public final class CwDebugAdapter {
         cargs.get("main").setValue(mainClass);
         cargs.get("options").setValue("-cp " + classpath + " " + vmOptions);
         cargs.get("suspend").setValue("true");
+        if (javaHome != null) cargs.get("home").setValue(javaHome);
         vm = connector.launch(cargs);
         erm = vm.eventRequestManager();
 
@@ -347,7 +350,7 @@ public final class CwDebugAdapter {
         pump(p.getErrorStream(), "stderr");
         Thread stdinPump = new Thread(() -> {
             try (OutputStream os = p.getOutputStream()) {
-                if (stdinPath != null && Files.exists(Paths.get(stdinPath))) Files.copy(Paths.get(stdinPath), os);
+                if (javaHome == null && stdinPath != null && Files.exists(Paths.get(stdinPath))) Files.copy(Paths.get(stdinPath), os);
             } catch (IOException ignored) {
                 // The program closed stdin or exited.
             }
@@ -604,6 +607,18 @@ public final class CwDebugAdapter {
         StackFrame frame() throws IncompatibleThreadStateException { return thread.frame(index); }
     }
 
+    /** The static fields of a class, shown as one expandable "static" entry per frame. */
+    static final class StaticsRef {
+        final ReferenceType type;
+        StaticsRef(ReferenceType t) { type = t; }
+    }
+
+    private static List<Field> staticFields(ReferenceType type) {
+        List<Field> out = new ArrayList<>();
+        for (Field f : type.allFields()) if (f.isStatic() && !f.isSynthetic()) out.add(f);
+        return out;
+    }
+
     private int register(Object target) {
         synchronized (refs) {
             int id = nextRef++;
@@ -627,6 +642,18 @@ public final class CwDebugAdapter {
                 for (LocalVariable lv : frame.visibleVariables()) vars.add(describe(lv.name(), frame.getValue(lv)));
             } catch (AbsentInformationException e) {
                 vars.add(obj("name", "(locals unavailable)", "value", "compiled without debug info", "type", "", "ref", 0));
+            }
+            ReferenceType declaring = frame.location().declaringType();
+            List<Field> statics = staticFields(declaring);
+            if (!statics.isEmpty()) {
+                vars.add(obj("name", "static", "value", simpleName(declaring.name()) + " (" + statics.size() + " field" + (statics.size() == 1 ? "" : "s") + ")",
+                        "type", declaring.name(), "ref", register(new StaticsRef(declaring))));
+            }
+        } else if (target instanceof StaticsRef) {
+            ReferenceType type = ((StaticsRef) target).type;
+            for (Field f : staticFields(type)) {
+                if (vars.size() >= MAX_CHILDREN) break;
+                vars.add(describe(f.name(), type.getValue(f)));
             }
         } else if (target instanceof ArrayReference) {
             ArrayReference arr = (ArrayReference) target;

@@ -2,8 +2,12 @@ import type { DebugEvent } from "../debug/types.js";
 
 export const EXECUTION_STATUSES = [
   "QUEUED",
+  /** A worker picked the job up and is creating the sandbox. */
+  "STARTING",
   "COMPILING",
   "RUNNING",
+  /** Running, and the kernel reports the program blocked reading its stdin. */
+  "WAITING_FOR_INPUT",
   "SUCCESS",
   "COMPILATION_ERROR",
   "RUNTIME_ERROR",
@@ -44,6 +48,12 @@ export interface ExecutionRequest {
   /** Path of the entry file within `files`. */
   entry: string;
   stdin?: string;
+  /**
+   * Keep the program's stdin open and stream input typed while it runs
+   * (sent over the event socket). When false, `stdin` is the whole input and
+   * the program sees end-of-file after it.
+   */
+  interactive?: boolean;
   /** Defaults to "run". "debug" starts an interactive debug session. */
   mode?: ExecutionMode;
   /** Debug mode only: project file -> 1-based breakpoint lines. */
@@ -71,9 +81,13 @@ export interface ExecutionResult {
   /** Compiler output, kept separate from program stderr. */
   compileOutput: string;
   exitCode?: number;
-  /** Run-phase wall time in milliseconds. */
+  /** Run-phase wall time in milliseconds, excluding time spent waiting for typed input. */
   executionTime?: number;
   compileTime?: number;
+  /** Time between submission and a worker starting the job, in milliseconds. */
+  queueTime?: number;
+  /** Sandbox container creation and file setup, in milliseconds. */
+  startupTime?: number;
   /** Peak memory of the sandbox in bytes, when the runtime can report it. */
   memoryUsed?: number;
   runtimeVersion: string;
@@ -89,8 +103,18 @@ export type ExecutionStreamEvent =
   | { type: "stdout"; executionId: string; chunk: string }
   | { type: "stderr"; executionId: string; chunk: string }
   | { type: "compile"; executionId: string; chunk: string }
+  /** Echo of input the user typed into a running program. */
+  | { type: "stdin"; executionId: string; chunk: string }
   | { type: "result"; executionId: string; result: ExecutionResult }
   | { type: "debug"; executionId: string; event: DebugEvent };
+
+/** Interactive runs: typed-input waits do not count toward `timeoutMs`, within these caps. */
+export const INTERACTIVE_LIMITS = {
+  /** Longest a program may wait for one piece of input. */
+  maxInputWaitMs: 5 * 60_000,
+  /** Longest an interactive run may last in total. */
+  maxWallMs: 15 * 60_000,
+} as const;
 
 export const DEFAULT_LIMITS: ExecutionLimits = {
   timeoutMs: 10_000,
@@ -108,5 +132,7 @@ export const REQUEST_BOUNDS = {
   maxFileBytes: 256 * 1024,
   maxTotalBytes: 1024 * 1024,
   maxStdinBytes: 256 * 1024,
+  /** Largest single piece of typed input sent while a program runs. */
+  maxInputChunkBytes: 2048,
   maxPathLength: 200,
 } as const;

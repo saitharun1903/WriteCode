@@ -140,7 +140,8 @@ describe.skipIf(!PYTHON)("Python debug adapter (host Python)", () => {
     expect(frames[0]!.file).toBe("main.py");
 
     const locals = await s.vars(frames[0]!.localsRef);
-    expect(locals.map((v) => `${v.name}=${v.value}`)).toEqual(["nums=[3, 1, 2]", "p=Point(x=1, y=2)", "total=0", "n=3"]);
+    expect(locals.map((v) => `${v.name}=${v.value}`)).toEqual(["nums=[3, 1, 2]", "p=Point(x=1, y=2)", "total=0", "n=3", "globals=module __main__ (3)"]);
+    expect((await s.vars(locals.find((v) => v.name === "globals")!.ref)).map((v) => v.name)).toEqual(["Point", "square", "main"]);
     const nums = await s.vars(locals.find((v) => v.name === "nums")!.ref);
     expect(nums.map((v) => `${v.name}=${v.value}`)).toEqual(["[0]=3", "[1]=1", "[2]=2"]);
     const point = await s.vars(locals.find((v) => v.name === "p")!.ref);

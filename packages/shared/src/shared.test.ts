@@ -3,6 +3,7 @@ import {
   LANGUAGES,
   buildTree,
   expandCommand,
+  findEntryPoints,
   getLanguage,
   isSafeRelativePath,
   monacoLanguageForPath,
@@ -49,8 +50,50 @@ describe("expandCommand", () => {
     expect(argv).not.toContain("README.md");
   });
 
-  it("derives a JVM class name from a nested entry", () => {
-    expect(expandCommand(["java", "{entryClass}"], { entry: "com/app/Main.java", files })).toEqual(["java", "com.app.Main"]);
+  it("derives the JVM class name from the package declaration, not the folder", () => {
+    const pkg = [{ path: "src/com/app/Main.java", content: "package com.app;\n\npublic class Main {\n  public static void main(String[] args) {}\n}\n" }];
+    expect(expandCommand(["java", "{entryClass}"], { entry: "src/com/app/Main.java", files: pkg })).toEqual(["java", "com.app.Main"]);
+    const noPkg = [{ path: "demo/Tool.java", content: "class Tool { public static void main(String... a) {} }" }];
+    expect(expandCommand(["java", "{entryClass}"], { entry: "demo/Tool.java", files: noPkg })).toEqual(["java", "Tool"]);
+  });
+});
+
+describe("entry points", () => {
+  it("finds Java main methods with packages, nesting and modifier order", () => {
+    const files = [
+      {
+        path: "src/app/Main.java",
+        content: `package app;
+// public static void main(String[] args) in a comment
+public class Main {
+    static String s = "public static void main(String[] args)";
+    public static void main(String[] args) { new Runnable() { public void run() {} }; }
+    static class Inner {
+        static public void main(final String... args) {}
+    }
+    void main(String[] args) {}
+    private static void main(int x) {}
+}
+interface Tool { static void main(String[] a) {} }
+record Point(int x) { public static void main(String a[]) {} }
+`,
+      },
+      { path: "src/app/Plain.java", content: "package app; class Plain { void run() {} }" },
+    ];
+    expect(findEntryPoints("java", files).map((e) => `${e.mainClass}@${e.line}`)).toEqual(["app.Main@5", "app.Main$Inner@7", "app.Tool@12", "app.Point@13"]);
+  });
+
+  it("finds C/C++ main and Python main guards, ignoring comments and strings", () => {
+    const c = [
+      { path: "util.cpp", content: 'const char* s = "int main(";\nint helper() { return 1; }\n' },
+      { path: "main.cpp", content: "// int main() old\n#include <cstdio>\nint main() {\n  return 0;\n}\n" },
+    ];
+    expect(findEntryPoints("cpp", c)).toEqual([{ file: "main.cpp", line: 3, label: "main.cpp" }]);
+    const py = [
+      { path: "lib.py", content: 'DOC = """\nif __name__ == "__main__":\n"""\n' },
+      { path: "main.py", content: 'def f():\n    pass\n\nif __name__ == "__main__":\n    f()\n' },
+    ];
+    expect(findEntryPoints("python", py).map((e) => `${e.file}:${e.line}`)).toEqual(["main.py:4"]);
   });
 });
 

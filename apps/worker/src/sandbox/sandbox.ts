@@ -5,6 +5,7 @@ import type { Container } from "dockerode";
 import { SANDBOX_WORKDIR, type ExecutionLimits, type SourceFile } from "@cw/shared";
 import type { StepOutcome } from "./classify.js";
 import { buildWriteBatches, type SandboxFile } from "./files.js";
+import { INPUT_FIFO } from "./input.js";
 
 export const SANDBOX_LABEL = "cw.sandbox";
 const NOBODY = "65534:65534";
@@ -36,12 +37,24 @@ export interface StepOptions {
   onStderr: (chunk: string) => void;
   /** Polled while the step runs; returning true kills the sandbox. */
   isCancelled: () => Promise<boolean>;
-  /** Redirect the program's stdin from the file written by `writeStdin`. */
-  withStdin?: boolean;
+  /**
+   * Where the program's stdin comes from: the input file written by
+   * `prepare` ("file"), the interactive FIFO ("fifo"), or nothing (the exec's
+   * empty stdin, used for compilers).
+   */
+  stdin?: "file" | "fifo";
+  /**
+   * Interactive runs: time the program spends blocked on typed input does
+   * not count toward `timeoutMs`, within these caps.
+   */
+  clock?: { waiting: () => boolean; maxInputWaitMs: number; maxWallMs: number };
 }
 
 export interface StepResult extends StepOutcome {
+  /** Wall time, minus time spent waiting for typed input when a clock is used. */
   durationMs: number;
+  /** Which limit stopped a timed-out step. */
+  limit?: "run" | "input" | "wall";
 }
 
 /**
@@ -106,13 +119,14 @@ export class Sandbox {
    */
   async prepare(files: readonly SourceFile[], stdin: string, extra: readonly SandboxFile[] = []): Promise<void> {
     const entries: SandboxFile[] = [...files, { path: STDIN_PATH, content: stdin }, { path: "out/.keep", content: "" }, ...extra];
-    for (const batch of buildWriteBatches(entries)) await this.execSimple(batch.argv);
+    for (const batch of buildWriteBatches(entries)) await this.exec(batch.argv);
   }
 
   /** Runs a step, streaming decoded output, and enforces time, output and cancellation limits. */
   async runStep(step: StepOptions): Promise<StepResult> {
     const container = this.requireContainer();
-    const argv = step.withStdin ? ["sh", "-c", `exec "$@" < ${STDIN_PATH}`, "sh", ...step.argv] : step.argv;
+    const source = step.stdin === "file" ? STDIN_PATH : step.stdin === "fifo" ? INPUT_FIFO : null;
+    const argv = source ? ["sh", "-c", `exec "$@" < ${source}`, "sh", ...step.argv] : step.argv;
     const exec = await container.exec({
       Cmd: argv,
       User: NOBODY,
@@ -146,10 +160,33 @@ export class Sandbox {
     stderr.on("data", (c: Buffer) => account(c) && step.onStderr(errDecoder.write(c)));
     this.docker.modem.demuxStream(stream, stdout, stderr);
 
-    const timer = setTimeout(() => {
+    let limit: StepResult["limit"];
+    const stop = (why: NonNullable<StepResult["limit"]>) => {
+      if (outcome.timedOut) return;
       outcome.timedOut = true;
+      limit = why;
       void this.kill();
-    }, step.timeoutMs);
+    };
+    // Active (non-waiting) time; equals wall time without a clock.
+    let active = 0;
+    let waitStreak = 0;
+    let last = performance.now();
+    const clock = step.clock;
+    const timer = clock
+      ? setInterval(() => {
+          const now = performance.now();
+          const dt = now - last;
+          last = now;
+          if (clock.waiting()) waitStreak += dt;
+          else {
+            waitStreak = 0;
+            active += dt;
+          }
+          if (active > step.timeoutMs) stop("run");
+          else if (waitStreak > clock.maxInputWaitMs) stop("input");
+          else if (now - started > clock.maxWallMs) stop("wall");
+        }, 50)
+      : setTimeout(() => stop("run"), step.timeoutMs);
     const cancelPoll = setInterval(() => {
       void step.isCancelled().then((c) => {
         if (c && !outcome.cancelled) {
@@ -167,6 +204,7 @@ export class Sandbox {
       });
     } finally {
       clearTimeout(timer);
+      clearInterval(timer);
       clearInterval(cancelPoll);
     }
 
@@ -175,7 +213,8 @@ export class Sandbox {
     if (tailOut) step.onStdout(tailOut);
     if (tailErr) step.onStderr(tailErr);
 
-    const durationMs = Math.round(performance.now() - started);
+    const wall = performance.now() - started;
+    const durationMs = Math.round(clock ? Math.min(wall, active + (performance.now() - last)) : wall);
     if (!this.killed) {
       const info = await exec.inspect();
       outcome.exitCode = info.ExitCode ?? null;
@@ -183,7 +222,7 @@ export class Sandbox {
       outcome.exitCode = 137;
     }
     outcome.oomKilled = await this.wasOomKilled();
-    return { ...outcome, durationMs };
+    return { ...outcome, durationMs, limit };
   }
 
   /**
@@ -284,8 +323,8 @@ export class Sandbox {
     }
   }
 
-  /** Runs a worker-controlled command to completion; non-zero exit is a system error. */
-  private async execSimple(argv: string[]): Promise<void> {
+  /** Runs a worker-controlled setup command to completion; non-zero exit is a system error. */
+  async exec(argv: string[]): Promise<void> {
     await this.execCapture(argv);
   }
 

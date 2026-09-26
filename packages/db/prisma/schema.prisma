@@ -14,8 +14,10 @@ datasource db {
 
 enum ExecutionStatus {
   QUEUED
+  STARTING
   COMPILING
   RUNNING
+  WAITING_FOR_INPUT
   SUCCESS
   COMPILATION_ERROR
   RUNTIME_ERROR
@@ -39,6 +41,12 @@ model Execution {
   executionTime  Int?            @map("execution_time")
   /// Milliseconds.
   compileTime    Int?            @map("compile_time")
+  /// Milliseconds from submission until a worker started the job.
+  queueTime      Int?            @map("queue_time")
+  /// Milliseconds to create and prepare the sandbox.
+  startupTime    Int?            @map("startup_time")
+  /// Whether the run accepted typed input while running.
+  interactive    Boolean         @default(false)
   /// Bytes.
   memoryUsed     BigInt?         @map("memory_used")
   message        String?

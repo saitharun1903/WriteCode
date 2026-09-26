@@ -145,7 +145,7 @@ const javascript: LanguageDefinition = {
 const typescript: LanguageDefinition = {
   id: "typescript",
   name: "TypeScript",
-  version: "Node.js 22 (type stripping)",
+  version: "Node.js 22 (type transform)",
   extensions: [".ts", ".mts"],
   monacoLanguage: "typescript",
   supportLevel: "beta",
@@ -160,7 +160,8 @@ console.log(greeting);
   ],
   runtime: {
     image: "node:22-slim",
-    command: ["node", "--experimental-strip-types", "--no-warnings", "{entry}"],
+    // Transform (not just strip) so enums, namespaces and parameter properties work.
+    command: ["node", "--experimental-transform-types", "--no-warnings", "{entry}"],
   },
 };
 

@@ -1,10 +1,8 @@
 import type Docker from "dockerode";
 import type { Redis } from "ioredis";
 import {
-  STREAM_FIELD,
   expandCommand,
   parseDebugCommand,
-  redisKeys,
   requireLanguage,
   type DebugCommand,
   type ExecutionLimits,
@@ -14,7 +12,8 @@ import {
   type StopReason,
 } from "@cw/shared";
 import type { EventEmitter } from "../events.js";
-import { classifyCompile } from "../sandbox/classify.js";
+import { classifyCompile, explainRuntimeError } from "../sandbox/classify.js";
+import { INPUT_FIFO, InputChannel, applyInput, readCommands } from "../sandbox/input.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { debugAdapterFor, type DebugAdapter } from "./adapters.js";
 
@@ -25,6 +24,8 @@ export const DEBUG_SESSION_LIMITS = {
   idleMs: 10 * 60_000,
   /** Cumulative time the program may run while not paused. */
   runBudgetMs: 30_000,
+  /** The adapter must answer the launch request within this time. */
+  launchTimeoutMs: 60_000,
   /** Java runs two JVMs (adapter + program) in the sandbox. */
   memoryMb: 512,
   pids: 256,
@@ -73,6 +74,8 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
   let stderr = "";
   let compileOutput = "";
   let outputBytes = 0;
+  let startupTime: number | undefined;
+  const interactive = request.interactive === true;
   const finish = (status: ExecutionStatus, extra: Partial<ExecutionResult> = {}): ExecutionResult => ({
     id: ctx.executionId,
     language: lang.id,
@@ -82,6 +85,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
     stdout,
     stderr,
     compileOutput,
+    startupTime,
     finishedAt: new Date().toISOString(),
     ...extra,
   });
@@ -97,9 +101,14 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
   });
 
   try {
-    const adapter = await debugAdapterFor(ctx.docker, request);
+    events.status("STARTING");
+    const startupBegan = performance.now();
+    const adapter = await debugAdapterFor(ctx.docker, request, interactive ? INPUT_FIFO : undefined);
     await sandbox.start();
     await sandbox.prepare(request.files, request.stdin ?? "", adapter.files);
+    for (const argv of adapter.setup) await sandbox.exec(argv);
+    if (interactive) await InputChannel.createFifo(sandbox);
+    startupTime = Math.round(performance.now() - startupBegan);
 
     let compileTime: number | undefined;
     if (lang.compiler) {
@@ -123,11 +132,23 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
       if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.exitCode ?? undefined });
     }
 
+    const channel = interactive
+      ? await InputChannel.start(
+          sandbox,
+          {
+            onWaiting: (waiting) => events.status(waiting ? "WAITING_FOR_INPUT" : "RUNNING"),
+            onEcho: (text) => events.chunk("stdin", text),
+          },
+          { monitor: adapter.monitorInput },
+        )
+      : null;
+
     events.status("RUNNING");
-    return await drive(ctx, sandbox, adapter, limits, compileTime, {
+    return await drive(ctx, sandbox, adapter, channel, limits, compileTime, {
       onStdout: (c) => (stdout += c),
       onStderr: (c) => (stderr += c),
       account: (n) => (outputBytes += n) <= limits.maxOutputBytes,
+      stderr: () => stderr,
       finish,
     });
   } catch (err) {
@@ -142,12 +163,14 @@ async function drive(
   ctx: DebugContext,
   sandbox: Sandbox,
   debugAdapter: DebugAdapter,
+  channel: InputChannel | null,
   limits: ExecutionLimits,
   compileTime: number | undefined,
   out: {
     onStdout: (c: string) => void;
     onStderr: (c: string) => void;
     account: (bytes: number) => boolean;
+    stderr: () => string;
     finish: (status: ExecutionStatus, extra?: Partial<ExecutionResult>) => ExecutionResult;
   },
 ): Promise<ExecutionResult> {
@@ -171,8 +194,10 @@ async function drive(
     resolveEnded();
   };
 
+  let paused = false;
+  // Budget time counts only while the program runs: not while paused, and not while it waits for typed input.
   const startRunning = () => {
-    if (runningSince === null) runningSince = Date.now();
+    if (runningSince === null && !paused && !channel?.waiting) runningSince = Date.now();
   };
   const stopRunning = () => {
     if (runningSince !== null) runSpent += Date.now() - runningSince;
@@ -198,6 +223,7 @@ async function drive(
           return;
         }
         case "stopped":
+          paused = true;
           stopRunning();
           events.debug({
             kind: "stopped",
@@ -208,12 +234,20 @@ async function drive(
           });
           return;
         case "continued":
+          paused = false;
           startRunning();
           events.debug({ kind: "continued" });
           return;
         case "breakpoints":
           events.debug({ kind: "breakpoints", file: String(msg.file), breakpoints: (msg.breakpoints as never) ?? [] });
           return;
+        case "input": {
+          // The adapter saw the program block on (or return from) a stdin read.
+          channel?.reportWaiting(msg.waiting === true);
+          if (msg.waiting === true) stopRunning();
+          else startRunning();
+          return;
+        }
         case "exited":
           exitCode = typeof msg.exitCode === "number" ? msg.exitCode : null;
           end(exitCode === 0 ? "SUCCESS" : "RUNTIME_ERROR");
@@ -229,6 +263,7 @@ async function drive(
     if (!req) return;
     pending.delete(msg.requestSeq!);
     if (req.command.cmd === "launch") {
+      clearTimeout(launchTimer);
       if (msg.success === false) end("SYSTEM_ERROR", `The debugger could not start the program: ${msg.message ?? "unknown error"}`);
       return;
     }
@@ -277,42 +312,30 @@ async function drive(
   };
 
   send({ cmd: "launch", ...debugAdapter.launch });
+  const launchTimer = setTimeout(() => end("SYSTEM_ERROR", "The debugger did not start in time. Please retry."), DEBUG_SESSION_LIMITS.launchTimeoutMs);
   startRunning();
+  // The kernel monitor (when used) reports waits through the channel.
+  const onChannelWait = setInterval(() => {
+    if (channel?.waiting) stopRunning();
+    else startRunning();
+  }, 100);
 
-  // Relay client commands from Redis until the session ends.
-  let reading = true;
-  const reader = (async () => {
-    let lastId = "0-0";
-    const key = redisKeys.commands(ctx.executionId);
-    while (reading) {
-      const res = (await ctx.commandRedis.xread("BLOCK", 1000, "STREAMS", key, lastId).catch(() => null)) as
-        | [string, [string, string[]][]][]
-        | null;
-      if (!res) continue;
-      for (const [, entries] of res) {
-        for (const [id, fields] of entries) {
-          lastId = id;
-          const idx = fields.indexOf(STREAM_FIELD);
-          if (idx === -1) continue;
-          let payload: { requestId?: string; command?: unknown };
-          try {
-            payload = JSON.parse(fields[idx + 1]!) as typeof payload;
-          } catch {
-            continue;
-          }
-          const command = parseDebugCommand(payload.command);
-          if (!command) continue;
-          lastActivity = Date.now();
-          if (command.cmd === "terminate") {
-            end("CANCELLED", "Debug session stopped.");
-            continue;
-          }
-          if (command.cmd === "setBreakpoints" && !request.files.some((f) => f.path === command.file)) continue;
-          send(command, payload.requestId);
-        }
-      }
+  // Relay client commands and typed input from Redis until the session ends.
+  const reader = readCommands(ctx.commandRedis, ctx.executionId, (payload) => {
+    if (applyInput(payload, channel)) {
+      lastActivity = Date.now();
+      return;
     }
-  })();
+    const command = parseDebugCommand(payload.command);
+    if (!command) return;
+    lastActivity = Date.now();
+    if (command.cmd === "terminate") {
+      end("CANCELLED", "Debug session stopped.");
+      return;
+    }
+    if (command.cmd === "setBreakpoints" && !request.files.some((f) => f.path === command.file)) return;
+    send(command, typeof payload.requestId === "string" ? payload.requestId : undefined);
+  });
 
   // Enforce session limits and cancellation.
   const watchdog = setInterval(() => {
@@ -330,17 +353,17 @@ async function drive(
 
   await ended;
   clearInterval(watchdog);
-  reading = false;
+  clearInterval(onChannelWait);
+  clearTimeout(launchTimer);
+  reader.stop();
   // The adapter and program live only in this sandbox; killing it ends the session at once.
   await sandbox.kill();
-  // The reader exits on its own once the caller disconnects its blocking connection.
-  void reader;
 
   const final = endStatus ?? { status: "SYSTEM_ERROR" as ExecutionStatus, message: "The debugger stopped unexpectedly." };
   return out.finish(final.status, {
     compileTime,
     exitCode: exitCode ?? undefined,
     executionTime: runSpent + (runningSince !== null ? Date.now() - runningSince : 0),
-    message: final.message,
+    message: final.message ?? (final.status === "RUNTIME_ERROR" ? explainRuntimeError(exitCode, out.stderr()) : undefined),
   });
 }

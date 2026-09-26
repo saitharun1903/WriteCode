@@ -22,6 +22,8 @@ export function rowToResult(row: Execution): ExecutionResult {
     exitCode: row.exitCode ?? undefined,
     executionTime: row.executionTime ?? undefined,
     compileTime: row.compileTime ?? undefined,
+    queueTime: row.queueTime ?? undefined,
+    startupTime: row.startupTime ?? undefined,
     memoryUsed: row.memoryUsed !== null ? Number(row.memoryUsed) : undefined,
     runtimeVersion: row.runtimeVersion,
     message: row.message ?? undefined,
@@ -43,8 +45,8 @@ export class ExecutionStore {
     await this.redis.multi().xadd(key, "*", STREAM_FIELD, JSON.stringify(event)).expire(key, EXECUTION_TTL_SECONDS).exec();
   }
 
-  /** Queues a debug command for the worker that holds the session. */
-  async appendCommand(id: string, payload: { requestId: string; command: unknown }): Promise<void> {
+  /** Queues a debug command or typed input for the worker that holds the execution. */
+  async appendCommand(id: string, payload: { requestId: string; command: unknown } | { stdin: string; eof: boolean }): Promise<void> {
     const key = redisKeys.commands(id);
     await this.redis
       .multi()

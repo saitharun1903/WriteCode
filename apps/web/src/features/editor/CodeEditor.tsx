@@ -3,7 +3,7 @@
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
-import { getLanguage, monacoLanguageForPath } from "@cw/shared";
+import { findEntryPoints, getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
 import { currentLocation, useDebug } from "@/features/debug/store";
 import { useExecution } from "@/features/execution/store";
@@ -16,21 +16,6 @@ import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorat
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 
 const NO_LINES: number[] = [];
-
-/** Patterns for a program's entry point, used to place the gutter run marker. */
-const ENTRY_POINTS: Record<string, RegExp> = {
-  java: /\bpublic\s+static\s+void\s+main\s*\(/,
-  python: /^if\s+__name__\s*==\s*["']__main__["']/,
-  cpp: /\bint\s+main\s*\(/,
-  c: /\bint\s+main\s*\(/,
-};
-
-function entryPointLine(language: string, content: string): number | null {
-  const pattern = ENTRY_POINTS[language];
-  if (!pattern) return null;
-  const idx = content.split("\n").findIndex((l) => pattern.test(l));
-  return idx === -1 ? null : idx + 1;
-}
 
 export function CodeEditor() {
   const project = useWorkspace((s) => s.project);
@@ -57,7 +42,11 @@ export function CodeEditor() {
   const pausedLine = useDebug((s) => currentLocation(s)?.line ?? null);
   const currentTop = useDebug((s) => currentLocation(s)?.top ?? true);
   const currentLine = currentFile === activeFile ? pausedLine : null;
-  const runLine = project && activeFile === project.entryFile && file ? entryPointLine(project.language, file.content) : null;
+  const language = project?.language;
+  const content = file?.content;
+  // A string key keeps the decorations effect from re-running when unrelated text changes.
+  const runLinesKey =
+    language && activeFile && content !== undefined ? findEntryPoints(language, [{ path: activeFile, content }]).map((e) => e.line).join(",") : "";
 
   const handleMount: OnMount = (ed, monaco) => {
     editorRef.current = ed;
@@ -73,6 +62,7 @@ export function CodeEditor() {
     ed.addCommand(KeyCode.F6, () => runCommand("debug.pause"));
     ed.addCommand(KeyCode.F9, () => runCommand("debug.toggleBreakpoint"));
     ed.addCommand(KeyCode.F10, () => runCommand("debug.stepOver"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.F10, () => runCommand("run.currentFile"));
     ed.addCommand(KeyCode.F11, () => runCommand("debug.stepIn"));
     ed.addCommand(KeyMod.Shift | KeyCode.F11, () => runCommand("debug.stepOut"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => runCommand("file.save"));
@@ -109,9 +99,9 @@ export function CodeEditor() {
       lines: fileBreakpoints,
       unverified,
       current: currentLine ? { line: currentLine, top: currentTop } : null,
-      runLine,
+      runLines: runLinesKey ? runLinesKey.split(",").map(Number) : [],
     });
-  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, runLine]);
+  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, runLinesKey]);
 
   // Drop models for files that no longer exist (deleted, renamed, other project).
   useEffect(() => {

@@ -17,8 +17,8 @@ interface EditorDebugState {
   hint: editor.IEditorDecorationsCollection;
   current: editor.IEditorDecorationsCollection;
   run: editor.IEditorDecorationsCollection;
-  /** Line carrying the run marker, if any. */
-  runLine: number | null;
+  /** Lines carrying a run marker. */
+  runLines: number[];
   /** File the breakpoint decorations were last rendered for. */
   renderedFile: string | null;
 }
@@ -40,7 +40,7 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
     hint: ed.createDecorationsCollection(),
     current: ed.createDecorationsCollection(),
     run: ed.createDecorationsCollection(),
-    runLine: null,
+    runLines: [],
     renderedFile: null,
   };
   states.set(ed, state);
@@ -48,8 +48,10 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
 
   ed.onMouseDown((e) => {
     // The run marker sits in the line-decorations column, right of the line numbers.
-    if (e.target.type === MouseTargetType.GUTTER_LINE_DECORATIONS && e.target.position?.lineNumber === state.runLine) {
-      runCommand("run.execute");
+    const line = e.target.position?.lineNumber;
+    if (e.target.type === MouseTargetType.GUTTER_LINE_DECORATIONS && line && state.runLines.includes(line)) {
+      // Runs this file, and remembers it as the project's entry point.
+      runCommand("run.currentFile");
       return;
     }
     if (e.target.type !== MouseTargetType.GUTTER_GLYPH_MARGIN || !e.target.position || !canDebug()) return;
@@ -86,8 +88,8 @@ export function renderDebugDecorations(
     lines: number[];
     unverified: number[];
     current: { line: number; top: boolean } | null;
-    /** Entry point line to mark with a run icon. */
-    runLine: number | null;
+    /** Entry point lines to mark with a run icon. */
+    runLines: number[];
   },
 ) {
   const state = states.get(ed);
@@ -112,11 +114,12 @@ export function renderDebugDecorations(
   );
   state.renderedFile = input.file;
 
-  state.runLine = input.runLine;
+  state.runLines = input.runLines;
   state.run.set(
-    input.runLine
-      ? [{ range: new monaco.Range(input.runLine, 1, input.runLine, 1), options: { linesDecorationsClassName: "cw-run-glyph" } }]
-      : [],
+    input.runLines.map((line) => ({
+      range: new monaco.Range(line, 1, line, 1),
+      options: { linesDecorationsClassName: "cw-run-glyph", linesDecorationsTooltip: "Run" },
+    })),
   );
 
   if (input.current) {

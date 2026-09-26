@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, CircleX, Loader2, Minus, OctagonAlert, Pause } from "lucide-react";
+import { CircleCheck, CircleX, Keyboard, Loader2, Minus, OctagonAlert, Pause } from "lucide-react";
 import { basename } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { DebugToolWindow } from "@/features/debug/DebugPanel";
@@ -24,6 +24,7 @@ const TITLES: Record<BottomTab, string> = {
 const toneClass = {
   neutral: "text-fg-subtle",
   running: "text-fg-subtle",
+  input: "text-warning",
   success: "text-success",
   danger: "text-danger",
   warning: "text-warning",
@@ -38,7 +39,7 @@ function SessionTab() {
   const meta = STATUS_META[run.error ? "SYSTEM_ERROR" : run.status];
   const label = run.error ? "Failed to start" : running && run.mode === "debug" && paused ? "Paused" : meta.label;
   const tone = running && run.mode === "debug" && paused ? "warning" : meta.tone;
-  const Icon = running && run.mode === "debug" && paused ? Pause : running ? Loader2 : meta.tone === "success" ? CircleCheck : meta.tone === "danger" ? CircleX : meta.tone === "warning" ? OctagonAlert : null;
+  const Icon = running && run.mode === "debug" && paused ? Pause : run.status === "WAITING_FOR_INPUT" ? Keyboard : running ? Loader2 : meta.tone === "success" ? CircleCheck : meta.tone === "danger" ? CircleX : meta.tone === "warning" ? OctagonAlert : null;
 
   return (
     <div className="flex h-full min-w-0 items-center gap-2">
@@ -48,7 +49,7 @@ function SessionTab() {
         <span className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-accent" />
       </span>
       <span className={cn("flex items-center gap-1 text-sm", toneClass[tone])}>
-        {Icon && <Icon className={cn("size-3.5", running && !paused && "animate-spin")} />}
+        {Icon && <Icon className={cn("size-3.5", running && !paused && run.status !== "WAITING_FOR_INPUT" && "animate-spin")} />}
         {label}
       </span>
     </div>

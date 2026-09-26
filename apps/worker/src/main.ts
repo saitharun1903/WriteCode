@@ -34,6 +34,8 @@ async function persistResult(result: ExecutionResult): Promise<void> {
       exitCode: result.exitCode ?? null,
       executionTime: result.executionTime ?? null,
       compileTime: result.compileTime ?? null,
+      queueTime: result.queueTime ?? null,
+      startupTime: result.startupTime ?? null,
       memoryUsed: result.memoryUsed !== undefined ? BigInt(result.memoryUsed) : null,
       message: result.message ?? null,
       stdout: stdout.text,
@@ -73,6 +75,7 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
   const events = new EventEmitter(redis, executionId);
   const isCancelled = async () => (await redis.exists(redisKeys.cancel(executionId))) === 1;
 
+  const queueTime = Math.max(0, Date.now() - job.data.enqueuedAt);
   let result: ExecutionResult;
   if (await isCancelled()) {
     const lang = request.language;
@@ -103,7 +106,7 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
     };
   } else {
     await prisma.execution.update({ where: { id: executionId }, data: { startedAt: new Date() } }).catch(() => {});
-    jlog.info("execution started", { mode: request.mode ?? "run", queuedMs: Date.now() - job.data.enqueuedAt });
+    jlog.info("execution started", { mode: request.mode ?? "run", interactive: request.interactive === true, queueTime });
     const common = {
       docker,
       executionId,
@@ -116,11 +119,11 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
       isCancelled,
       log: (msg: string, extra?: Record<string, unknown>) => jlog.error(msg, extra),
     };
-    if (request.mode === "debug") {
-      // The command reader blocks, so each session gets its own connection.
+    if (request.mode === "debug" || request.interactive) {
+      // The command/input reader blocks, so each session gets its own connection.
       const commandRedis = redis.duplicate();
       try {
-        result = await runDebugSession({ ...common, commandRedis });
+        result = request.mode === "debug" ? await runDebugSession({ ...common, commandRedis }) : await runExecution({ ...common, commandRedis });
       } finally {
         commandRedis.disconnect();
       }
@@ -128,14 +131,26 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
       result = await runExecution(common);
     }
   }
+  result = { ...result, queueTime };
 
   await events.result(result);
   await persistResult(result).catch((e) => jlog.error("failed to persist result", { error: String(e) }));
+  // One structured line per execution. Contains no source code or program output.
   jlog.info("execution finished", {
+    mode: request.mode ?? "run",
+    interactive: request.interactive === true,
+    runtime: request.language,
+    runtimeVersion: result.runtimeVersion,
+    sandboxRuntime: config.runtime ?? "runc",
+    fileCount: request.files.length,
     status: result.status,
-    compileMs: result.compileTime,
-    runMs: result.executionTime,
-    exitCode: result.exitCode,
+    terminationReason: result.message ?? null,
+    exitCode: result.exitCode ?? null,
+    queueTime,
+    startupTime: result.startupTime ?? null,
+    compileTime: result.compileTime ?? null,
+    executionTime: result.executionTime ?? null,
+    memoryPeakBytes: result.memoryUsed ?? null,
   });
   return result;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, Check, Copy, RotateCw, Search, Square, Trash2, WrapText, X } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, RotateCw, Search, Square, Trash2, WrapText, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -13,8 +13,87 @@ const streamClass: Record<LogChunk["stream"], string> = {
   stdout: "text-fg",
   stderr: "text-danger",
   compile: "text-danger",
+  stdin: "text-success",
   system: "text-fg-subtle",
 };
+
+/**
+ * Typed input for a running program. Shown while the program's stdin is open;
+ * highlighted when the kernel reports the program blocked reading it.
+ */
+function ConsoleInput() {
+  const run = useExecution((s) => s.run);
+  const sendInput = useExecution((s) => s.sendInput);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const waiting = run?.status === "WAITING_FOR_INPUT";
+
+  useEffect(() => {
+    if (waiting) inputRef.current?.focus({ preventScroll: true });
+  }, [waiting]);
+
+  if (!run || !run.interactive || !isRunning(run) || run.error) return null;
+  const accepting = !run.inputClosed && (run.status === "RUNNING" || run.status === "WAITING_FOR_INPUT");
+
+  const send = (eof = false) => {
+    if (!accepting) return;
+    sendInput(eof ? value : `${value}\n`, eof);
+    setValue("");
+  };
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        send();
+      }}
+      className={cn(
+        "flex h-9 shrink-0 items-center gap-2 border-t px-2 transition-colors",
+        waiting ? "border-warning/60 bg-warning-soft" : "border-line bg-surface-2",
+      )}
+    >
+      <Keyboard className={cn("size-4 shrink-0", waiting ? "text-warning" : "text-fg-subtle")} />
+      <span className={cn("hidden shrink-0 text-sm sm:inline", waiting ? "font-medium text-fg" : "text-fg-subtle")} aria-live="polite">
+        {run.inputClosed ? "Input closed" : waiting ? "Program waiting for input" : "Input"}
+      </span>
+      <input
+        ref={inputRef}
+        value={value}
+        disabled={!accepting}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "d" && e.ctrlKey) {
+            e.preventDefault();
+            send(true);
+          }
+        }}
+        aria-label="Program input"
+        placeholder={run.inputClosed ? "" : "Type input and press Enter"}
+        spellCheck={false}
+        autoComplete="off"
+        className="h-7 min-w-0 flex-1 rounded-[5px] border border-line-strong bg-surface-2 px-2 font-mono text-[13px] text-fg outline-none placeholder:font-sans placeholder:text-fg-subtle focus:border-accent disabled:opacity-50"
+      />
+      <button
+        type="submit"
+        disabled={!accepting}
+        className="flex h-7 shrink-0 items-center gap-1 rounded-[5px] bg-accent px-2.5 text-sm font-medium text-accent-fg hover:brightness-110 disabled:opacity-45"
+      >
+        <CornerDownLeft className="size-3.5" />
+        Send
+      </button>
+      <button
+        type="button"
+        disabled={!accepting}
+        onClick={() => send(true)}
+        title="Close the program's input (Ctrl+D)"
+        className="h-7 shrink-0 rounded-[5px] px-2 text-sm text-fg-muted hover:bg-hover disabled:opacity-45"
+      >
+        Send EOF
+      </button>
+      {run.inputError && <span className="truncate text-xs text-danger">{run.inputError}</span>}
+    </form>
+  );
+}
 
 function highlight(text: string, query: string) {
   if (!query) return text;
@@ -74,13 +153,14 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
   }, [run?.log, run?.result, follow]);
 
   return (
+    <div className="flex h-full min-h-0 flex-col">
     <div
       ref={scrollRef}
       onScroll={(e) => {
         const el = e.currentTarget;
         stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
       }}
-      className="h-full min-h-0 overflow-auto bg-surface-2"
+      className="min-h-0 flex-1 overflow-auto bg-surface-2"
       role="log"
       aria-live="polite"
       aria-label="Program output"
@@ -123,11 +203,13 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
             </div>
           )}
           {!run.error && <Epilogue run={run} />}
-          {running && run.status !== "RUNNING" && (
-            <span className="text-fg-subtle">{run.status === "COMPILING" ? "Compiling…" : "Starting…"}</span>
+          {running && (run.status === "SUBMITTING" || run.status === "QUEUED" || run.status === "STARTING" || run.status === "COMPILING") && (
+            <span className="text-fg-subtle">{run.status === "COMPILING" ? "Compiling…" : run.status === "QUEUED" ? "Waiting for a free sandbox…" : "Starting…"}</span>
           )}
         </div>
       )}
+    </div>
+    <ConsoleInput />
     </div>
   );
 }
@@ -142,6 +224,8 @@ export function RunMetrics() {
   const r = useExecution((s) => s.run?.result);
   if (!r) return null;
   const parts = [
+    r.queueTime !== undefined && `queue ${formatMs(r.queueTime)}`,
+    r.startupTime !== undefined && `sandbox ${formatMs(r.startupTime)}`,
     r.compileTime !== undefined && `compile ${formatMs(r.compileTime)}`,
     r.executionTime !== undefined && `run ${formatMs(r.executionTime)}`,
     r.memoryUsed !== undefined && `${(r.memoryUsed / 1024 / 1024).toFixed(1)} MB`,

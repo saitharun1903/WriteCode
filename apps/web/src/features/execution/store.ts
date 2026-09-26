@@ -2,7 +2,9 @@
 
 import { create } from "zustand";
 import {
+  anyFileIsRunnable,
   expandCommand,
+  findEntryPoints,
   isTerminalStatus,
   parseDiagnostics,
   requireLanguage,
@@ -21,7 +23,7 @@ import { useDebug } from "@/features/debug/store";
 import { ApiError, api, streamExecution, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
-export type LogStream = "stdout" | "stderr" | "compile" | "system";
+export type LogStream = "stdout" | "stderr" | "compile" | "stdin" | "system";
 
 export interface LogChunk {
   stream: LogStream;
@@ -34,6 +36,12 @@ export interface RunState {
   /** Entry file the run was started with. */
   entry: string;
   mode: ExecutionMode;
+  /** The program's stdin stays open for typed input (no prepared input was given). */
+  interactive: boolean;
+  /** Typed input was closed with end-of-file. */
+  inputClosed?: boolean;
+  /** Last problem sending typed input. */
+  inputError?: string;
   /** SUBMITTING covers the gap between clicking Run and the server accepting the job. */
   status: ExecutionStatus | "SUBMITTING";
   log: LogChunk[];
@@ -52,7 +60,14 @@ interface ExecutionState {
   historyVersion: number;
 
   checkHealth: () => Promise<void>;
-  execute: (options?: { mode?: ExecutionMode }) => Promise<void>;
+  /**
+   * Runs or debugs the project's entry file. `entry` runs another file and
+   * remembers it as the entry. When the entry file has no entry point and
+   * several files do, asks which one to run instead of guessing.
+   */
+  execute: (options?: { mode?: ExecutionMode; entry?: string }) => Promise<void>;
+  /** Sends a line (or raw text) of input to the running program; `eof` closes its stdin. */
+  sendInput: (text: string, eof?: boolean) => void;
   cancel: () => Promise<void>;
   clearOutput: () => void;
   bumpHistory: () => void;
@@ -60,6 +75,9 @@ interface ExecutionState {
 
 const MAX_LOG_CHARS = 1_200_000;
 let stream: ExecutionStream | null = null;
+
+/** Called when the project's entry file has no entry point and several others do. Set by the UI. */
+export const entryChooser: { open: ((mode: ExecutionMode) => void) | null } = { open: null };
 
 /** Sends a command to the active debug session over its event socket. */
 export function sendDebugCommand(requestId: string, command: DebugCommand): boolean {
@@ -148,15 +166,32 @@ export const useExecution = create<ExecutionState>((set, get) => {
       const current = get().run;
       if (current && !isTerminalStatus(current.status as ExecutionStatus) && !current.error) return;
 
+      if (options?.entry) useWorkspace.getState().setEntryFile(options.entry);
       await useWorkspace.getState().flush();
-      const project = useWorkspace.getState().project;
+      let project = useWorkspace.getState().project;
       if (!project) return;
+
+      // Compiled languages start from a main function; resolve which file holds it.
+      if (!anyFileIsRunnable(project.language)) {
+        const entries = findEntryPoints(project.language, project.files);
+        const entryFiles = [...new Set(entries.map((e) => e.file))];
+        if (entries.length > 0 && !entryFiles.includes(project.entryFile)) {
+          if (entryFiles.length === 1) {
+            useWorkspace.getState().setEntryFile(entryFiles[0]!);
+            project = useWorkspace.getState().project!;
+          } else if (entryChooser.open) {
+            entryChooser.open(mode);
+            return;
+          }
+        }
+      }
       if (!project.files.some((f) => f.path === project.entryFile)) {
         set({
           run: {
             projectId: project.id,
             entry: project.entryFile,
             mode,
+            interactive: false,
             status: "SYSTEM_ERROR",
             log: [],
             startedAt: Date.now(),
@@ -167,12 +202,15 @@ export const useExecution = create<ExecutionState>((set, get) => {
       }
 
       const lang = requireLanguage(project.language);
+      // With no prepared input, the program reads what the user types while it runs.
+      const interactive = !project.stdin;
       set({
         diagnostics: [],
         run: {
           projectId: project.id,
           entry: project.entryFile,
           mode,
+          interactive,
           status: "SUBMITTING",
           // The real command the sandbox runs, shown first like a desktop IDE console.
           log: [{ stream: "system", text: `${expandCommand(lang.runtime.command, { entry: project.entryFile, files: project.files }).join(" ")}\n` }],
@@ -187,6 +225,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           files: snapshotFiles(project),
           entry: project.entryFile,
           stdin: project.stdin || undefined,
+          interactive,
           ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : {}),
         }));
       } catch (e) {
@@ -210,6 +249,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
             case "stdout":
             case "stderr":
             case "compile":
+            case "stdin":
               set((s) => ({ run: s.run ? { ...s.run, log: appendLog(s.run.log, { stream: event.type, text: event.chunk }) } : s.run }));
               break;
             case "debug":
@@ -221,6 +261,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           }
         },
         onDebugError: (requestId, message) => useDebug.getState().onCommandError(requestId, message),
+        onInputError: (message) => set((s) => ({ run: s.run && s.run.id === id ? { ...s.run, inputError: message } : s.run })),
         onError: async (message) => {
           // The stream dropped; the execution may still have finished. Ask once before reporting failure.
           try {
@@ -255,6 +296,16 @@ export const useExecution = create<ExecutionState>((set, get) => {
       } catch {
         // The result event (CANCELLED or otherwise) is authoritative; nothing to do here.
       }
+    },
+
+    sendInput(text, eof = false) {
+      const run = get().run;
+      if (!run?.id || !run.interactive || run.inputClosed || !isRunning(run)) return;
+      if (!stream?.sendInput(text, eof)) {
+        set((s) => ({ run: s.run ? { ...s.run, inputError: "Not connected to the program." } : s.run }));
+        return;
+      }
+      set((s) => ({ run: s.run ? { ...s.run, inputError: undefined, inputClosed: eof || s.run.inputClosed } : s.run }));
     },
 
     clearOutput() {

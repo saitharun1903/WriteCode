@@ -12,26 +12,42 @@ export interface DebugAdapter {
   argv: string[];
   /** Language-specific fields of the initial `launch` request. */
   launch: Record<string, unknown>;
+  /** Setup commands to run after the files are written. */
+  setup: string[][];
+  /**
+   * Whether the kernel wait-channel monitor can tell when the program waits
+   * for input. False when the adapter reports input waits itself.
+   */
+  monitorInput: boolean;
 }
 
 const STDIN_PATH = "/tmp/cw-stdin";
+/** JDI launches `<home>/bin/java`; this wrapper gives the program its stdin directly. */
+const JAVA_WRAPPER_HOME = "/tmp/cwdbg/jvm";
 const PYTHON_ADAPTER_URL = new URL("../../debug-adapters/python/cw_debug_adapter.py", import.meta.url);
 const PYTHON_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.py";
 
 let pythonSource: Promise<string> | null = null;
 
-export async function debugAdapterFor(docker: Docker, request: ExecutionRequest): Promise<DebugAdapter> {
-  const common = { stdinPath: STDIN_PATH, files: request.files.map((f) => f.path), breakpoints: request.breakpoints ?? {} };
+/** `stdinPath` is the program's stdin: the input file, or the interactive FIFO. */
+export async function debugAdapterFor(docker: Docker, request: ExecutionRequest, stdinPath = STDIN_PATH): Promise<DebugAdapter> {
+  const common = { stdinPath, files: request.files.map((f) => f.path), breakpoints: request.breakpoints ?? {} };
   switch (request.language) {
     case "java": {
       const lang = requireLanguage("java");
       const mainClass = expandCommand(["{entryClass}"], { entry: request.entry, files: request.files })[0]!;
       // Program JVM flags mirror normal runs, with a heap cap so both JVMs fit.
       const vmOptions = lang.runtime.command.filter((a) => a.startsWith("-X")).concat("-Xmx192m").join(" ");
+      const wrapper = `${JAVA_WRAPPER_HOME}/bin/java`;
       return {
-        files: await javaAdapterClasses(docker),
+        files: [
+          ...(await javaAdapterClasses(docker)),
+          { path: wrapper, content: ["#!/bin/sh", `exec "\${JAVA_HOME:-/opt/java/openjdk}/bin/java" "$@" < ${stdinPath}`, ""].join("\n") },
+        ],
         argv: ["java", "-Xmx64m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xshare:auto", "-cp", ADAPTER_DIR, ADAPTER_MAIN],
-        launch: { ...common, mainClass, classpath: "out", vmOptions },
+        launch: { ...common, mainClass, classpath: "out", vmOptions, javaHome: JAVA_WRAPPER_HOME },
+        setup: [["chmod", "755", wrapper]],
+        monitorInput: true,
       };
     }
     case "python": {
@@ -43,6 +59,9 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest)
         files: [{ path: PYTHON_ADAPTER_PATH, content: await pythonSource }],
         argv: ["python3", PYTHON_ADAPTER_PATH],
         launch: { ...common, entry: request.entry, root: SANDBOX_WORKDIR },
+        setup: [],
+        // The adapter's own command reader also blocks on a pipe, so it reports input waits itself.
+        monitorInput: false,
       };
     }
     default:
