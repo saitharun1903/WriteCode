@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every color, radius, shadow and motion value in the app
+ * comes from here. Components use the Tailwind utilities generated from
+ * @theme (bg-surface, text-fg-muted, border-line, ...), never raw hex values.
+ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces, from the canvas behind panels up to floating menus. */
+  --canvas: #0a0b0d;
+  --surface: #0f1113;
+  --surface-2: #141619;
+  --surface-3: #1a1d21;
+  --overlay: #1c1f24;
+
+  --line: #1f2328;
+  --line-strong: #2b3037;
+
+  --fg: #e7e9ec;
+  --fg-muted: #9aa1ab;
+  --fg-subtle: #6b727d;
+  --fg-faint: #474d56;
+
+  /* One accent. Used for primary actions, focus and the active selection. */
+  --accent: #6ee7c8;
+  --accent-fg: #04120e;
+  --accent-soft: rgb(110 231 200 / 0.12);
+  --accent-line: rgb(110 231 200 / 0.35);
+
+  --success: #5fd38d;
+  --success-soft: rgb(95 211 141 / 0.12);
+  --danger: #f2767b;
+  --danger-soft: rgb(242 118 123 / 0.12);
+  --warning: #e8b85c;
+  --warning-soft: rgb(232 184 92 / 0.12);
+  --info: #7aa7ff;
+  --info-soft: rgb(122 167 255 / 0.12);
+
+  --selection: rgb(110 231 200 / 0.18);
+  --hover: rgb(255 255 255 / 0.04);
+  --active: rgb(255 255 255 / 0.07);
+
+  --shadow-float: 0 0 0 1px rgb(0 0 0 / 0.4), 0 8px 24px -6px rgb(0 0 0 / 0.55), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --canvas: #eceef1;
+  --surface: #f7f8fa;
+  --surface-2: #ffffff;
+  --surface-3: #f1f3f5;
+  --overlay: #ffffff;
+
+  --line: #e1e4e8;
+  --line-strong: #cfd4da;
+
+  --fg: #16181c;
+  --fg-muted: #555c66;
+  --fg-subtle: #7b828c;
+  --fg-faint: #a9afb7;
+
+  --accent: #0f9b7a;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(15 155 122 / 0.1);
+  --accent-line: rgb(15 155 122 / 0.4);
+
+  --success: #1d8a4e;
+  --success-soft: rgb(29 138 78 / 0.1);
+  --danger: #c93a41;
+  --danger-soft: rgb(201 58 65 / 0.09);
+  --warning: #a86a00;
+  --warning-soft: rgb(168 106 0 / 0.1);
+  --info: #2f63d1;
+  --info-soft: rgb(47 99 209 / 0.1);
+
+  --selection: rgb(15 155 122 / 0.16);
+  --hover: rgb(0 0 0 / 0.04);
+  --active: rgb(0 0 0 / 0.07);
+
+  --shadow-float: 0 0 0 1px rgb(15 20 30 / 0.08), 0 8px 24px -6px rgb(15 20 30 / 0.18), 0 2px 6px -2px rgb(15 20 30 / 0.1);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-overlay: var(--overlay);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-code), ui-monospace, "Cascadia Code", Menlo, monospace;
+
+  /* Dense IDE type scale. */
+  --text-2xs: 10.5px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 11.5px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12.5px;
+  --text-sm--line-height: 18px;
+  --text-base: 13.5px;
+  --text-base--line-height: 20px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 9px;
+
+  --shadow-float: var(--shadow-float);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-pop: cw-pop 120ms var(--ease-out-quint);
+  --animate-fade: cw-fade 120ms ease-out;
+  --animate-slide-up: cw-slide-up 160ms var(--ease-out-quint);
+
+  @keyframes cw-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+  @keyframes cw-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes cw-slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    background: var(--canvas);
+    color: var(--fg);
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: var(--selection);
+  }
+
+  :focus-visible {
+    outline: 1.5px solid var(--accent);
+    outline-offset: -1.5px;
+  }
+
+  /* Thin, calm scrollbars that match the surface they sit on. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
+  button {
+    cursor: default;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
