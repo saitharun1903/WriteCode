@@ -34,7 +34,8 @@ export function StatusBar() {
   const crumbs = project ? [project.name, ...(activeFile ? activeFile.split("/") : [])] : [];
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-0.5 border-t border-line bg-canvas px-1.5">
+    // data-save-state lets tests (including against production builds) wait for autosave.
+    <footer data-save-state={saveState} className="flex h-7 shrink-0 items-center gap-0.5 border-t border-line bg-canvas px-1.5">
       <nav aria-label="Navigation path" className="flex min-w-0 items-center">
         {crumbs.map((c, i) => (
           <Fragment key={i}>

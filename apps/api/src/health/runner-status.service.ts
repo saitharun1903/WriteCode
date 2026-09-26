@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Redis } from "ioredis";
 import { redisKeys, type RunnerHeartbeat } from "@cw/shared";
 import { REDIS } from "../infra/infra.module.js";
@@ -10,12 +10,29 @@ export interface RunnerStatus {
   workers: number;
 }
 
+/** What users see in production when execution is unavailable; the specific cause goes to the logs. */
+export const UNAVAILABLE_MESSAGE = "Code execution is temporarily unavailable. Please try again in a minute.";
+
 /** Aggregates worker heartbeats into a single view of sandbox availability. */
 @Injectable()
 export class RunnerStatusService {
+  private readonly logger = new Logger(RunnerStatusService.name);
+  private lastLogged?: string;
+
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   async get(): Promise<RunnerStatus> {
+    const status = await this.read();
+    if (!status.reason || process.env.NODE_ENV !== "production") return status;
+    // Setup instructions (e.g. "start Docker Desktop") are for operators, not visitors.
+    if (status.reason !== this.lastLogged) {
+      this.logger.warn(`runner not fully available: ${status.reason}`);
+      this.lastLogged = status.reason;
+    }
+    return { ...status, reason: status.available ? undefined : UNAVAILABLE_MESSAGE };
+  }
+
+  private async read(): Promise<RunnerStatus> {
     const keys: string[] = [];
     let cursor = "0";
     do {

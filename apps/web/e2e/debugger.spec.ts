@@ -30,12 +30,9 @@ const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first(
 const debugPanel = (page: Page) => page.getByRole("complementary", { name: "Debugger" });
 const output = (page: Page) => page.getByRole("log", { name: "Program output" });
 
-/** Waits until autosave has written the project to IndexedDB. */
+/** Waits until autosave has written the project to IndexedDB (works against production builds too). */
 async function waitSaved(page: Page) {
-  await page.waitForFunction(() => {
-    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
-    return w.__cwWorkspace?.getState().saveState === "saved";
-  });
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
 async function newProject(page: Page, language: "Java" | "Python", code: string) {

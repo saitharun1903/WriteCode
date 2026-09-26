@@ -170,7 +170,7 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
           {runner === "offline" ? (
             <>
               <p>The execution service is not reachable.</p>
-              <p>Start it with pnpm dev, see the README.</p>
+              <p>{process.env.NODE_ENV === "production" ? "Check your connection and try again." : "Start it with pnpm dev, see the README."}</p>
             </>
           ) : (
             <p className="flex items-center gap-1.5">

@@ -6,6 +6,20 @@ for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(),
   if (existsSync(path)) process.loadEnvFile(path);
 }
 
+const production = process.env.NODE_ENV === "production";
+
+/**
+ * A setting with a local-development default. In production the variable must
+ * be set, so a missing value fails at startup instead of quietly pointing at
+ * localhost or using a development secret.
+ */
+function setting(name: string, devDefault: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  if (production) throw new Error(`${name} must be set in production`);
+  return devDefault;
+}
+
 function int(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -16,9 +30,9 @@ function int(name: string, fallback: number): number {
 
 export const config = {
   port: int("API_PORT", 4000),
-  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
-  webOrigins: (process.env.WEB_ORIGIN || "http://localhost:3000").split(",").map((s) => s.trim()),
-  clientHashSalt: process.env.CLIENT_HASH_SALT || "local-dev-salt",
+  redisUrl: setting("REDIS_URL", "redis://localhost:6379"),
+  webOrigins: setting("WEB_ORIGIN", "http://localhost:3000").split(",").map((s) => s.trim()),
+  clientHashSalt: setting("CLIENT_HASH_SALT", "local-dev-salt"),
   trustProxy: process.env.TRUST_PROXY === "1",
   rateLimit: {
     /** Executions per client per minute. */
@@ -31,3 +45,11 @@ export const config = {
   /** WebSocket subscriptions allowed per connection. */
   maxSubscriptionsPerSocket: 8,
 };
+
+if (production) {
+  // DATABASE_URL is read by @cw/db; check it here so a missing value fails at startup.
+  setting("DATABASE_URL", "");
+  if (config.clientHashSalt === "local-dev-salt" || config.clientHashSalt.length < 16) {
+    throw new Error("CLIENT_HASH_SALT must be a random value of at least 16 characters in production");
+  }
+}

@@ -1,0 +1,20 @@
+# Build context for the production images: sources only.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/*.tsbuildinfo
+**/test-results
+**/playwright-report
+**/__pycache__
+**/*.pyc
+apps/web/public/monaco
+packages/db/src/generated
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+deploy/.env*

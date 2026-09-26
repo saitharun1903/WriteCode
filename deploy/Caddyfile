@@ -1,0 +1,63 @@
+# Reverse proxy for Code Workspace.
+#
+# PUBLIC_HOST is the canonical hostname (e.g. writecode.in). Caddy obtains and
+# renews its TLS certificate automatically and redirects HTTP to HTTPS. For
+# local staging, PUBLIC_HOST=localhost uses Caddy's internal CA instead.
+# Only this container publishes ports; the API, worker, Redis and Postgres are
+# on private networks.
+
+# Clients are not trusted proxies, so Caddy replaces any X-Forwarded-For they send
+# with their real address; the API's per-client rate limits rely on that.
+# (Let's Encrypt does not require an account email, so none is configured.)
+
+# Container health check only: plain HTTP on a port that is not published.
+:8081 {
+	respond /healthz "ok" 200
+}
+
+www.{$PUBLIC_HOST} {
+	redir https://{$PUBLIC_HOST}{uri} permanent
+}
+
+{$PUBLIC_HOST} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# The IDE and API share this origin. Monaco runs web workers from blobs.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self' wss://{$PUBLIC_HOST}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# API and live execution events (WebSocket upgrade is proxied transparently).
+	@backend path /api/* /ws
+	handle @backend {
+		reverse_proxy api:4000 {
+			health_uri /api/v1/health/live
+			health_interval 15s
+		}
+	}
+
+	# Liveness of the proxy itself, for external uptime checks.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# The IDE: static files exported by Next.js.
+	handle {
+		root * /srv
+		@immutable path /_next/static/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} {path}.html /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

@@ -26,7 +26,7 @@ import {
   type ExecutionResult,
 } from "@cw/shared";
 import { config } from "../config.js";
-import { RunnerStatusService } from "../health/runner-status.service.js";
+import { RunnerStatusService, UNAVAILABLE_MESSAGE } from "../health/runner-status.service.js";
 import { DEBUG_QUEUE_TOKEN, EXECUTION_QUEUE_TOKEN, PRISMA, REDIS, type ExecutionQueue } from "../infra/infra.module.js";
 import { createRedis } from "../infra/redis.js";
 import { ExecutionStore } from "./execution-store.js";
@@ -82,6 +82,17 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
    * can drive the program. The server keeps just the token's hash.
    */
   async create(body: unknown, client: string): Promise<{ id: string; controlToken: string }> {
+    try {
+      return await this.enqueue(body, client);
+    } catch (e) {
+      if (e instanceof HttpException) throw e;
+      // Redis or Postgres unreachable: an outage, not a bug in the request.
+      this.logger.error(`could not queue execution: ${e instanceof Error ? e.message : String(e)}`);
+      throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE);
+    }
+  }
+
+  private async enqueue(body: unknown, client: string): Promise<{ id: string; controlToken: string }> {
     const parsed = validateExecutionRequest(body);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     const request = parsed.value;

@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { Worker, type Job } from "bullmq";
 import { Redis } from "ioredis";
 import { createPrismaClient } from "@cw/db";
@@ -67,6 +68,8 @@ async function heartbeat(): Promise<void> {
     at: Date.now(),
   };
   await redis.set(redisKeys.runnerHeartbeat(config.workerId), JSON.stringify(beat), "PX", HEARTBEAT_MS * 3);
+  // Healthy means Redis accepted the heartbeat and Docker answered.
+  if (config.healthFile && dockerUp) await writeFile(config.healthFile, String(Date.now())).catch(() => {});
 }
 
 async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {

@@ -14,3 +14,7 @@ playwright-report/
 # Python bytecode (from running debug adapters on the host)
 __pycache__/
 *.pyc
+!.env.production.example
+
+# Deployment state on the server
+deploy/.last-good

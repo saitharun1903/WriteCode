@@ -1,8 +1,17 @@
 import type { DebugCommand, ExecutionRequest, ExecutionResult, ExecutionStreamEvent, LanguageDefinition } from "@cw/shared";
 
-/** Public base URL of the API. Not a secret; defaults to the local dev server. */
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
-const WS_URL = API_URL.replace(/^http/, "ws");
+/**
+ * Public base URL of the API. Not a secret. Production builds default to the
+ * page's own origin (the reverse proxy serves the site and the API together);
+ * development defaults to the local API server.
+ */
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:4000")).replace(/\/$/, "");
+
+/** WebSocket endpoint: wss:// on HTTPS pages. */
+function wsUrl(): string {
+  if (API_URL) return `${API_URL.replace(/^http/, "ws")}/ws`;
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -76,7 +85,7 @@ export function streamExecution(
     onInputError?: (message: string) => void;
   },
 ): ExecutionStream {
-  const ws = new WebSocket(`${WS_URL}/ws`);
+  const ws = new WebSocket(wsUrl());
   let done = false;
 
   ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", executionId }));

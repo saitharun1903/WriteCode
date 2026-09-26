@@ -231,9 +231,15 @@ export const useExecution = create<ExecutionState>((set, get) => {
           ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : mode === "visualize" ? { mode } : {}),
         }));
       } catch (e) {
-        if (e instanceof ApiError && e.status === 0) {
+        // 0: no response at all; 502/504: the reverse proxy could not reach the API.
+        if (e instanceof ApiError && (e.status === 0 || e.status === 502 || e.status === 504)) {
           set({ runner: "offline" });
-          return fail("Execution service unreachable", "Start the API and worker (see README → Running locally), then retry.");
+          return fail(
+            "Execution service unreachable",
+            process.env.NODE_ENV === "production"
+              ? "The server could not be reached. Check your connection and try again."
+              : "Start the API and worker (see README → Running locally), then retry.",
+          );
         }
         if (e instanceof ApiError && e.status === 429) return fail("Too many runs", "You are being rate limited. Wait a few seconds and retry.");
         return fail("Could not start execution", e instanceof Error ? e.message : String(e), e instanceof ApiError ? e.requestId : undefined);

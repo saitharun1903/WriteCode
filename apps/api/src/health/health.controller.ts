@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from "@nestjs/common";
+import { Controller, Get, HttpException, HttpStatus, Inject } from "@nestjs/common";
 import type { Redis } from "ioredis";
 import type { PrismaClient } from "@cw/db";
 import { LANGUAGES } from "@cw/shared";
@@ -27,6 +27,24 @@ export class HealthController {
     private readonly runners: RunnerStatusService,
   ) {}
 
+  /** Liveness: the process is up and serving. Checks nothing else, so it never hangs. */
+  @Get("health/live")
+  live() {
+    return { status: "ok" };
+  }
+
+  /**
+   * Readiness: Redis, the database and at least one execution worker are
+   * reachable. 503 otherwise, with the details. Every probe has a timeout.
+   */
+  @Get("health/ready")
+  async ready() {
+    const report = await this.health();
+    if (report.status !== "ok") throw new HttpException(report, HttpStatus.SERVICE_UNAVAILABLE);
+    return report;
+  }
+
+  /** Detailed status for the IDE's status bar (always 200). */
   @Get("health")
   async health() {
     const [redis, database] = await Promise.all([probe(() => this.redis.ping()), probe(() => this.prisma.$queryRaw`SELECT 1`)]);

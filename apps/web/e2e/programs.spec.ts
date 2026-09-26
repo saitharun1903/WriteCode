@@ -16,11 +16,9 @@ const debugPanel = (page: Page) => page.getByRole("complementary", { name: "Debu
 const variables = (page: Page) => debugPanel(page).getByRole("tree", { name: "Variables" });
 const callStack = (page: Page) => debugPanel(page).getByRole("list", { name: "Call stack" });
 
+/** Waits until autosave has written the project to IndexedDB (works against production builds too). */
 async function waitSaved(page: Page) {
-  await page.waitForFunction(() => {
-    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
-    return w.__cwWorkspace?.getState().saveState === "saved";
-  });
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
 async function freshProject(page: Page, language: "Java" | "Python") {

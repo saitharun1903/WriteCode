@@ -29,8 +29,9 @@ async function bootstrap() {
   app.useWebSocketAdapter(new WsAdapter(app));
   app.enableShutdownHooks();
 
-  await app.listen(config.port);
-  new ConsoleLogger({ json: true, prefix: "api" }).log(`API listening on http://localhost:${config.port}`, "Bootstrap");
+  // All interfaces: in production the API is reached through the reverse proxy on a private network.
+  await app.listen(config.port, "0.0.0.0");
+  new ConsoleLogger({ json: true, prefix: "api" }).log(`API listening on port ${config.port}`, "Bootstrap");
 }
 
 void bootstrap();

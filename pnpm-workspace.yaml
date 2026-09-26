@@ -9,7 +9,9 @@ allowBuilds:
   prisma: true
   "@prisma/engines": true
   msgpackr-extract: true
-  cpu-features: set this to true or false
-  protobufjs: set this to true or false
-  ssh2: set this to true or false
-  esbuild: set this to true or false
+  # Not needed: optional SSH transport of dockerode, esbuild ships its binary as a
+  # platform package, and protobufjs's script only prints a notice.
+  cpu-features: false
+  ssh2: false
+  esbuild: false
+  protobufjs: false

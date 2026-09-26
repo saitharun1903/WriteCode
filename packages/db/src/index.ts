@@ -8,6 +8,7 @@ export { ExecutionStatus as DbExecutionStatus } from "./generated/prisma/enums.j
 export const DEFAULT_DATABASE_URL = "postgresql://cw:cw_local_dev@localhost:5432/code_workspace";
 
 /** Creates a Prisma client backed by the node-postgres driver adapter. */
-export function createPrismaClient(url = process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL): PrismaClient {
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+export function createPrismaClient(url = process.env.DATABASE_URL): PrismaClient {
+  if (!url && process.env.NODE_ENV === "production") throw new Error("DATABASE_URL must be set in production");
+  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url || DEFAULT_DATABASE_URL }) });
 }

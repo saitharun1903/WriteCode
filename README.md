@@ -159,6 +159,19 @@ Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromiu
 | Search in project | `Ctrl/⌘ + Shift + F` |
 | Problems | `Ctrl/⌘ + Shift + M` |
 
+## Production
+
+Production runs on one Docker-capable Linux server with Docker Compose: Caddy
+(automatic HTTPS, static IDE, `/api` and `/ws` proxy), the API, the execution
+worker, Redis and Postgres. Only Caddy publishes ports. See
+[deploy/README.md](deploy/README.md) for the server setup, DNS records,
+deployments with automatic rollback, health checks and the security model.
+
+`node deploy/smoke.mjs https://<host>` runs real and hostile programs through a
+deployed site's public HTTPS API and WebSocket. CI (`.github/workflows/ci.yml`)
+runs lint, typecheck, unit tests, the build, the Docker execution matrix and the
+production image build on every push.
+
 ## Known limitations
 
 - **C/C++ debugging** is not available: it needs a native debugger (GDB) integration, which does not exist yet. The Debug button is hidden for those languages.

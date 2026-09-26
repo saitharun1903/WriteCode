@@ -8,6 +8,16 @@ for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(),
   if (existsSync(path)) process.loadEnvFile(path);
 }
 
+const production = process.env.NODE_ENV === "production";
+
+/** A setting with a local-development default; required in production. */
+function setting(name: string, devDefault: string): string {
+  const value = process.env[name];
+  if (value) return value;
+  if (production) throw new Error(`${name} must be set in production`);
+  return devDefault;
+}
+
 function int(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -18,7 +28,7 @@ function int(name: string, fallback: number, min: number, max: number): number {
 
 export const config = {
   workerId: `${hostname()}-${process.pid}`,
-  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisUrl: setting("REDIS_URL", "redis://localhost:6379"),
   concurrency: int("WORKER_CONCURRENCY", 2, 1, 32),
   /** Concurrent debug sessions per worker. Sessions are long-lived, so they have their own pool. */
   debugConcurrency: int("DEBUG_CONCURRENCY", 2, 0, 16),
@@ -34,8 +44,13 @@ export const config = {
   workspaceMb: 64,
   /** Largest single file a program may write (RLIMIT_FSIZE). */
   maxFileSizeBytes: 16 * 1024 * 1024,
+  /** Touched on every successful heartbeat; the container health check reads its age. */
+  healthFile: process.env.WORKER_HEALTH_FILE || "",
   /** Characters of each stream kept in Postgres; the live stream carries everything. */
   storedOutputChars: 64 * 1024,
 };
 
 export type WorkerConfig = typeof config;
+
+// DATABASE_URL is read by @cw/db; check it here so a missing value fails at startup.
+if (production) setting("DATABASE_URL", "");

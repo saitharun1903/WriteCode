@@ -1,0 +1,153 @@
+# Production stack for one Docker-capable Linux server.
+#
+#   internet ──443/80──▶ web (Caddy: TLS, static IDE, /api + /ws proxy)
+#                          │ edge network
+#                          ▼
+#                         api ──────────┐ backend network (internal: no internet)
+#                                       ├── redis     (queue, live events)
+#                         worker ───────┼── postgres  (execution records)
+#                           │           └──
+#                           ▼ /var/run/docker.sock
+#                     host Docker Engine ──▶ one sandbox container per run
+#
+# Only `web` publishes ports. The API never runs user code; it only queues it.
+# The worker is the only service that can reach Docker, has no published
+# ports and no internet access, and runs code only inside sandbox containers
+# (no network, non-root, read-only rootfs, CPU/memory/PID/output/time limits).
+#
+# Required variables (see deploy/.env.production.example):
+#   PUBLIC_HOST, POSTGRES_PASSWORD, CLIENT_HASH_SALT, DOCKER_GID, IMAGE_TAG
+
+name: writecode
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
+services:
+  web:
+    image: writecode/web:${IMAGE_TAG:?set IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      # Certificates and ACME account; must persist across deployments.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+    logging: *logging
+
+  api:
+    image: writecode/api:${IMAGE_TAG}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      DATABASE_URL: postgresql://cw:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/code_workspace
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: https://${PUBLIC_HOST},https://www.${PUBLIC_HOST}
+      CLIENT_HASH_SALT: ${CLIENT_HASH_SALT:?set CLIENT_HASH_SALT}
+      TRUST_PROXY: "1"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    networks: [edge, backend]
+    logging: *logging
+
+  worker:
+    image: writecode/worker:${IMAGE_TAG}
+    restart: unless-stopped
+    init: true
+    # Give sandboxes time to finish and be removed on shutdown.
+    stop_grace_period: 30s
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://cw:${POSTGRES_PASSWORD}@postgres:5432/code_workspace
+      REDIS_URL: redis://redis:6379
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      DEBUG_CONCURRENCY: ${DEBUG_CONCURRENCY:-2}
+      # Recommended on an internet-facing server: runsc (gVisor) puts a user-space
+      # kernel between user programs and the host. Empty uses runc.
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The socket's group on the host (stat -c %g /var/run/docker.sock), so the worker runs as non-root.
+    group_add: ["${DOCKER_GID:?set DOCKER_GID}"]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+    logging: *logging
+
+  migrate:
+    image: writecode/migrate:${IMAGE_TAG}
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://cw:${POSTGRES_PASSWORD}@postgres:5432/code_workspace
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+    logging: *logging
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: code_workspace
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cw -d code_workspace"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+    logging: *logging
+
+networks:
+  edge: {}
+  # No route to the internet: the worker talks only to Redis, Postgres and the Docker socket.
+  backend:
+    internal: true
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  redis_data: {}
+  postgres_data: {}

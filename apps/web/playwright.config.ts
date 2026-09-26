@@ -16,12 +16,17 @@ export default defineConfig({
     // Uses an installed browser; set PW_CHANNEL=chromium after `playwright install chromium` if preferred.
     channel: process.env.PW_CHANNEL ?? "msedge",
     viewport: { width: 1440, height: 900 },
+    // Local staging uses Caddy's internal certificate authority for https://localhost.
+    ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === "1",
     trace: "retain-on-failure",
   },
-  webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  // Against a deployed site (E2E_BASE_URL) nothing is started locally.
+  webServer: process.env.E2E_BASE_URL
+    ? undefined
+    : {
+        command: "pnpm dev",
+        url: "http://localhost:3000",
+        reuseExistingServer: true,
+        timeout: 120_000,
+      },
 });
