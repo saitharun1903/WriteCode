@@ -1,0 +1,36 @@
+{
+  "name": "@cw/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "nest start --watch --preserveWatchOutput",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cw/db": "workspace:*",
+    "@cw/shared": "workspace:*",
+    "@nestjs/common": "^12.1.0",
+    "@nestjs/core": "^12.1.0",
+    "@nestjs/platform-express": "^12.1.0",
+    "@nestjs/platform-ws": "^12.1.0",
+    "@nestjs/websockets": "^12.1.0",
+    "bullmq": "^6.3.8",
+    "ioredis": "^6.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^12.0.7",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.13.6",
+    "@types/ws": "^8.18.1",
+    "typescript": "6.0.3",
+    "vitest": "^5.0.2"
+  }
+}

@@ -1,0 +1,54 @@
+import { Global, Inject, Injectable, Module, type OnApplicationShutdown } from "@nestjs/common";
+import { Queue } from "bullmq";
+import type { Redis } from "ioredis";
+import { createPrismaClient, type PrismaClient } from "@cw/db";
+import { EXECUTION_QUEUE, type ExecutionJob } from "@cw/shared";
+import { createRedis } from "./redis.js";
+
+export const REDIS = Symbol("REDIS");
+export const PRISMA = Symbol("PRISMA");
+export const EXECUTION_QUEUE_TOKEN = Symbol("EXECUTION_QUEUE");
+
+export type ExecutionQueue = Queue<ExecutionJob>;
+
+@Injectable()
+class InfraLifecycle implements OnApplicationShutdown {
+  constructor(
+    @Inject(REDIS) private readonly redis: Redis,
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(EXECUTION_QUEUE_TOKEN) private readonly queue: ExecutionQueue,
+  ) {}
+
+  async onApplicationShutdown() {
+    await this.queue.close();
+    await this.prisma.$disconnect();
+    this.redis.disconnect();
+  }
+}
+
+/** Shared infrastructure clients: Redis, Postgres (Prisma) and the execution queue. */
+@Global()
+@Module({
+  providers: [
+    {
+      provide: REDIS,
+      // Fail fast while Redis is down instead of queueing commands indefinitely.
+      useFactory: () => createRedis("main", { maxRetriesPerRequest: 2, enableOfflineQueue: false }),
+    },
+    { provide: PRISMA, useFactory: () => createPrismaClient() },
+    {
+      provide: EXECUTION_QUEUE_TOKEN,
+      useFactory: () => {
+        const queue = new Queue<ExecutionJob>(EXECUTION_QUEUE, {
+          connection: createRedis("queue", { maxRetriesPerRequest: null }),
+        });
+        // Connection errors are already reported once by the Redis connection.
+        queue.on("error", () => {});
+        return queue;
+      },
+    },
+    InfraLifecycle,
+  ],
+  exports: [REDIS, PRISMA, EXECUTION_QUEUE_TOKEN],
+})
+export class InfraModule {}
