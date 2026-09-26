@@ -1,11 +1,12 @@
 "use client";
 
-import { Check, Copy, RotateCw, Search, Square, TerminalSquare, Trash2, X } from "lucide-react";
+import { Check, Copy, Pause, RotateCw, Search, Square, TerminalSquare, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { EmptyState } from "@/components/ui/primitives";
 import { runCommand } from "@/features/commands/registry";
+import { useDebug } from "@/features/debug/store";
 import { cn } from "@/lib/cn";
 import { STATUS_META, StatusPill, formatBytes, formatDuration } from "./status";
 import { isRunning, useExecution, type LogChunk } from "./store";
@@ -46,6 +47,7 @@ export function OutputPanel() {
   const stickToBottom = useRef(true);
 
   const running = isRunning(run);
+  const debugPaused = useDebug((s) => s.phase === "paused") && run?.mode === "debug" && running;
   const plainText = useMemo(() => run?.log.filter((c) => c.stream !== "system").map((c) => c.text).join("") ?? "", [run?.log]);
   const matchCount = useMemo(() => {
     if (!query) return 0;
@@ -76,7 +78,13 @@ export function OutputPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-2">
-        {run && !run.error && <StatusPill status={run.status} />}
+        {run && !run.error && (debugPaused ? (
+          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm bg-warning-soft px-1.5 text-xs font-medium text-warning">
+            <Pause className="size-3 fill-current" /> Paused
+          </span>
+        ) : (
+          <StatusPill status={run.status} />
+        ))}
         {result && (
           <dl className="flex items-center gap-3 text-xs text-fg-subtle">
             {result.exitCode !== undefined && (

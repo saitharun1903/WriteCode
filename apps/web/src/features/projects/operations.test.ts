@@ -70,4 +70,27 @@ describe("project operations", () => {
     p = ops.addFile(p, "", "Untitled.java").project;
     expect(ops.uniqueName(p, "", "Untitled", ".java")).toBe("Untitled2.java");
   });
+
+  it("toggles breakpoints and keeps them sorted and unique", () => {
+    let p = base();
+    p = ops.toggleBreakpoint(p, "Main.java", 5);
+    p = ops.toggleBreakpoint(p, "Main.java", 2);
+    expect(ops.breakpointsFor(p, "Main.java")).toEqual([2, 5]);
+    p = ops.toggleBreakpoint(p, "Main.java", 5);
+    expect(ops.breakpointsFor(p, "Main.java")).toEqual([2]);
+    expect(ops.setBreakpoints(p, "Main.java", [2])).toBe(p);
+    p = ops.setBreakpoints(p, "Main.java", []);
+    expect(p.breakpoints).toEqual({});
+  });
+
+  it("moves and drops breakpoints with their files", () => {
+    let p = ops.addFolder(base(), "", "lib").project;
+    p = ops.addFile(p, "lib", "A.java").project;
+    p = ops.toggleBreakpoint(p, "lib/A.java", 3);
+    p = ops.toggleBreakpoint(p, "Main.java", 1);
+    p = ops.renamePath(p, "lib", "core").project;
+    expect(p.breakpoints).toEqual({ "core/A.java": [3], "Main.java": [1] });
+    p = ops.deletePath(p, "core");
+    expect(p.breakpoints).toEqual({ "Main.java": [1] });
+  });
 });

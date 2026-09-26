@@ -9,6 +9,8 @@ import { ExecutionsService, assertExecutionId } from "../executions/executions.s
 import { StreamHub } from "./stream-hub.js";
 
 const MAX_MESSAGE_BYTES = 4096;
+/** How long a live session survives with nobody watching (covers quick reconnects). */
+const ORPHAN_GRACE_MS = 5000;
 /** Debug commands allowed per connection per second. */
 const MAX_COMMANDS_PER_SECOND = 30;
 
@@ -35,6 +37,7 @@ export class StreamGateway implements OnGatewayConnection {
     }
 
     const unsubscribers = new Set<() => void>();
+    const followed = new Set<string>();
     let windowStart = Date.now();
     let commandsInWindow = 0;
     const sendJson = (payload: unknown) => {
@@ -70,12 +73,20 @@ export class StreamGateway implements OnGatewayConnection {
       } catch {
         return sendJson({ type: "error", message: "Invalid execution id." });
       }
+      followed.add(executionId);
       void this.subscribe(executionId, sendJson, unsubscribers);
     });
 
     client.on("close", () => {
       for (const u of unsubscribers) u();
       unsubscribers.clear();
+      // A debug session nobody is watching would hold a sandbox until it times out; end it.
+      for (const id of followed) {
+        setTimeout(() => {
+          if (this.hub.subscribers(id) > 0) return;
+          void this.executions.sendDebugCommand(id, "orphaned", { cmd: "terminate" }).catch(() => {});
+        }, ORPHAN_GRACE_MS);
+      }
     });
     client.on("error", (e) => this.logger.warn(`socket error: ${e.message}`));
   }

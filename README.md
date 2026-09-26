@@ -13,7 +13,8 @@ A browser-native IDE that compiles and runs real code in isolated sandboxes. No 
 | File explorer (create, rename, move, delete, context menus) | Working, E2E-tested |
 | Project search, snapshots with diff, run history | Working |
 | Real execution: Java, Python, C++, C, JavaScript, TypeScript | Working, E2E-tested against Docker (compile errors, stdin, time/memory/output limits, no network) |
-| Debugger (JDWP / DAP) | Not started (planned) |
+| Java debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
+| Python debugger | Not started (planned) |
 | Visualizer (execution events) | Not started (planned) |
 
 Languages: **Java 21, Python 3.13, C++ (GCC 14)** are the primary targets. C, JavaScript and TypeScript are marked *beta*.
@@ -42,6 +43,14 @@ apps/worker    Execution worker (BullMQ consumer, Docker sandbox)
 packages/shared  Language registry, execution contract, diagnostics parsers, validation
 packages/db      Prisma schema, migrations and client
 ```
+
+### Debugger
+
+Java debugging runs the real JVM under JDI/JDWP inside the same sandbox as normal runs. A small adapter (`apps/worker/debug-adapters/java/CwDebugAdapter.java`, compiled once per worker) launches your program in a second JVM over loopback and speaks JSON lines with the worker. Commands flow browser → WebSocket → API → Redis stream → worker → adapter, and events flow back the same way.
+
+- Breakpoints are saved with the project, follow their code as you edit, and show hollow when no code exists on that line.
+- Watch expressions support variables, fields, array indexing, `.length`, arithmetic, comparisons and logic. They never call methods, so evaluating them cannot change program state.
+- Debug sessions use a separate queue and pool (`DEBUG_CONCURRENCY`, default 2), with limits of 15 minutes per session, 10 minutes idle and 30 seconds of cumulative running time while not paused. A session whose browser disconnects is stopped after 5 seconds.
 
 ### Sandbox security model
 
@@ -109,8 +118,14 @@ Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromiu
 
 | Action | Shortcut |
 | --- | --- |
-| Run | `Ctrl/⌘ + Enter`, `F5` |
+| Run | `Ctrl/⌘ + Enter` |
+| Start debugging / Continue | `F5` (runs normally for languages without a debugger) |
 | Stop | `Shift + F5` |
+| Restart debugging | `Ctrl/⌘ + Shift + F5` |
+| Toggle breakpoint | `F9`, or click left of the line numbers |
+| Step over / into / out | `F10` / `F11` / `Shift + F11` |
+| Pause | `F6` |
+| Debug panel | `Ctrl/⌘ + Shift + D` |
 | Command palette | `Ctrl/⌘ + Shift + P` |
 | Go to file | `Ctrl/⌘ + P` |
 | Save (autosave is always on) | `Ctrl/⌘ + S` |

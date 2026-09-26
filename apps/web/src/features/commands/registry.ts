@@ -1,8 +1,9 @@
 "use client";
 
-import { parentOf } from "@cw/shared";
+import { getLanguage, parentOf } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
-import { editorBridge } from "@/features/editor/bridge";
+import { useDebug } from "@/features/debug/store";
+import { editorBridge, useCursor } from "@/features/editor/bridge";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSnapshots } from "@/features/history/snapshot-store";
@@ -12,7 +13,7 @@ import { useUI } from "@/features/workspace/ui-store";
 export interface Command {
   id: string;
   title: string;
-  category: "Run" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
+  category: "Run" | "Debug" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
   /** Display + binding, e.g. "Mod+Shift+P". Multiple bindings separated by " / ". */
   shortcut?: string;
   /** Returns false when the command cannot run in the current state. */
@@ -21,6 +22,24 @@ export interface Command {
 }
 
 const hasProject = () => !!useWorkspace.getState().project;
+
+/** True when the open project's language has a working debugger. */
+export function canDebug(): boolean {
+  const project = useWorkspace.getState().project;
+  const dbg = project ? getLanguage(project.language)?.debugger : undefined;
+  return !!dbg && dbg.supportLevel !== "planned";
+}
+
+const debugPhase = () => useDebug.getState().phase;
+const inDebugSession = () => {
+  const run = useExecution.getState().run;
+  return run?.mode === "debug" && isRunning(run);
+};
+
+function startDebugging() {
+  useSettings.getState().updateLayout({ inspectorOpen: true, bottomOpen: true, bottomTab: "output" });
+  void useExecution.getState().execute({ mode: "debug" });
+}
 
 function showSide(view: SideView) {
   useSettings.getState().updateLayout({ sidebarOpen: true, sideView: view });
@@ -37,7 +56,7 @@ export const COMMANDS: Command[] = [
     id: "run.execute",
     title: "Run",
     category: "Run",
-    shortcut: "Mod+Enter / F5",
+    shortcut: "Mod+Enter",
     enabled: () => hasProject() && !isRunning(useExecution.getState().run),
     run: () => {
       showBottom("output");
@@ -46,11 +65,104 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "run.cancel",
-    title: "Stop Execution",
+    title: "Stop",
     category: "Run",
     shortcut: "Shift+F5",
     enabled: () => isRunning(useExecution.getState().run),
     run: () => void useExecution.getState().cancel(),
+  },
+  {
+    id: "debug.startOrContinue",
+    title: "Start Debugging / Continue",
+    category: "Debug",
+    shortcut: "F5",
+    enabled: () => hasProject() && (debugPhase() === "paused" || !isRunning(useExecution.getState().run)),
+    run: () => {
+      if (debugPhase() === "paused" && inDebugSession()) return useDebug.getState().command("continue");
+      if (canDebug()) return startDebugging();
+      // Languages without a debugger yet: F5 simply runs.
+      showBottom("output");
+      void useExecution.getState().execute();
+    },
+  },
+  {
+    id: "debug.pause",
+    title: "Pause",
+    category: "Debug",
+    shortcut: "F6",
+    enabled: () => inDebugSession() && debugPhase() === "running",
+    run: () => useDebug.getState().command("pause"),
+  },
+  {
+    id: "debug.stepOver",
+    title: "Step Over",
+    category: "Debug",
+    shortcut: "F10",
+    enabled: () => inDebugSession() && debugPhase() === "paused",
+    run: () => useDebug.getState().command("stepOver"),
+  },
+  {
+    id: "debug.stepIn",
+    title: "Step Into",
+    category: "Debug",
+    shortcut: "F11",
+    enabled: () => inDebugSession() && debugPhase() === "paused",
+    run: () => useDebug.getState().command("stepIn"),
+  },
+  {
+    id: "debug.stepOut",
+    title: "Step Out",
+    category: "Debug",
+    shortcut: "Shift+F11",
+    enabled: () => inDebugSession() && debugPhase() === "paused",
+    run: () => useDebug.getState().command("stepOut"),
+  },
+  {
+    id: "debug.restart",
+    title: "Restart Debugging",
+    category: "Debug",
+    shortcut: "Mod+Shift+F5",
+    enabled: inDebugSession,
+    run: () => {
+      // Stop the current session, then start a fresh one once it has ended.
+      const unsubscribe = useExecution.subscribe((s) => {
+        if (!isRunning(s.run)) {
+          unsubscribe();
+          startDebugging();
+        }
+      });
+      void useExecution.getState().cancel();
+    },
+  },
+  {
+    id: "debug.toggleBreakpoint",
+    title: "Toggle Breakpoint",
+    category: "Debug",
+    shortcut: "F9",
+    enabled: () => !!useWorkspace.getState().activeFile && canDebug(),
+    run: () => {
+      const file = useWorkspace.getState().activeFile;
+      if (file) useWorkspace.getState().toggleBreakpoint(file, useCursor.getState().line);
+    },
+  },
+  {
+    id: "debug.clearBreakpoints",
+    title: "Remove All Breakpoints",
+    category: "Debug",
+    enabled: () => Object.keys(useWorkspace.getState().project?.breakpoints ?? {}).length > 0,
+    run: () => useWorkspace.getState().clearBreakpoints(),
+  },
+  {
+    id: "view.debug",
+    title: "Toggle Debug Panel",
+    category: "View",
+    shortcut: "Mod+Shift+D",
+    run: () => {
+      const { layout, updateLayout } = useSettings.getState();
+      updateLayout({ inspectorOpen: !layout.inspectorOpen });
+      const ui = useUI.getState();
+      ui.setDrawer(ui.drawer === "debug" ? "none" : "debug");
+    },
   },
   {
     id: "run.clearOutput",

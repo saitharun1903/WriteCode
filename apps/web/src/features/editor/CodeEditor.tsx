@@ -2,16 +2,20 @@
 
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { useEffect, useRef } from "react";
-import { monacoLanguageForPath } from "@cw/shared";
+import { useEffect, useRef, useState } from "react";
+import { getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
+import { currentLocation, useDebug } from "@/features/debug/store";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { resolveTheme, useSettings } from "@/features/settings/store";
 import { runCommand } from "@/features/commands/registry";
 import { defineThemes, modelUri } from "./monaco-setup";
 import { editorBridge } from "./bridge";
+import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
+
+const NO_LINES: number[] = [];
 
 export function CodeEditor() {
   const project = useWorkspace((s) => s.project);
@@ -22,8 +26,17 @@ export function CodeEditor() {
 
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const file = project?.files.find((f) => f.path === activeFile);
+  const debuggable = !!project && (getLanguage(project.language)?.debugger?.supportLevel ?? "planned") !== "planned";
+  const fileBreakpoints = (activeFile && project?.breakpoints?.[activeFile]) || NO_LINES;
+  const unverified = useDebug((s) => (activeFile && s.unverified[activeFile]) || NO_LINES);
+  // Select primitives: a fresh object per render would loop zustand's subscription.
+  const currentFile = useDebug((s) => currentLocation(s)?.file ?? null);
+  const pausedLine = useDebug((s) => currentLocation(s)?.line ?? null);
+  const currentTop = useDebug((s) => currentLocation(s)?.top ?? true);
+  const currentLine = currentFile === activeFile ? pausedLine : null;
 
   const handleMount: OnMount = (ed, monaco) => {
     editorRef.current = ed;
@@ -33,7 +46,14 @@ export function CodeEditor() {
     const { KeyMod, KeyCode } = monaco;
     // Route IDE shortcuts through the command registry even while the editor has focus.
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.Enter, () => runCommand("run.execute"));
-    ed.addCommand(KeyCode.F5, () => runCommand("run.execute"));
+    ed.addCommand(KeyCode.F5, () => runCommand("debug.startOrContinue"));
+    ed.addCommand(KeyMod.Shift | KeyCode.F5, () => runCommand("run.cancel"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.F5, () => runCommand("debug.restart"));
+    ed.addCommand(KeyCode.F6, () => runCommand("debug.pause"));
+    ed.addCommand(KeyCode.F9, () => runCommand("debug.toggleBreakpoint"));
+    ed.addCommand(KeyCode.F10, () => runCommand("debug.stepOver"));
+    ed.addCommand(KeyCode.F11, () => runCommand("debug.stepIn"));
+    ed.addCommand(KeyMod.Shift | KeyCode.F11, () => runCommand("debug.stepOut"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => runCommand("file.save"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyP, () => runCommand("workbench.quickOpen"));
     ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP, () => runCommand("workbench.commandPalette"));
@@ -41,6 +61,8 @@ export function CodeEditor() {
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyB, () => runCommand("view.toggleSidebar"));
 
     ed.onDidChangeCursorPosition((e) => editorBridge.setCursor(e.position.lineNumber, e.position.column));
+    installBreakpointGutter(ed, monaco);
+    setMounted(true);
 
     // Subscribe here rather than via the `onChange` prop: the wrapper attaches that in an
     // effect after mount, so keystrokes typed immediately after load could be missed.
@@ -55,6 +77,19 @@ export function CodeEditor() {
   };
 
   useEffect(() => () => editorBridge.detach(), []);
+
+  // Breakpoints and the paused line. Re-applied when the file, breakpoints or stop location change.
+  useEffect(() => {
+    const ed = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!mounted || !ed || !monaco || !activeFile) return;
+    renderDebugDecorations(ed, monaco, {
+      file: activeFile,
+      lines: fileBreakpoints,
+      unverified,
+      current: currentLine ? { line: currentLine, top: currentTop } : null,
+    });
+  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop]);
 
   // Drop models for files that no longer exist (deleted, renamed, other project).
   useEffect(() => {
@@ -134,7 +169,7 @@ export function CodeEditor() {
         padding: { top: 12, bottom: 12 },
         stickyScroll: { enabled: true },
         folding: true,
-        glyphMargin: false,
+        glyphMargin: debuggable,
         lineNumbersMinChars: 3,
         overviewRulerBorder: false,
         scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },

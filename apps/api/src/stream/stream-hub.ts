@@ -68,6 +68,13 @@ export class StreamHub implements OnModuleInit, OnModuleDestroy {
     return () => this.subs.delete(sub);
   }
 
+  /** Number of clients currently following an execution. */
+  subscribers(executionId: string): number {
+    let n = 0;
+    for (const s of this.subs) if (s.executionId === executionId) n++;
+    return n;
+  }
+
   get size(): number {
     return this.subs.size;
   }

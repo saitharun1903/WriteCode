@@ -366,6 +366,7 @@ public final class CwDebugAdapter {
         Thread loop = new Thread(this::eventLoop, "jdi-events");
         loop.setDaemon(true);
         loop.start();
+        event("continued", obj());
     }
 
     private void pump(InputStream is, String stream) {

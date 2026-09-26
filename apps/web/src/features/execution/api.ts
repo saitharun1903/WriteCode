@@ -1,4 +1,4 @@
-import type { ExecutionRequest, ExecutionResult, ExecutionStreamEvent, LanguageDefinition } from "@cw/shared";
+import type { DebugCommand, ExecutionRequest, ExecutionResult, ExecutionStreamEvent, LanguageDefinition } from "@cw/shared";
 
 /** Public base URL of the API. Not a secret; defaults to the local dev server. */
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
@@ -52,27 +52,38 @@ export const api = {
     request<{ ok: true }>(`/api/v1/executions/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
 };
 
+export interface ExecutionStream {
+  close: () => void;
+  /** Sends a debug command; resolves false if the socket is not open. */
+  sendDebug: (requestId: string, command: DebugCommand) => boolean;
+}
+
 /**
  * Subscribes to the live event stream of one execution. The server replays
  * events already emitted, so subscribing after the POST cannot miss output.
- * Returns an unsubscribe function.
+ * The same socket carries debug commands for debug sessions.
  */
 export function streamExecution(
   executionId: string,
-  handlers: { onEvent: (e: ExecutionStreamEvent) => void; onError: (message: string) => void },
-): () => void {
+  handlers: {
+    onEvent: (e: ExecutionStreamEvent) => void;
+    onError: (message: string) => void;
+    onDebugError?: (requestId: string, message: string) => void;
+  },
+): ExecutionStream {
   const ws = new WebSocket(`${WS_URL}/ws`);
   let done = false;
 
   ws.onopen = () => ws.send(JSON.stringify({ type: "subscribe", executionId }));
   ws.onmessage = (msg) => {
-    let event: ExecutionStreamEvent;
+    let event: ExecutionStreamEvent | { type: "debug-error"; executionId: string; requestId: string; message: string };
     try {
-      event = JSON.parse(String(msg.data)) as ExecutionStreamEvent;
+      event = JSON.parse(String(msg.data)) as typeof event;
     } catch {
       return;
     }
     if (event.executionId !== executionId) return;
+    if (event.type === "debug-error") return handlers.onDebugError?.(event.requestId, event.message);
     handlers.onEvent(event);
     if (event.type === "result") {
       done = true;
@@ -90,8 +101,15 @@ export function streamExecution(
     done = true;
   };
 
-  return () => {
-    done = true;
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000);
+  return {
+    close: () => {
+      done = true;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close(1000);
+    },
+    sendDebug: (requestId, command) => {
+      if (ws.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify({ type: "debug", executionId, requestId, command }));
+      return true;
+    },
   };
 }

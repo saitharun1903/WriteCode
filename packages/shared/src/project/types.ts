@@ -15,6 +15,8 @@ export interface Project {
   /** Explicit folders so empty folders survive. Parent folders of files are implied. */
   folders: string[];
   stdin: string;
+  /** Debugger breakpoints: file path -> sorted 1-based lines. Optional for projects saved before debugging existed. */
+  breakpoints?: Record<string, number[]>;
   createdAt: number;
   updatedAt: number;
 }

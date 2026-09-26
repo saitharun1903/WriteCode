@@ -12,7 +12,7 @@ interface UIState {
   /** Explorer inline creation request, e.g. from the command palette. */
   pendingCreate: { dir: string; kind: "file" | "folder" } | null;
   /** Mobile/compact drawers. */
-  drawer: "none" | "sidebar" | "bottom";
+  drawer: "none" | "sidebar" | "bottom" | "debug";
 
   openPalette: (mode: PaletteMode) => void;
   closePalette: () => void;

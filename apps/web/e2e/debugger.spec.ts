@@ -1,0 +1,143 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Java debugger end to end: real JVM paused over JDWP inside the sandbox.
+ * Requires the full stack and Docker. Run with E2E_EXECUTION=1.
+ */
+test.skip(!process.env.E2E_EXECUTION, "set E2E_EXECUTION=1 with the API, worker and Docker running");
+test.setTimeout(180_000);
+
+const PROGRAM = `public class Main {
+    static int square(int x) {
+        int r = x * x;
+        return r;
+    }
+    public static void main(String[] args) {
+        int[] nums = {3, 1, 2};
+        java.util.List<String> names = new java.util.ArrayList<>();
+        names.add("ada");
+        int total = 0;
+        for (int n : nums) {
+            total += square(n);
+        }
+        System.out.println("total=" + total);
+    }
+}
+`;
+
+const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first();
+const debugPanel = (page: Page) => page.getByRole("complementary", { name: "Debugger" });
+const output = (page: Page) => page.getByRole("log", { name: "Program output" });
+
+async function javaProject(page: Page, code: string) {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase("code-workspace");
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    });
+  });
+  await page.reload();
+  await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(editor(page)).toContainText("Hello World");
+  await editor(page).click();
+  await page.evaluate((text) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue(text);
+  }, code);
+  await expect(page.getByText("Saved locally")).toBeVisible();
+}
+
+/** Places the cursor on a line through Monaco's API (no text changes). */
+async function cursorTo(page: Page, line: number) {
+  await page.evaluate((l) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco;
+    const ed = m.editor.getEditors()[0]!;
+    ed.setPosition({ lineNumber: l, column: 1 });
+    ed.focus();
+  }, line);
+}
+
+test("breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await javaProject(page, PROGRAM);
+
+  await cursorTo(page, 12);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(1);
+  await expect(page.getByText("Ln 12,")).toBeVisible();
+
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = int[3]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: /^names = ArrayList/ }).click();
+  await expect(vars.getByRole("treeitem", { name: '[0] = "ada"' })).toBeVisible();
+
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n * 10 + total");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n * 10 + total").locator("..")).toContainText("30");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("Main.square()");
+  await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
+
+  await page.keyboard.press("Shift+F11");
+  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("Main.square()");
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+
+  // Removing the breakpoint mid-session lets the program run to completion.
+  await panel.getByRole("button", { name: "Remove breakpoint Main.java:12" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+  await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(0);
+});
+
+test("breakpoints persist and follow edits", async ({ page }) => {
+  await javaProject(page, PROGRAM);
+  await cursorTo(page, 12);
+  await page.keyboard.press("F9");
+  // Insert two lines above the breakpoint; it should move to line 14.
+  await cursorTo(page, 1);
+  await page.keyboard.press("End");
+  await page.keyboard.insertText("\n// one\n// two");
+  await expect(page.getByText("Saved locally")).toBeVisible();
+  await page.reload();
+  await page.keyboard.press("Control+Shift+D");
+  await expect(debugPanel(page).getByRole("list", { name: "Breakpoints" })).toContainText("Main.java:14");
+});
+
+test("pause a running program, then stop it", async ({ page }) => {
+  await javaProject(page, "public class Main {\n    public static void main(String[] args) {\n        long i = 0;\n        while (true) {\n            i++;\n        }\n    }\n}\n");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Running", { exact: true })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Pause" }).click();
+  await expect(panel.getByText("Paused", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: /^i = \d+$/ })).toBeVisible();
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("Stopped", { exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
+test("stops on uncaught exceptions", async ({ page }) => {
+  await javaProject(page, 'public class Main {\n    public static void main(String[] args) {\n        int[] a = new int[2];\n        a[5] = 1;\n    }\n}\n');
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 90_000 });
+  await expect(panel.getByRole("alert")).toContainText("ArrayIndexOutOfBoundsException");
+  await expect(page.getByText("Ln 4,")).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+});

@@ -89,7 +89,8 @@ export function movePath(p: Project, from: string, to: string): { project: Proje
   const files = p.files.map((f) => (isWithin(f.path, from) ? { ...f, path: rebase(f.path, from, to) } : f));
   const folders = p.folders.map((d) => rebase(d, from, to));
   const entryFile = rebase(p.entryFile, from, to);
-  return { project: touch(p, { files, folders, entryFile }), path: to };
+  const breakpoints = mapBreakpointKeys(p.breakpoints, (file) => rebase(file, from, to));
+  return { project: touch(p, { files, folders, entryFile, breakpoints }), path: to };
 }
 
 export function deletePath(p: Project, path: string): Project {
@@ -97,7 +98,43 @@ export function deletePath(p: Project, path: string): Project {
   const folders = p.folders.filter((d) => !isWithin(d, path));
   let entryFile = p.entryFile;
   if (isWithin(entryFile, path)) entryFile = files[0]?.path ?? "";
-  return touch(p, { files, folders, entryFile });
+  const breakpoints = mapBreakpointKeys(p.breakpoints, (file) => (isWithin(file, path) ? null : file));
+  return touch(p, { files, folders, entryFile, breakpoints });
+}
+
+function mapBreakpointKeys(
+  bps: Project["breakpoints"],
+  fn: (file: string) => string | null,
+): Project["breakpoints"] {
+  if (!bps) return bps;
+  const out: Record<string, number[]> = {};
+  for (const [file, lines] of Object.entries(bps)) {
+    const next = fn(file);
+    if (next && lines.length) out[next] = lines;
+  }
+  return out;
+}
+
+export function breakpointsFor(p: Project, file: string): number[] {
+  return p.breakpoints?.[file] ?? [];
+}
+
+/** Adds or removes a breakpoint on a line. */
+export function toggleBreakpoint(p: Project, file: string, line: number): Project {
+  const current = breakpointsFor(p, file);
+  const lines = current.includes(line) ? current.filter((l) => l !== line) : [...current, line].sort((a, b) => a - b);
+  return setBreakpoints(p, file, lines);
+}
+
+/** Replaces a file's breakpoints (used when edits move lines). */
+export function setBreakpoints(p: Project, file: string, lines: number[]): Project {
+  const unique = [...new Set(lines)].filter((l) => l >= 1).sort((a, b) => a - b);
+  const current = breakpointsFor(p, file);
+  if (unique.length === current.length && unique.every((l, i) => l === current[i])) return p;
+  const breakpoints = { ...p.breakpoints };
+  if (unique.length) breakpoints[file] = unique;
+  else delete breakpoints[file];
+  return touch(p, { breakpoints });
 }
 
 export function duplicateProject(p: Project, id: string, existingNames: readonly string[]): Project {

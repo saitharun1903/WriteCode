@@ -39,6 +39,9 @@ interface WorkspaceState {
   movePath: (from: string, toDir: string) => void;
   deletePath: (path: string) => void;
   setEntryFile: (path: string) => void;
+  toggleBreakpoint: (file: string, line: number) => void;
+  setBreakpoints: (file: string, lines: number[]) => void;
+  clearBreakpoints: () => void;
   setStdin: (stdin: string) => void;
   flush: () => Promise<void>;
 }
@@ -324,6 +327,25 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     setEntryFile(path) {
       const project = get().project;
       if (project && project.entryFile !== path) commit({ ...project, entryFile: path, updatedAt: Date.now() });
+    },
+
+    toggleBreakpoint(file, line) {
+      const project = get().project;
+      if (project) commit(ops.toggleBreakpoint(project, file, line));
+    },
+
+    setBreakpoints(file, lines) {
+      const project = get().project;
+      if (!project) return;
+      const next = ops.setBreakpoints(project, file, lines);
+      if (next !== project) commit(next);
+    },
+
+    clearBreakpoints() {
+      const project = get().project;
+      if (project && project.breakpoints && Object.keys(project.breakpoints).length) {
+        commit({ ...project, breakpoints: {}, updatedAt: Date.now() });
+      }
     },
 
     setStdin(stdin) {

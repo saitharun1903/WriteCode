@@ -5,7 +5,9 @@ import {
   isTerminalStatus,
   parseDiagnostics,
   requireLanguage,
+  type DebugCommand,
   type Diagnostic,
+  type ExecutionMode,
   type ExecutionResult,
   type ExecutionStatus,
   type Project,
@@ -14,7 +16,8 @@ import { historyRepo } from "@/features/projects/db";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
 import { createId } from "@/lib/id";
-import { ApiError, api, streamExecution } from "./api";
+import { useDebug } from "@/features/debug/store";
+import { ApiError, api, streamExecution, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
 export type LogStream = "stdout" | "stderr" | "compile" | "system";
@@ -27,6 +30,7 @@ export interface LogChunk {
 export interface RunState {
   id?: string;
   projectId: string;
+  mode: ExecutionMode;
   /** SUBMITTING covers the gap between clicking Run and the server accepting the job. */
   status: ExecutionStatus | "SUBMITTING";
   log: LogChunk[];
@@ -45,14 +49,19 @@ interface ExecutionState {
   historyVersion: number;
 
   checkHealth: () => Promise<void>;
-  execute: () => Promise<void>;
+  execute: (options?: { mode?: ExecutionMode }) => Promise<void>;
   cancel: () => Promise<void>;
   clearOutput: () => void;
   bumpHistory: () => void;
 }
 
 const MAX_LOG_CHARS = 1_200_000;
-let unsubscribe: (() => void) | null = null;
+let stream: ExecutionStream | null = null;
+
+/** Sends a command to the active debug session over its event socket. */
+export function sendDebugCommand(requestId: string, command: DebugCommand): boolean {
+  return stream?.sendDebug(requestId, command) ?? false;
+}
 
 function appendLog(log: LogChunk[], chunk: LogChunk): LogChunk[] {
   const last = log[log.length - 1];
@@ -62,14 +71,24 @@ function appendLog(log: LogChunk[], chunk: LogChunk): LogChunk[] {
   return [...log, chunk];
 }
 
+/** Breakpoints for files that still exist, in the shape the API expects. */
+function liveBreakpoints(project: Project): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [file, lines] of Object.entries(project.breakpoints ?? {})) {
+    if (lines.length && project.files.some((f) => f.path === file)) out[file] = lines;
+  }
+  return out;
+}
+
 function snapshotFiles(project: Project) {
   return project.files.map((f) => ({ path: f.path, content: f.content }));
 }
 
 export const useExecution = create<ExecutionState>((set, get) => {
   const finish = async (result: ExecutionResult, project: Project) => {
-    unsubscribe?.();
-    unsubscribe = null;
+    stream?.close();
+    stream = null;
+    if (get().run?.mode === "debug") useDebug.getState().onEnded();
     const files = project.files.map((f) => f.path);
     const diagnostics = [
       ...parseDiagnostics(result.language, result.compileOutput, files),
@@ -100,8 +119,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
   };
 
   const fail = (title: string, detail?: string, requestId?: string) => {
-    unsubscribe?.();
-    unsubscribe = null;
+    stream?.close();
+    stream = null;
+    if (get().run?.mode === "debug") useDebug.getState().onEnded();
     set((s) => ({ run: s.run ? { ...s.run, status: "SYSTEM_ERROR", error: { title, detail, requestId } } : s.run }));
   };
 
@@ -120,7 +140,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
       }
     },
 
-    async execute() {
+    async execute(options) {
+      const mode = options?.mode ?? "run";
       const current = get().run;
       if (current && !isTerminalStatus(current.status as ExecutionStatus) && !current.error) return;
 
@@ -131,6 +152,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
         set({
           run: {
             projectId: project.id,
+            mode,
             status: "SYSTEM_ERROR",
             log: [],
             startedAt: Date.now(),
@@ -145,8 +167,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
         diagnostics: [],
         run: {
           projectId: project.id,
+          mode,
           status: "SUBMITTING",
-          log: [{ stream: "system", text: `Running ${project.entryFile} · ${lang.name} ${lang.version}\n` }],
+          log: [{ stream: "system", text: `${mode === "debug" ? "Debugging" : "Running"} ${project.entryFile} · ${lang.name} ${lang.version}\n` }],
           startedAt: Date.now(),
         },
       });
@@ -158,6 +181,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           files: snapshotFiles(project),
           entry: project.entryFile,
           stdin: project.stdin || undefined,
+          ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : {}),
         }));
       } catch (e) {
         if (e instanceof ApiError && e.status === 0) {
@@ -169,7 +193,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
       }
 
       set((s) => ({ runner: "online", run: s.run ? { ...s.run, id, status: "QUEUED" } : s.run }));
-      unsubscribe = streamExecution(id, {
+      if (mode === "debug") useDebug.getState().onStarted(id);
+      stream = streamExecution(id, {
         onEvent: (event) => {
           if (get().run?.id !== id) return;
           switch (event.type) {
@@ -181,11 +206,15 @@ export const useExecution = create<ExecutionState>((set, get) => {
             case "compile":
               set((s) => ({ run: s.run ? { ...s.run, log: appendLog(s.run.log, { stream: event.type, text: event.chunk }) } : s.run }));
               break;
+            case "debug":
+              useDebug.getState().onEvent(event.event);
+              break;
             case "result":
               void finish(event.result, project);
               break;
           }
         },
+        onDebugError: (requestId, message) => useDebug.getState().onCommandError(requestId, message),
         onError: async (message) => {
           // The stream dropped; the execution may still have finished. Ask once before reporting failure.
           try {

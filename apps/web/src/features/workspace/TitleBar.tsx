@@ -1,11 +1,12 @@
 "use client";
 
-import { ChevronDown, Command, Menu, Play, Square } from "lucide-react";
+import { Bug, ChevronDown, Command, Menu, Play, Square } from "lucide-react";
 import { getLanguage } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
-import { getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
+import { canDebug, getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
+import { DebugControls } from "@/features/debug/DebugControls";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
@@ -26,6 +27,10 @@ const MENUS: { label: string; items: (string | "-")[] }[] = [
   { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format"] },
   { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.problems", "view.input", "-", "prefs.toggleTheme", "prefs.wordWrap", "prefs.minimap", "view.resetLayout"] },
   { label: "Run", items: ["run.execute", "run.cancel", "-", "run.clearOutput", "view.input"] },
+  {
+    label: "Debug",
+    items: ["debug.startOrContinue", "debug.pause", "debug.stepOver", "debug.stepIn", "debug.stepOut", "-", "debug.restart", "run.cancel", "-", "debug.toggleBreakpoint", "debug.clearBreakpoints", "view.debug"],
+  },
 ];
 
 export function TitleBar({ compact }: { compact: boolean }) {
@@ -107,18 +112,28 @@ export function TitleBar({ compact }: { compact: boolean }) {
             </button>
           </Tooltip>
         )}
-        {project &&
-          (running ? (
-            <Button variant="secondary" aria-label="Stop program" icon={<Square className="size-3 fill-current" />} onClick={() => runCommand("run.cancel")}>
-              Stop
-            </Button>
-          ) : (
+        {project && running && run?.mode === "debug" && <DebugControls />}
+        {project && running && run?.mode !== "debug" && (
+          <Button variant="secondary" aria-label="Stop program" icon={<Square className="size-3 fill-current" />} onClick={() => runCommand("run.cancel")}>
+            Stop
+          </Button>
+        )}
+        {project && !running && (
+          <>
+            {canDebug() && (
+              <Tooltip content="Start debugging" shortcut="F5">
+                <Button variant="secondary" aria-label="Debug program" icon={<Bug className="size-3.5" />} onClick={() => runCommand("debug.startOrContinue")}>
+                  {!compact && "Debug"}
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip content="Run entry file" shortcut="Mod+Enter">
               <Button variant="primary" aria-label="Run program" icon={<Play className="size-3 fill-current" />} onClick={() => runCommand("run.execute")}>
                 Run
               </Button>
             </Tooltip>
-          ))}
+          </>
+        )}
       </div>
     </header>
   );
