@@ -15,3 +15,9 @@ allowBuilds:
   ssh2: false
   esbuild: false
   protobufjs: false
+
+# Security fixes for transitive dependencies of the Prisma CLI (pulled in as a
+# peer of @prisma/client). mysql2 is never used (the database is Postgres).
+overrides:
+  deepmerge-ts: ">=8.0.0"
+  mysql2: ">=3.23.1"

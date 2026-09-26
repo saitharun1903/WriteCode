@@ -5,9 +5,10 @@
 #   git clone https://github.com/saitharun1903/WriteCode.git && cd WriteCode
 #   PUBLIC_HOST=writecode.in deploy/setup-server.sh
 #
-# Installs Docker Engine (from Docker's apt repository) and gVisor, opens only
+# Installs Docker Engine (from Docker's apt repository), opens only
 # SSH/HTTP/HTTPS in the firewall, and writes deploy/.env.production with
-# freshly generated secrets. It never prints the secrets.
+# freshly generated secrets. It never prints the secrets. INSTALL_GVISOR=1 also
+# installs gVisor (see SANDBOX_RUNTIME in deploy/.env.production.example).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,8 +28,8 @@ if ! command -v docker >/dev/null; then
 fi
 sudo usermod -aG docker "$USER"
 
-echo "== gVisor (runsc): a user-space kernel between user programs and the host"
-if ! command -v runsc >/dev/null; then
+if [ "${INSTALL_GVISOR:-0}" = 1 ] && ! command -v runsc >/dev/null; then
+  echo "== gVisor (runsc), optional"
   curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
     | sudo tee /etc/apt/sources.list.d/gvisor.list >/dev/null
@@ -38,12 +39,24 @@ if ! command -v runsc >/dev/null; then
 fi
 
 echo "== Firewall: SSH, HTTP, HTTPS only"
-sudo apt-get install -y ufw
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 443/udp
-sudo ufw --force enable
+if [ -f /etc/iptables/rules.v4 ] && grep -q "REJECT" /etc/iptables/rules.v4; then
+  # Oracle Cloud images ship iptables rules that reject everything except SSH and
+  # must not be combined with ufw. Accept HTTP/HTTPS ahead of the final REJECT, then persist.
+  for rule in "-p tcp --dport 80" "-p tcp --dport 443" "-p udp --dport 443"; do
+    # shellcheck disable=SC2086
+    sudo iptables -C INPUT -m state --state NEW $rule -j ACCEPT 2>/dev/null \
+      || sudo iptables -I INPUT "$(sudo iptables -L INPUT --line-numbers | awk '/REJECT/ {print $1; exit}')" -m state --state NEW $rule -j ACCEPT
+  done
+  sudo netfilter-persistent save
+  echo "Oracle Cloud: also allow TCP 80, TCP 443 and UDP 443 in the subnet's security list (see deploy/ORACLE.md)."
+else
+  sudo apt-get install -y ufw
+  sudo ufw allow OpenSSH
+  sudo ufw allow 80/tcp
+  sudo ufw allow 443/tcp
+  sudo ufw allow 443/udp
+  sudo ufw --force enable
+fi
 
 echo "== deploy/.env.production"
 ENV_FILE=deploy/.env.production
@@ -54,7 +67,7 @@ PUBLIC_HOST=$PUBLIC_HOST
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 CLIENT_HASH_SALT=$(openssl rand -hex 32)
 DOCKER_GID=$(stat -c %g /var/run/docker.sock)
-SANDBOX_RUNTIME=runsc
+SANDBOX_RUNTIME=
 WORKER_CONCURRENCY=2
 DEBUG_CONCURRENCY=2
 EOF

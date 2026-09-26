@@ -83,8 +83,8 @@ services:
       REDIS_URL: redis://redis:6379
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       DEBUG_CONCURRENCY: ${DEBUG_CONCURRENCY:-2}
-      # Recommended on an internet-facing server: runsc (gVisor) puts a user-space
-      # kernel between user programs and the host. Empty uses runc.
+      # Empty uses runc. runsc (gVisor) is possible but loses typed-input wait
+      # detection; see deploy/.env.production.example.
       SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

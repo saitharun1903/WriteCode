@@ -53,7 +53,7 @@ names resolve to the server; until then it retries.
 ```bash
 # On the server, as a sudo-capable user
 git clone https://github.com/saitharun1903/WriteCode.git && cd WriteCode
-PUBLIC_HOST=writecode.in deploy/setup-server.sh   # Docker, gVisor, firewall, secrets
+PUBLIC_HOST=writecode.in deploy/setup-server.sh   # Docker, firewall, secrets
 exit                                              # log in again for the docker group
 cd WriteCode && deploy/deploy.sh                  # build, start, wait for readiness
 ```
@@ -98,9 +98,11 @@ services only after their dependencies are healthy and migrations succeeded.
   only in sandbox containers that have no network, a read-only root filesystem,
   no capabilities, `no-new-privileges`, and CPU, memory, PID, file-size, output
   and time limits. They never see the socket or any host path.
-- gVisor (`SANDBOX_RUNTIME=runsc`, installed by `setup-server.sh`) adds a
-  user-space kernel between user programs and the host kernel. Keep it enabled
-  on an internet-facing server.
+- Sandboxes use Docker's default runtime (runc). gVisor (`INSTALL_GVISOR=1`
+  for setup, then `SANDBOX_RUNTIME=runsc`) adds a user-space kernel, but tested
+  with release-20260921.0 it does not expose `/proc/*/wchan`, so programs
+  waiting for typed input cannot be detected and those waits count against the
+  run time limit. It stays off by default so interactive input keeps working.
 - The worker removes each sandbox after its run and, on startup, removes any
   sandbox left behind by a crash.
 - Logs are JSON with execution id, language, state, timings and termination
