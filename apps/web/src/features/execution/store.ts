@@ -219,8 +219,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
       });
 
       let id: string;
+      let controlToken: string;
       try {
-        ({ id } = await api.createExecution({
+        ({ id, controlToken } = await api.createExecution({
           language: project.language,
           files: snapshotFiles(project),
           entry: project.entryFile,
@@ -238,8 +239,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
       }
 
       set((s) => ({ runner: "online", run: s.run ? { ...s.run, id, status: "QUEUED" } : s.run }));
+      useWorkspace.getState().markRun();
       if (mode === "debug") useDebug.getState().onStarted(id);
-      stream = streamExecution(id, {
+      stream = streamExecution(id, controlToken, {
         onEvent: (event) => {
           if (get().run?.id !== id) return;
           switch (event.type) {

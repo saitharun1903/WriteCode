@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { IncomingMessage } from "node:http";
 import type { NextFunction, Request, Response } from "express";
 import { config } from "../config.js";
 
@@ -34,17 +33,4 @@ export function clientHash(ip: string | undefined): string {
   return createHash("sha256")
     .update(`${config.clientHashSalt}:${ip ?? "unknown"}`)
     .digest("hex");
-}
-
-/**
- * Client IP of a raw upgrade request, derived the way Express derives req.ip:
- * the left-most X-Forwarded-For entry when TRUST_PROXY=1, else the socket peer.
- */
-export function clientIp(req: IncomingMessage): string | undefined {
-  if (config.trustProxy) {
-    const forwarded = req.headers["x-forwarded-for"];
-    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return req.socket.remoteAddress;
 }

@@ -11,7 +11,7 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { QueueEvents } from "bullmq";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Redis } from "ioredis";
 import type { PrismaClient } from "@cw/db";
 import {
@@ -33,6 +33,10 @@ import { ExecutionStore } from "./execution-store.js";
 import { RateLimiter } from "./rate-limiter.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 export function assertExecutionId(id: string) {
   if (!UUID.test(id)) throw new BadRequestException("Invalid execution id.");
@@ -72,7 +76,12 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     await Promise.all(this.queueEvents.map((e) => e.close()));
   }
 
-  async create(body: unknown, client: string): Promise<{ id: string }> {
+  /**
+   * Queues an execution. Returns its id and a control token: debug commands
+   * and typed input are accepted only with that token, so only the creator
+   * can drive the program. The server keeps just the token's hash.
+   */
+  async create(body: unknown, client: string): Promise<{ id: string; controlToken: string }> {
     const parsed = validateExecutionRequest(body);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     const request = parsed.value;
@@ -112,14 +121,16 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
         clientHash: client,
       },
     });
+    const controlToken = randomBytes(24).toString("base64url");
     await this.redis.set(`exec:${id}:client`, client, "EX", 3600);
+    await this.redis.set(`exec:${id}:control`, sha256(controlToken), "EX", 3600);
     await this.limiter.markActive(client, id);
     await this.store.appendEvent({ type: "status", executionId: id, status: "QUEUED" });
 
     const job: ExecutionJob = { executionId: id, request, enqueuedAt: Date.now() };
     // One attempt only: user code must never be silently re-run.
     await queue.add(request.mode === "debug" ? "debug" : "run", job, { jobId: id, attempts: 1, removeOnComplete: 1000, removeOnFail: 1000 });
-    return { id };
+    return { id, controlToken };
   }
 
   async get(id: string): Promise<ExecutionResult> {
@@ -150,12 +161,14 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     return { ok: true };
   }
 
-  /**
-   * True when `client` created the execution. Controls that act on a running
-   * program (debug commands, typed input) are only accepted from its creator.
-   */
-  async isOwner(id: string, client: string): Promise<boolean> {
-    return (await this.redis.get(`exec:${id}:client`)) === client;
+  /** True when `token` is the execution's control token (constant-time comparison of hashes). */
+  async canControl(id: string, token: unknown): Promise<boolean> {
+    if (typeof token !== "string" || token.length === 0 || token.length > 128) return false;
+    const stored = await this.redis.get(`exec:${id}:control`);
+    if (!stored) return false;
+    const a = Buffer.from(stored, "hex");
+    const b = Buffer.from(sha256(token), "hex");
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   /** Forwards a debug command to the worker running the session. Returns an error message or null. */

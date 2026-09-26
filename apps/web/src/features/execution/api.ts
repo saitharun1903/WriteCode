@@ -46,7 +46,7 @@ export interface HealthResponse {
 export const api = {
   health: (signal?: AbortSignal) => request<HealthResponse>("/api/v1/health", { signal }),
   createExecution: (body: ExecutionRequest) =>
-    request<{ id: string }>("/api/v1/executions", { method: "POST", body: JSON.stringify(body) }),
+    request<{ id: string; controlToken: string }>("/api/v1/executions", { method: "POST", body: JSON.stringify(body) }),
   getExecution: (id: string) => request<ExecutionResult>(`/api/v1/executions/${encodeURIComponent(id)}`),
   cancelExecution: (id: string) =>
     request<{ ok: true }>(`/api/v1/executions/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
@@ -67,6 +67,8 @@ export interface ExecutionStream {
  */
 export function streamExecution(
   executionId: string,
+  /** Proves this browser created the execution; required for debug commands and typed input. */
+  controlToken: string,
   handlers: {
     onEvent: (e: ExecutionStreamEvent) => void;
     onError: (message: string) => void;
@@ -115,12 +117,12 @@ export function streamExecution(
     },
     sendDebug: (requestId, command) => {
       if (ws.readyState !== WebSocket.OPEN) return false;
-      ws.send(JSON.stringify({ type: "debug", executionId, requestId, command }));
+      ws.send(JSON.stringify({ type: "debug", executionId, token: controlToken, requestId, command }));
       return true;
     },
     sendInput: (data, eof = false) => {
       if (ws.readyState !== WebSocket.OPEN) return false;
-      ws.send(JSON.stringify({ type: "stdin", executionId, data, eof }));
+      ws.send(JSON.stringify({ type: "stdin", executionId, token: controlToken, data, eof }));
       return true;
     },
   };

@@ -336,6 +336,15 @@ export function DebugToolWindow() {
     if (active) setTab("frames");
   }
 
+  // Show the console (and its input bar) while the program waits for typed input, and the frames when it pauses.
+  const waiting = active && run?.status === "WAITING_FOR_INPUT";
+  const [shown, setShown] = useState({ waiting, paused });
+  if (shown.waiting !== waiting || shown.paused !== paused) {
+    setShown({ waiting, paused });
+    if (waiting && !shown.waiting) setTab("console");
+    else if (paused && !shown.paused) setTab("frames");
+  }
+
   let status: ReactNode;
   if (paused && stop) status = reasonLabel[stop.reason];
   else if (active && phase === "running") status = "Running";

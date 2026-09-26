@@ -10,9 +10,12 @@ A browser-native IDE that compiles and runs real code in isolated sandboxes. No 
 | --- | --- |
 | IDE shell, Monaco editor, tabs, command palette, shortcuts | Working, E2E-tested |
 | Local projects (IndexedDB), autosave, reload recovery | Working, E2E-tested |
+| Recent projects: listed once run or edited; projects only opened are discarded | Working, E2E-tested |
 | File explorer (create, rename, move, delete, context menus) | Working, E2E-tested |
 | Project search, snapshots with diff, run history | Working |
-| Real execution: Java, Python, C++, C, JavaScript, TypeScript | Working, E2E-tested against Docker (compile errors, stdin, time/memory/output limits, no network) |
+| Real execution: Java, Python, C++, C, JavaScript, TypeScript | Working. A 55-program matrix (all languages, multi-file projects, packages, errors, limits, adversarial programs) runs against Docker |
+| Interactive stdin: type input while the program runs, "waiting for input" from the kernel | Working in runs and debug sessions, E2E-tested |
+| Entry points: Java `main` classes (package-aware), C/C++ `main`, choice when several exist | Working, E2E-tested |
 | Java debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
 | Python debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
 | Visualizer (execution events) | Not started (planned) |
@@ -71,6 +74,10 @@ User code is treated as hostile. Each execution gets a fresh container:
 - the container is force-removed after every run; a startup sweep removes leftovers from crashed workers
 - optional gVisor: set `SANDBOX_RUNTIME=runsc` for a user-space kernel between the program and the host
 
+Typed input reaches the program through a FIFO. A monitor inside the sandbox reads the kernel's wait channel for each thread (`/proc/*/task/*/wchan`) to tell when the program is blocked reading stdin: a pipe read, or an epoll wait on fd 0 for Node.js. That time does not count toward the run-time limit; a single wait is capped at 5 minutes and an interactive run at 15. If prepared input is set in Program Input, it is sent whole and followed by end-of-file instead.
+
+Debug commands and typed input are accepted only with the control token returned when the run was created (the server stores only its hash), so only the browser that started a program can drive it.
+
 The API never runs user code. It validates requests (paths, sizes, languages), rate-limits per client (hashed IP), caps queue depth and never retries a job automatically.
 
 ## Prerequisites
@@ -114,7 +121,8 @@ See `.env.example`. None are third-party credentials:
 | `pnpm test` | Unit tests for all packages |
 | `pnpm typecheck` / `pnpm lint` | Static checks |
 | `pnpm test:e2e` | Playwright IDE tests (web only) |
-| `E2E_EXECUTION=1 pnpm test:e2e` | Adds real execution tests (needs the full stack) |
+| `E2E_EXECUTION=1 pnpm test:e2e` | Adds real execution and debugger tests in the browser (needs the full stack) |
+| `E2E_EXECUTION=1 pnpm --filter @cw/worker test` | Execution matrix: real programs in every language plus adversarial programs, in Docker (needs Docker and Redis) |
 | `pnpm infra:up` / `pnpm infra:down` | Start/stop Postgres + Redis |
 
 Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromium` after `pnpm exec playwright install chromium` to use bundled Chromium instead.
@@ -124,6 +132,8 @@ Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromiu
 | Action | Shortcut |
 | --- | --- |
 | Run | `Ctrl/⌘ + Enter` |
+| Run current file | `Ctrl/⌘ + Shift + F10`, or click the green arrow next to a `main` |
+| End program input (EOF) | `Ctrl + D` in the input bar |
 | Start debugging / Continue | `F5` (runs normally for languages without a debugger) |
 | Stop | `Shift + F5` |
 | Restart debugging | `Ctrl/⌘ + Shift + F5` |
@@ -138,6 +148,15 @@ Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromiu
 | Toggle sidebar / panel | `Ctrl/⌘ + B` / `Ctrl/⌘ + J` |
 | Search in project | `Ctrl/⌘ + Shift + F` |
 | Problems | `Ctrl/⌘ + Shift + M` |
+
+## Known limitations
+
+- **C/C++ debugging** is not available: it needs a native debugger (GDB) integration, which does not exist yet. The Debug button is hidden for those languages.
+- **Threads:** the Python debugger follows the main thread only; the Java debugger pauses all threads but shows the stopped thread's stack.
+- **TypeScript imports** must name the file with its extension (`./cart.ts`), as Node.js requires. There is no bundler or `tsconfig` path mapping.
+- **C/C++ include paths:** headers are found relative to the including file (standard compiler behaviour); there is no project build file or `-I` configuration yet.
+- **Several `main` methods in one Java file:** the class named after the file runs; entry points are chosen per file.
+- **Input-wait detection** relies on the kernel exposing wait channels. Where it does not, input waits count as run time within the 15-minute interactive cap.
 
 ## Troubleshooting
 

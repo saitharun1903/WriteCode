@@ -1,0 +1,340 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Real programs through the real browser, API, queue, Docker sandbox, JVM and
+ * debugger. Covers the required programs: the calculate() run and debug,
+ * multi-file Java debugging, compiler and runtime errors, interactive stdin,
+ * entry point selection and run-based recent projects.
+ * Requires the full stack. Run with E2E_EXECUTION=1.
+ */
+test.skip(!process.env.E2E_EXECUTION, "set E2E_EXECUTION=1 with the API, worker and Docker running");
+test.setTimeout(180_000);
+
+const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first();
+const output = (page: Page) => page.getByRole("log", { name: "Program output" });
+const debugPanel = (page: Page) => page.getByRole("complementary", { name: "Debugger" });
+const variables = (page: Page) => debugPanel(page).getByRole("tree", { name: "Variables" });
+const callStack = (page: Page) => debugPanel(page).getByRole("list", { name: "Call stack" });
+
+async function waitSaved(page: Page) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
+    return w.__cwWorkspace?.getState().saveState === "saved";
+  });
+}
+
+async function freshProject(page: Page, language: "Java" | "Python") {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase("code-workspace");
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    });
+  });
+  await page.reload();
+  await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: `New ${language} project` }).click();
+  await expect(editor(page)).toContainText("Hello World");
+}
+
+/** Sets the open file's text through Monaco's model (no auto-indent rewriting the code). */
+async function setCode(page: Page, code: string) {
+  await page.evaluate((text) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue(text);
+  }, code);
+  await waitSaved(page);
+}
+
+/** Creates a file at the project root through the explorer and fills it. */
+async function addFile(page: Page, name: string, code: string) {
+  await page.getByRole("button", { name: "New File" }).first().click();
+  await page.getByRole("textbox", { name: "Name" }).fill(name);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name: new RegExp(name.replace(".", "\\.")) })).toHaveAttribute("aria-selected", "true");
+  await setCode(page, code);
+}
+
+async function openFile(page: Page, name: string) {
+  await page.getByRole("treeitem", { name: new RegExp(name.replace(".", "\\.")) }).click();
+  await expect(page.getByRole("tab", { name: new RegExp(name.replace(".", "\\.")) })).toHaveAttribute("aria-selected", "true");
+}
+
+async function breakpointAt(page: Page, line: number) {
+  await page.evaluate((l) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco;
+    const ed = m.editor.getEditors()[0]!;
+    ed.setPosition({ lineNumber: l, column: 1 });
+    ed.focus();
+  }, line);
+  await page.keyboard.press("F9");
+}
+
+const activeTab = (page: Page, name: string) => expect(page.getByRole("tab", { name: new RegExp(name.replace(".", "\\.")) })).toHaveAttribute("aria-selected", "true");
+
+const CALCULATE = `public class Main {
+    public static void main(String[] args) {
+        int a = 10;
+        int b = 20;
+
+        int result = calculate(a, b);
+
+        System.out.println("Result = " + result);
+    }
+
+    static int calculate(int x, int y) {
+        int sum = x + y;
+        return sum;
+    }
+}
+`;
+
+test("required program: runs, then the JVM pauses in calculate() with real values", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, CALCULATE);
+
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Result = 30", { timeout: 120_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+
+  await breakpointAt(page, 12);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("12:1");
+  await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(1);
+  await expect(variables(page).getByRole("treeitem", { name: "x = 10" })).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "y = 20" })).toBeVisible();
+  // sum is not in scope before its declaration runs, so the debugger does not list it.
+  await expect(variables(page).getByRole("treeitem", { name: /^sum = / })).toHaveCount(0);
+  await expect(callStack(page)).toContainText("calculate:12, Main");
+  await expect(callStack(page)).toContainText("main:6, Main");
+
+  await page.keyboard.press("F10");
+  await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("13:1");
+  await expect(variables(page).getByRole("treeitem", { name: "sum = 30" })).toBeVisible();
+
+  // Selecting the caller's frame shows the caller's locals and line.
+  await callStack(page).getByRole("button", { name: /main:6, Main/ }).click();
+  await expect(variables(page).getByRole("treeitem", { name: "a = 10" })).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "b = 20" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("6:1");
+
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("Result = 30", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("multi-file Java: run, then step between Main, Calculator and Student", async ({ page }) => {
+  await freshProject(page, "Java");
+  await addFile(
+    page,
+    "Student.java",
+    `public class Student {
+    private final String name;
+    private final int[] marks;
+
+    public Student(String name, int... marks) {
+        this.name = name;
+        this.marks = marks;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public int[] getMarks() {
+        return marks;
+    }
+}
+`,
+  );
+  await addFile(
+    page,
+    "Calculator.java",
+    `public class Calculator {
+    public int total(Student s) {
+        int sum = 0;
+        for (int m : s.getMarks()) {
+            sum += m;
+        }
+        return sum;
+    }
+
+    public double average(Student s) {
+        return (double) total(s) / s.getMarks().length;
+    }
+}
+`,
+  );
+  await openFile(page, "Main.java");
+  await setCode(
+    page,
+    `public class Main {
+    public static void main(String[] args) {
+        Student ada = new Student("Ada", 90, 85, 77);
+        Calculator calc = new Calculator();
+        int total = calc.total(ada);
+        System.out.println(ada.getName() + " total=" + total + " avg=" + calc.average(ada));
+    }
+}
+`,
+  );
+
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Ada total=252 avg=84.0", { timeout: 120_000 });
+
+  await breakpointAt(page, 5);
+  await openFile(page, "Student.java");
+  await breakpointAt(page, 6);
+  await page.getByRole("button", { name: "Debug program" }).click();
+
+  // Constructor breakpoint in Student.java, called from Main.java.
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await activeTab(page, "Student.java");
+  await expect(callStack(page)).toContainText("<init>:6, Student");
+  await expect(callStack(page)).toContainText("main:3, Main");
+  await expect(variables(page).getByRole("treeitem", { name: 'name = "Ada"' })).toBeVisible();
+
+  // Continue to Main.java:5, then step into Calculator.total.
+  await page.keyboard.press("F5");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("5:1");
+  await activeTab(page, "Main.java");
+  await page.keyboard.press("F11");
+  await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
+  await activeTab(page, "Calculator.java");
+  await expect(callStack(page)).toContainText("total:3, Calculator");
+
+  // Over the first line, then into Student.getMarks from the loop header.
+  await page.keyboard.press("F10");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("4:1");
+  await expect(variables(page).getByRole("treeitem", { name: "sum = 0" })).toBeVisible();
+  await page.keyboard.press("F11");
+  await activeTab(page, "Student.java");
+  await expect(callStack(page)).toContainText("getMarks:15, Student");
+  await expect(callStack(page)).toContainText("total:4, Calculator");
+  await expect(callStack(page)).toContainText("main:5, Main");
+  await variables(page).getByRole("treeitem", { name: /^this = Student/ }).click();
+  await expect(variables(page).getByRole("treeitem", { name: "marks = int[3]" })).toBeVisible();
+
+  // Out of Student, back in Calculator.
+  await page.keyboard.press("Shift+F11");
+  await activeTab(page, "Calculator.java");
+  await expect(callStack(page)).not.toContainText("getMarks");
+
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("Ada total=252 avg=84.0", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("required failures: real compiler error, real runtime exception", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, "public class Main {\n    public static void main(String[] args) {\n        int x =\n    }\n}\n");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Main.java:4: error: illegal start of expression", { timeout: 120_000 });
+  await expect(page.getByText("Compilation error", { exact: true })).toBeVisible();
+
+  await setCode(page, "public class Main {\n    public static void main(String[] args) {\n        int x = 10 / 0;\n    }\n}\n");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText('Exception in thread "main" java.lang.ArithmeticException: / by zero', { timeout: 120_000 });
+  await expect(output(page)).toContainText("at Main.main(Main.java:3)");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible();
+  await expect(output(page)).toContainText("Process finished with exit code 1");
+});
+
+test("interactive input: Scanner waits, receives 25 and prints 50", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(
+    page,
+    `import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        int n = scanner.nextInt();
+        System.out.println(n * 2);
+        String word = scanner.next();
+        System.out.println(word.toUpperCase());
+    }
+}
+`,
+  );
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText("Waiting for input", { exact: true })).toBeVisible();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeFocused();
+  await input.fill("25");
+  await page.keyboard.press("Enter");
+  await expect(output(page)).toContainText("25\n50");
+  await expect(page.getByText("Program waiting for input")).toBeVisible();
+  await input.fill("sandbox");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(output(page)).toContainText("SANDBOX");
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+  await expect(input).toHaveCount(0);
+});
+
+test("debugging a program that reads input: Python pauses after the typed value", async ({ page }) => {
+  await freshProject(page, "Python");
+  await setCode(page, 'name = input("name? ")\ngreeting = "hi " + name\nprint(greeting)\n');
+  await breakpointAt(page, 3);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("textbox", { name: "Program input" }).fill("Ada");
+  await page.keyboard.press("Enter");
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "greeting = 'hi Ada'" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("hi Ada", { timeout: 30_000 });
+});
+
+test("several main classes: asks which to run and remembers the choice", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, "public class Main {\n    static String helper() {\n        return \"helper\";\n    }\n}\n");
+  await addFile(page, "Tool.java", 'public class Tool {\n    public static void main(String[] args) {\n        System.out.println("tool " + Main.helper());\n    }\n}\n');
+  await addFile(page, "Demo.java", 'public class Demo {\n    public static void main(String[] args) {\n        System.out.println("demo");\n    }\n}\n');
+
+  await page.getByRole("button", { name: "Run program" }).click();
+  const dialog = page.getByRole("dialog", { name: "Select entry point" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Entry points" })).toContainText("Demo");
+  await dialog.getByRole("button", { name: /^Tool/ }).click();
+  await expect(output(page)).toContainText("tool helper", { timeout: 120_000 });
+
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText("Success", { exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(output(page)).toContainText("tool helper");
+  await expect(page.getByRole("button", { name: "Run configuration" })).toContainText("Tool.java");
+});
+
+test("recent projects: a project counts once it has been run", async ({ page }) => {
+  await freshProject(page, "Python");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Hello World", { timeout: 120_000 });
+  await page.getByRole("button", { name: "Home" }).click();
+  const recent = page.getByRole("list", { name: "Recent projects" });
+  await expect(recent.getByRole("listitem")).toHaveCount(1);
+  await expect(recent).toContainText("Ran just now");
+});
+
+test("debugging a program that reads input: Java stops at a breakpoint after the typed value", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(
+    page,
+    "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        int n = new Scanner(System.in).nextInt();\n        int doubled = n * 2;\n        System.out.println(doubled);\n    }\n}\n",
+  );
+  await breakpointAt(page, 7);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("textbox", { name: "Program input" }).fill("25");
+  await page.keyboard.press("Enter");
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "n = 25" })).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "doubled = 50" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("50", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
