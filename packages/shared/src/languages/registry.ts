@@ -56,7 +56,7 @@ if __name__ == "__main__":
     image: "python:3.13-slim",
     command: ["python3", "-u", "{entry}"],
   },
-  debugger: { protocol: "dap", supportLevel: "planned" },
+  debugger: { protocol: "settrace", supportLevel: "beta" },
   visualizer: { supportLevel: "planned" },
 };
 

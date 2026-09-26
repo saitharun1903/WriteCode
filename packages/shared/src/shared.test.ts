@@ -166,6 +166,11 @@ describe("debug protocol", () => {
     expect(r.ok && r.value.breakpoints).toEqual({ "Main.java": [1, 3] });
   });
 
+  it("accepts debug mode for Python", () => {
+    const r = validateExecutionRequest({ language: "python", files: [{ path: "main.py", content: "" }], entry: "main.py", mode: "debug", breakpoints: { "main.py": [2] } });
+    expect(r.ok && r.value.mode).toBe("debug");
+  });
+
   it("rejects debug mode for languages without a debugger and bad breakpoints", () => {
     expect(validateExecutionRequest({ language: "cpp", files: [{ path: "main.cpp", content: "" }], entry: "main.cpp", mode: "debug" }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);

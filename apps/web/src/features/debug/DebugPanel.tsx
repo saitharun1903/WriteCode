@@ -209,7 +209,7 @@ function Frames({ stop }: { stop: StopInfo | null }) {
             “{stop.thread}”: <span className="text-fg">PAUSED</span>
           </span>
         ) : (
-          <span className="truncate">{phase === "running" ? "“main”: RUNNING" : "Frames are not available"}</span>
+          <span className="truncate">{phase === "running" ? "Frames appear when the program pauses" : "Frames are not available"}</span>
         )}
       </div>
       <ul aria-label="Call stack" className="min-h-0 flex-1 overflow-auto py-0.5">
@@ -217,7 +217,8 @@ function Frames({ stop }: { stop: StopInfo | null }) {
           const dot = f.name.lastIndexOf(".");
           const method = dot === -1 ? f.name : f.name.slice(dot + 1);
           const cls = dot === -1 ? "" : f.name.slice(0, dot);
-          const simple = cls.slice(cls.lastIndexOf(".") + 1);
+          // Java frames name their class; Python functions fall back to the file name.
+          const simple = cls ? cls.slice(cls.lastIndexOf(".") + 1) : f.file ? basename(f.file) : "";
           return (
             <li key={f.id}>
               <button
@@ -232,7 +233,8 @@ function Frames({ stop }: { stop: StopInfo | null }) {
                 )}
               >
                 <span className="truncate">
-                  {method}:{f.line}, {simple}
+                  {method}:{f.line}
+                  {simple && `, ${simple}`}
                 </span>
                 {cls.includes(".") && <span className="truncate text-fg-subtle">({cls.slice(0, cls.lastIndexOf("."))})</span>}
               </button>
@@ -388,8 +390,7 @@ export function DebugToolWindow() {
 
       {!supported ? (
         <p className="p-3 text-sm text-fg-subtle">
-          Debugging is not available for {language?.name ?? "this language"} yet. It currently supports Java, where it pauses the real JVM
-          through JDWP.
+          Debugging is not available for {language?.name ?? "this language"} yet. It currently supports Java and Python.
         </p>
       ) : tab === "console" ? (
         <div className="min-h-0 flex-1">

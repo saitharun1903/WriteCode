@@ -16,7 +16,7 @@ import {
 import type { EventEmitter } from "../events.js";
 import { classifyCompile } from "../sandbox/classify.js";
 import { Sandbox } from "../sandbox/sandbox.js";
-import { ADAPTER_DIR, ADAPTER_MAIN, javaAdapterClasses } from "./java-adapter.js";
+import { debugAdapterFor, type DebugAdapter } from "./adapters.js";
 
 export const DEBUG_SESSION_LIMITS = {
   /** Hard cap on a session's total lifetime. */
@@ -25,7 +25,7 @@ export const DEBUG_SESSION_LIMITS = {
   idleMs: 10 * 60_000,
   /** Cumulative time the program may run while not paused. */
   runBudgetMs: 30_000,
-  /** Two JVMs (adapter + program) share the sandbox. */
+  /** Java runs two JVMs (adapter + program) in the sandbox. */
   memoryMb: 512,
   pids: 256,
 };
@@ -97,9 +97,9 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
   });
 
   try {
-    const adapterFiles = await javaAdapterClasses(ctx.docker);
+    const adapter = await debugAdapterFor(ctx.docker, request);
     await sandbox.start();
-    await sandbox.prepare(request.files, request.stdin ?? "", adapterFiles);
+    await sandbox.prepare(request.files, request.stdin ?? "", adapter.files);
 
     let compileTime: number | undefined;
     if (lang.compiler) {
@@ -124,7 +124,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
     }
 
     events.status("RUNNING");
-    return await drive(ctx, sandbox, limits, compileTime, {
+    return await drive(ctx, sandbox, adapter, limits, compileTime, {
       onStdout: (c) => (stdout += c),
       onStderr: (c) => (stderr += c),
       account: (n) => (outputBytes += n) <= limits.maxOutputBytes,
@@ -141,6 +141,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
 async function drive(
   ctx: DebugContext,
   sandbox: Sandbox,
+  debugAdapter: DebugAdapter,
   limits: ExecutionLimits,
   compileTime: number | undefined,
   out: {
@@ -250,26 +251,23 @@ async function drive(
     });
   };
 
-  const adapter = await sandbox.startInteractive(
-    ["java", "-Xmx64m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xshare:auto", "-cp", ADAPTER_DIR, ADAPTER_MAIN],
-    {
-      onStdout: (chunk) => {
-        buffer += chunk;
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) continue;
-          try {
-            onAdapterMessage(JSON.parse(line) as AdapterMessage);
-          } catch {
-            ctx.log("unparseable adapter output", { line: line.slice(0, 200) });
-          }
+  const adapter = await sandbox.startInteractive(debugAdapter.argv, {
+    onStdout: (chunk) => {
+      buffer += chunk;
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        try {
+          onAdapterMessage(JSON.parse(line) as AdapterMessage);
+        } catch {
+          ctx.log("unparseable adapter output", { line: line.slice(0, 200) });
         }
-      },
-      onStderr: (chunk) => ctx.log("adapter stderr", { text: chunk.slice(0, 500) }),
+      }
     },
-  );
+    onStderr: (chunk) => ctx.log("adapter stderr", { text: chunk.slice(0, 500) }),
+  });
   void adapter.exited.then(() => end(endStatus?.status ?? "SYSTEM_ERROR", endStatus?.message ?? "The debugger stopped unexpectedly."));
 
   const send = (command: { cmd: string; [key: string]: unknown }, requestId?: string) => {
@@ -278,19 +276,7 @@ async function drive(
     adapter.write(JSON.stringify({ seq: s, ...command }) + "\n");
   };
 
-  const lang = requireLanguage(request.language);
-  const entryClass = expandCommand(["{entryClass}"], { entry: request.entry, files: request.files })[0]!;
-  // Program JVM flags mirror normal runs, with a heap cap so both JVMs fit.
-  const vmOptions = lang.runtime.command.filter((a) => a.startsWith("-X")).concat("-Xmx192m").join(" ");
-  send({
-    cmd: "launch",
-    mainClass: entryClass,
-    classpath: "out",
-    vmOptions,
-    stdinPath: "/tmp/cw-stdin",
-    files: request.files.map((f) => f.path),
-    breakpoints: request.breakpoints ?? {},
-  });
+  send({ cmd: "launch", ...debugAdapter.launch });
   startRunning();
 
   // Relay client commands from Redis until the session ends.
@@ -345,7 +331,7 @@ async function drive(
   await ended;
   clearInterval(watchdog);
   reading = false;
-  // Both JVMs live only in this sandbox; killing it ends the session at once.
+  // The adapter and program live only in this sandbox; killing it ends the session at once.
   await sandbox.kill();
   // The reader exits on its own once the caller disconnects its blocking connection.
   void reader;

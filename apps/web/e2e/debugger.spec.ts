@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Java debugger end to end: real JVM paused over JDWP inside the sandbox.
+ * Debugger end to end: a real JVM paused over JDWP, and a real CPython paused
+ * by the tracing adapter, inside the sandbox.
  * Requires the full stack and Docker. Run with E2E_EXECUTION=1.
  */
 test.skip(!process.env.E2E_EXECUTION, "set E2E_EXECUTION=1 with the API, worker and Docker running");
@@ -37,7 +38,7 @@ async function waitSaved(page: Page) {
   });
 }
 
-async function javaProject(page: Page, code: string) {
+async function newProject(page: Page, language: "Java" | "Python", code: string) {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -48,7 +49,7 @@ async function javaProject(page: Page, code: string) {
   });
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: `New ${language} project` }).click();
   await expect(editor(page)).toContainText("Hello World");
   await editor(page).click();
   await page.evaluate((text) => {
@@ -57,6 +58,9 @@ async function javaProject(page: Page, code: string) {
   }, code);
   await waitSaved(page);
 }
+
+const javaProject = (page: Page, code: string) => newProject(page, "Java", code);
+const pythonProject = (page: Page, code: string) => newProject(page, "Python", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -151,4 +155,96 @@ test("stops on uncaught exceptions", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("4:1");
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
+const PY_PROGRAM = `class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+def square(x):
+    r = x * x
+    return r
+
+
+def main():
+    nums = [3, 1, 2]
+    origin = Point(0, 5)
+    total = 0
+    for n in nums:
+        total += square(n)
+    print(f"total={total}")
+
+
+if __name__ == "__main__":
+    main()
+`;
+
+test("Python: breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await pythonProject(page, PY_PROGRAM);
+  await cursorTo(page, 17);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("17:1");
+  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("main:17, main.py");
+
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = [3, 1, 2]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "origin = Point(x=0, y=5)" }).click();
+  await expect(vars.getByRole("treeitem", { name: "y = 5" })).toBeVisible();
+
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n * 10 + total");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n * 10 + total").locator("..")).toContainText("30");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("square:8, main.py");
+  await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
+
+  await page.keyboard.press("Shift+F11");
+  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("square:");
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint main.py:17" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("Python: pause a running program, then stop it", async ({ page }) => {
+  await pythonProject(page, "i = 0\nwhile True:\n    i += 1\n");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Running", { exact: true })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Pause" }).click();
+  await expect(panel.getByText("Paused", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: /^i = \d+$/ })).toBeVisible();
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("Stopped", { exact: true })).toBeVisible({ timeout: 15_000 });
+});
+
+test("Python: stops on uncaught exceptions", async ({ page }) => {
+  await pythonProject(page, "items = [1, 2]\nprint(items[5])\n");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 90_000 });
+  await expect(panel.getByRole("alert")).toContainText("IndexError: list index out of range");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("2:1");
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(output(page)).toContainText("IndexError");
 });

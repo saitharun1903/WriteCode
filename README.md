@@ -14,7 +14,7 @@ A browser-native IDE that compiles and runs real code in isolated sandboxes. No 
 | Project search, snapshots with diff, run history | Working |
 | Real execution: Java, Python, C++, C, JavaScript, TypeScript | Working, E2E-tested against Docker (compile errors, stdin, time/memory/output limits, no network) |
 | Java debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
-| Python debugger | Not started (planned) |
+| Python debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
 | Visualizer (execution events) | Not started (planned) |
 
 Languages: **Java 21, Python 3.13, C++ (GCC 14)** are the primary targets. C, JavaScript and TypeScript are marked *beta*.
@@ -46,10 +46,15 @@ packages/db      Prisma schema, migrations and client
 
 ### Debugger
 
-Java debugging runs the real JVM under JDI/JDWP inside the same sandbox as normal runs. A small adapter (`apps/worker/debug-adapters/java/CwDebugAdapter.java`, compiled once per worker) launches your program in a second JVM over loopback and speaks JSON lines with the worker. Commands flow browser → WebSocket → API → Redis stream → worker → adapter, and events flow back the same way.
+Java debugging runs the real JVM under JDI/JDWP inside the same sandbox as normal runs. A small adapter (`apps/worker/debug-adapters/java/CwDebugAdapter.java`, compiled once per worker) launches your program in a second JVM over loopback and speaks JSON lines with the worker.
+
+Python debugging runs your program in CPython under a line tracer (`sys.settrace`) from `apps/worker/debug-adapters/python/cw_debug_adapter.py`, which speaks the same JSON-lines protocol. The program keeps its own stdin, stdout and stderr, and uncaught exceptions pause on the line that raised them before the normal traceback is printed.
+
+For both languages, commands flow browser → WebSocket → API → Redis stream → worker → adapter, and events flow back the same way.
 
 - Breakpoints are saved with the project, follow their code as you edit, and show hollow when no code exists on that line.
 - Watch expressions support variables, fields, array indexing, `.length`, arithmetic, comparisons and logic. They never call methods, so evaluating them cannot change program state.
+- Python watches also support slicing, f-strings and built-ins such as `len()`, `min()`, `max()` and `sum()` on built-in values. They never call your functions, properties or `__repr__`, and objects are shown by their fields.
 - Debug sessions use a separate queue and pool (`DEBUG_CONCURRENCY`, default 2), with limits of 15 minutes per session, 10 minutes idle and 30 seconds of cumulative running time while not paused. A session whose browser disconnects is stopped after 5 seconds.
 
 ### Sandbox security model
