@@ -1,11 +1,12 @@
 import { Worker, type Job } from "bullmq";
 import { Redis } from "ioredis";
 import { createPrismaClient } from "@cw/db";
-import { EXECUTION_QUEUE, redisKeys, type ExecutionJob, type ExecutionResult, type RunnerHeartbeat } from "@cw/shared";
+import { DEBUG_QUEUE, EXECUTION_QUEUE, redisKeys, type ExecutionJob, type ExecutionResult, type RunnerHeartbeat } from "@cw/shared";
 import { config } from "./config.js";
 import { createDocker, dockerAvailable, ensureImages, readyLanguages, sweepOrphans } from "./docker.js";
 import { EventEmitter } from "./events.js";
 import { createLogger } from "./logger.js";
+import { runDebugSession } from "./debug/session.js";
 import { runExecution } from "./runner.js";
 
 const log = createLogger({ service: "worker", workerId: config.workerId });
@@ -102,8 +103,8 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
     };
   } else {
     await prisma.execution.update({ where: { id: executionId }, data: { startedAt: new Date() } }).catch(() => {});
-    jlog.info("execution started", { queuedMs: Date.now() - job.data.enqueuedAt });
-    result = await runExecution({
+    jlog.info("execution started", { mode: request.mode ?? "run", queuedMs: Date.now() - job.data.enqueuedAt });
+    const common = {
       docker,
       executionId,
       request,
@@ -113,8 +114,19 @@ async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
       maxFileSizeBytes: config.maxFileSizeBytes,
       events,
       isCancelled,
-      log: (msg, extra) => jlog.error(msg, extra),
-    });
+      log: (msg: string, extra?: Record<string, unknown>) => jlog.error(msg, extra),
+    };
+    if (request.mode === "debug") {
+      // The command reader blocks, so each session gets its own connection.
+      const commandRedis = redis.duplicate();
+      try {
+        result = await runDebugSession({ ...common, commandRedis });
+      } finally {
+        commandRedis.disconnect();
+      }
+    } else {
+      result = await runExecution(common);
+    }
   }
 
   await events.result(result);
@@ -154,13 +166,23 @@ async function main() {
     // Never re-run user code automatically after a crash.
     maxStalledCount: 0,
   });
-  worker.on("failed", (job, err) => log.error("job failed", { executionId: job?.data.executionId, error: err.message }));
-  worker.on("error", (err) => log.error("worker error", { error: err.message }));
+  const debugWorker = new Worker<ExecutionJob, ExecutionResult>(DEBUG_QUEUE, processJob, {
+    connection: redis,
+    concurrency: Math.max(config.debugConcurrency, 1),
+    maxStalledCount: 0,
+    autorun: config.debugConcurrency > 0,
+    // Sessions last minutes; keep the job lock alive well past the default 30s.
+    lockDuration: 60_000,
+  });
+  for (const w of [worker, debugWorker]) {
+    w.on("failed", (job, err) => log.error("job failed", { executionId: job?.data.executionId, error: err.message }));
+    w.on("error", (err) => log.error("worker error", { error: err.message }));
+  }
 
   const shutdown = async (signal: string) => {
     log.info("shutting down", { signal });
     clearInterval(beatTimer);
-    await worker.close();
+    await Promise.all([worker.close(), debugWorker.close()]);
     await redis.del(redisKeys.runnerHeartbeat(config.workerId)).catch(() => {});
     await prisma.$disconnect();
     redis.disconnect();

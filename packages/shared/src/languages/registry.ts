@@ -28,7 +28,7 @@ const java: LanguageDefinition = {
     image: "eclipse-temurin:21-jdk",
     command: ["java", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss8m", "-cp", "out", "{entryClass}"],
   },
-  debugger: { protocol: "jdwp", supportLevel: "planned" },
+  debugger: { protocol: "jdwp", supportLevel: "beta" },
   visualizer: { supportLevel: "planned" },
 };
 

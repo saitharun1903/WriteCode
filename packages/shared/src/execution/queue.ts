@@ -5,6 +5,8 @@ import type { ExecutionRequest } from "./types.js";
  * names so queue and key layouts cannot drift apart.
  */
 export const EXECUTION_QUEUE = "executions";
+/** Debug sessions are long-lived, so they get their own queue and concurrency. */
+export const DEBUG_QUEUE = "debug-sessions";
 
 export interface ExecutionJob {
   executionId: string;
@@ -20,6 +22,8 @@ export const redisKeys = {
   events: (id: string) => `exec:${id}:events`,
   /** Final ExecutionResult JSON. */
   result: (id: string) => `exec:${id}:result`,
+  /** Redis Stream of debug commands from clients to the worker holding the session. */
+  commands: (id: string) => `exec:${id}:commands`,
   /** Set to request cancellation; the worker polls it. */
   cancel: (id: string) => `exec:${id}:cancel`,
   /** Worker heartbeat with sandbox readiness, refreshed every few seconds. */

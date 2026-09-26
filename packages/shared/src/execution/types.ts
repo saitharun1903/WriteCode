@@ -1,3 +1,5 @@
+import type { DebugEvent } from "../debug/types.js";
+
 export const EXECUTION_STATUSES = [
   "QUEUED",
   "COMPILING",
@@ -34,12 +36,18 @@ export interface SourceFile {
   content: string;
 }
 
+export type ExecutionMode = "run" | "debug";
+
 export interface ExecutionRequest {
   language: string;
   files: SourceFile[];
   /** Path of the entry file within `files`. */
   entry: string;
   stdin?: string;
+  /** Defaults to "run". "debug" starts an interactive debug session. */
+  mode?: ExecutionMode;
+  /** Debug mode only: project file -> 1-based breakpoint lines. */
+  breakpoints?: Record<string, number[]>;
 }
 
 export interface ExecutionLimits {
@@ -81,7 +89,8 @@ export type ExecutionStreamEvent =
   | { type: "stdout"; executionId: string; chunk: string }
   | { type: "stderr"; executionId: string; chunk: string }
   | { type: "compile"; executionId: string; chunk: string }
-  | { type: "result"; executionId: string; result: ExecutionResult };
+  | { type: "result"; executionId: string; result: ExecutionResult }
+  | { type: "debug"; executionId: string; event: DebugEvent };
 
 export const DEFAULT_LIMITS: ExecutionLimits = {
   timeoutMs: 10_000,

@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
 import type { PrismaClient } from "@cw/db";
 import {
+  DEBUG_QUEUE,
   EXECUTION_QUEUE,
   getLanguage,
   isTerminalStatus,
@@ -26,7 +27,7 @@ import {
 } from "@cw/shared";
 import { config } from "../config.js";
 import { RunnerStatusService } from "../health/runner-status.service.js";
-import { EXECUTION_QUEUE_TOKEN, PRISMA, REDIS, type ExecutionQueue } from "../infra/infra.module.js";
+import { DEBUG_QUEUE_TOKEN, EXECUTION_QUEUE_TOKEN, PRISMA, REDIS, type ExecutionQueue } from "../infra/infra.module.js";
 import { createRedis } from "../infra/redis.js";
 import { ExecutionStore } from "./execution-store.js";
 import { RateLimiter } from "./rate-limiter.js";
@@ -40,10 +41,11 @@ export function assertExecutionId(id: string) {
 @Injectable()
 export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ExecutionsService.name);
-  private queueEvents?: QueueEvents;
+  private queueEvents: QueueEvents[] = [];
 
   constructor(
     @Inject(EXECUTION_QUEUE_TOKEN) private readonly queue: ExecutionQueue,
+    @Inject(DEBUG_QUEUE_TOKEN) private readonly debugQueue: ExecutionQueue,
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly store: ExecutionStore,
@@ -53,18 +55,21 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     // Release rate-limit slots when jobs end, and report worker crashes to waiting clients.
-    this.queueEvents = new QueueEvents(EXECUTION_QUEUE, { connection: createRedis("queue-events", { maxRetriesPerRequest: null }) });
-    this.queueEvents.on("completed", ({ jobId }) => void this.release(jobId));
-    this.queueEvents.on("failed", ({ jobId, failedReason }) => {
-      this.logger.error(`execution ${jobId} failed in worker: ${failedReason}`);
-      void this.onWorkerFailure(jobId);
-    });
-    // Connection errors are already reported by the Redis connection itself.
-    this.queueEvents.on("error", () => {});
+    for (const name of [EXECUTION_QUEUE, DEBUG_QUEUE]) {
+      const events = new QueueEvents(name, { connection: createRedis(`${name}-events`, { maxRetriesPerRequest: null }) });
+      events.on("completed", ({ jobId }) => void this.release(jobId));
+      events.on("failed", ({ jobId, failedReason }) => {
+        this.logger.error(`execution ${jobId} failed in worker: ${failedReason}`);
+        void this.onWorkerFailure(jobId);
+      });
+      // Connection errors are already reported by the Redis connection itself.
+      events.on("error", () => {});
+      this.queueEvents.push(events);
+    }
   }
 
   async onModuleDestroy() {
-    await this.queueEvents?.close();
+    await Promise.all(this.queueEvents.map((e) => e.close()));
   }
 
   async create(body: unknown, client: string): Promise<{ id: string }> {
@@ -88,7 +93,8 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    const depth = await this.queue.getWaitingCount();
+    const queue = request.mode === "debug" ? this.debugQueue : this.queue;
+    const depth = await queue.getWaitingCount();
     if (depth >= config.rateLimit.maxQueueDepth) {
       throw new ServiceUnavailableException("The execution service is at capacity. Try again shortly.");
     }
@@ -111,7 +117,7 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
     const job: ExecutionJob = { executionId: id, request, enqueuedAt: Date.now() };
     // One attempt only: user code must never be silently re-run.
-    await this.queue.add("run", job, { jobId: id, attempts: 1, removeOnComplete: 1000, removeOnFail: 1000 });
+    await queue.add(request.mode === "debug" ? "debug" : "run", job, { jobId: id, attempts: 1, removeOnComplete: 1000, removeOnFail: 1000 });
     return { id };
   }
 
@@ -130,7 +136,7 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
     await this.redis.set(redisKeys.cancel(id), "1", "EX", 3600);
     // If it has not started, remove it from the queue and finish it here.
-    const job = await this.queue.getJob(id);
+    const job = (await this.queue.getJob(id)) ?? (await this.debugQueue.getJob(id));
     if (job && (await job.isWaiting())) {
       try {
         await job.remove();
@@ -141,6 +147,15 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
       }
     }
     return { ok: true };
+  }
+
+  /** Forwards a debug command to the worker running the session. Returns an error message or null. */
+  async sendDebugCommand(id: string, requestId: string, command: unknown): Promise<string | null> {
+    const result = await this.store.getResult(id);
+    if (!result) return "Execution not found.";
+    if (isTerminalStatus(result.status)) return "The debug session has ended.";
+    await this.store.appendCommand(id, { requestId, command });
+    return null;
   }
 
   private async release(executionId: string) {

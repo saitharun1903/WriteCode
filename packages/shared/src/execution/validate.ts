@@ -1,3 +1,4 @@
+import { validLines } from "../debug/types.js";
 import { getLanguage } from "../languages/registry.js";
 import { REQUEST_BOUNDS, type ExecutionRequest } from "./types.js";
 
@@ -77,5 +78,30 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     stdin = body.stdin;
   }
 
-  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin } };
+  const mode = body.mode ?? "run";
+  if (mode !== "run" && mode !== "debug") return { ok: false, error: "mode must be 'run' or 'debug'." };
+  let breakpoints: Record<string, number[]> | undefined;
+  if (mode === "debug") {
+    const lang = getLanguage(body.language)!;
+    if (!lang.debugger || lang.debugger.supportLevel === "planned") {
+      return { ok: false, error: `Debugging is not available for ${lang.name} yet.` };
+    }
+    breakpoints = {};
+    if (body.breakpoints !== undefined) {
+      if (typeof body.breakpoints !== "object" || body.breakpoints === null || Array.isArray(body.breakpoints)) {
+        return { ok: false, error: "breakpoints must be an object." };
+      }
+      let count = 0;
+      for (const [file, lines] of Object.entries(body.breakpoints as Record<string, unknown>)) {
+        if (!seen.has(file)) return { ok: false, error: `Breakpoint file is not part of the project: ${file}` };
+        const valid = Array.isArray(lines) ? validLines(lines) : null;
+        if (!valid) return { ok: false, error: `Invalid breakpoint lines for ${file}` };
+        count += valid.length;
+        breakpoints[file] = valid;
+      }
+      if (count > 500) return { ok: false, error: "Too many breakpoints." };
+    }
+  }
+
+  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin, mode, breakpoints } };
 }

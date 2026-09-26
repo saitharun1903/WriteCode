@@ -1,5 +1,13 @@
 import type { Redis } from "ioredis";
-import { EXECUTION_TTL_SECONDS, STREAM_FIELD, redisKeys, type ExecutionResult, type ExecutionStatus, type ExecutionStreamEvent } from "@cw/shared";
+import {
+  EXECUTION_TTL_SECONDS,
+  STREAM_FIELD,
+  redisKeys,
+  type DebugEvent,
+  type ExecutionResult,
+  type ExecutionStatus,
+  type ExecutionStreamEvent,
+} from "@cw/shared";
 
 type ChunkType = "stdout" | "stderr" | "compile";
 
@@ -25,6 +33,12 @@ export class EventEmitter {
   status(status: ExecutionStatus) {
     this.flushChunks();
     this.push({ type: "status", executionId: this.executionId, status });
+  }
+
+  debug(event: DebugEvent) {
+    // Flush pending output first so the client sees output before the pause that follows it.
+    this.flushChunks();
+    this.push({ type: "debug", executionId: this.executionId, event });
   }
 
   chunk(type: ChunkType, text: string) {

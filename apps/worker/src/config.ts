@@ -20,6 +20,8 @@ export const config = {
   workerId: `${hostname()}-${process.pid}`,
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
   concurrency: int("WORKER_CONCURRENCY", 2, 1, 32),
+  /** Concurrent debug sessions per worker. Sessions are long-lived, so they have their own pool. */
+  debugConcurrency: int("DEBUG_CONCURRENCY", 2, 0, 16),
   /** Optional OCI runtime such as gVisor's `runsc` for stronger isolation. */
   runtime: process.env.SANDBOX_RUNTIME || undefined,
   dockerHost: process.env.DOCKER_HOST || undefined,

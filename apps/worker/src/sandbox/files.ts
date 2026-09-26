@@ -1,5 +1,3 @@
-import type { SourceFile } from "@cw/shared";
-
 /**
  * Packs files into argv for a single `sh` invocation that decodes them into the
  * workspace. Using arguments (not stdin) avoids relying on half-closed hijacked
@@ -23,12 +21,19 @@ export const WRITE_SCRIPT = [
   "done",
 ].join("\n");
 
+/** A file to place in the sandbox. `base64` marks content that is already base64 (binary files). */
+export interface SandboxFile {
+  path: string;
+  content: string;
+  base64?: boolean;
+}
+
 export interface WriteBatch {
   argv: string[];
 }
 
 /** Splits files into `sh -c WRITE_SCRIPT` invocations of bounded size. */
-export function buildWriteBatches(files: readonly SourceFile[]): WriteBatch[] {
+export function buildWriteBatches(files: readonly SandboxFile[]): WriteBatch[] {
   const batches: WriteBatch[] = [];
   let args: string[] = [];
   let size = 0;
@@ -41,7 +46,7 @@ export function buildWriteBatches(files: readonly SourceFile[]): WriteBatch[] {
   };
 
   for (const file of files) {
-    const b64 = Buffer.from(file.content, "utf8").toString("base64");
+    const b64 = file.base64 ? file.content : Buffer.from(file.content, "utf8").toString("base64");
     // Chunk on 4-char boundaries so each piece decodes independently.
     const chunkSize = MAX_ARG_CHARS - (MAX_ARG_CHARS % 4);
     const chunks = b64.length === 0 ? [""] : Array.from({ length: Math.ceil(b64.length / chunkSize) }, (_, i) => b64.slice(i * chunkSize, (i + 1) * chunkSize));

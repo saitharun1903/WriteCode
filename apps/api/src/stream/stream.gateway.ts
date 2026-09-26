@@ -3,11 +3,14 @@ import { WebSocketGateway, type OnGatewayConnection } from "@nestjs/websockets";
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { config } from "../config.js";
+import { DEBUG_LIMITS, parseDebugCommand } from "@cw/shared";
 import { ExecutionStore } from "../executions/execution-store.js";
-import { assertExecutionId } from "../executions/executions.service.js";
+import { ExecutionsService, assertExecutionId } from "../executions/executions.service.js";
 import { StreamHub } from "./stream-hub.js";
 
-const MAX_MESSAGE_BYTES = 1024;
+const MAX_MESSAGE_BYTES = 4096;
+/** Debug commands allowed per connection per second. */
+const MAX_COMMANDS_PER_SECOND = 30;
 
 /**
  * Live execution events. Protocol: the client sends
@@ -21,6 +24,7 @@ export class StreamGateway implements OnGatewayConnection {
   constructor(
     private readonly hub: StreamHub,
     private readonly store: ExecutionStore,
+    private readonly executions: ExecutionsService,
   ) {}
 
   handleConnection(client: WebSocket, req: IncomingMessage) {
@@ -31,17 +35,28 @@ export class StreamGateway implements OnGatewayConnection {
     }
 
     const unsubscribers = new Set<() => void>();
+    let windowStart = Date.now();
+    let commandsInWindow = 0;
     const sendJson = (payload: unknown) => {
       if (client.readyState === client.OPEN) client.send(JSON.stringify(payload));
     };
 
     client.on("message", (raw: Buffer, isBinary: boolean) => {
       if (isBinary || raw.length > MAX_MESSAGE_BYTES) return client.close(1009, "message too large");
-      let msg: { type?: unknown; executionId?: unknown };
+      let msg: { type?: unknown; executionId?: unknown; requestId?: unknown; command?: unknown };
       try {
         msg = JSON.parse(raw.toString("utf8")) as typeof msg;
       } catch {
         return sendJson({ type: "error", message: "Invalid JSON." });
+      }
+      if (msg.type === "debug") {
+        const now = Date.now();
+        if (now - windowStart > 1000) {
+          windowStart = now;
+          commandsInWindow = 0;
+        }
+        if (++commandsInWindow > MAX_COMMANDS_PER_SECOND) return sendJson({ type: "error", message: "Too many debug commands." });
+        return void this.debug(msg, sendJson);
       }
       if (msg.type !== "subscribe" || typeof msg.executionId !== "string") {
         return sendJson({ type: "error", message: "Unknown message." });
@@ -63,6 +78,22 @@ export class StreamGateway implements OnGatewayConnection {
       unsubscribers.clear();
     });
     client.on("error", (e) => this.logger.warn(`socket error: ${e.message}`));
+  }
+
+  private async debug(msg: { executionId?: unknown; requestId?: unknown; command?: unknown }, sendJson: (p: unknown) => void) {
+    const { executionId, requestId } = msg;
+    if (typeof executionId !== "string" || typeof requestId !== "string" || requestId.length > DEBUG_LIMITS.maxRequestIdLength) {
+      return sendJson({ type: "error", message: "Invalid debug message." });
+    }
+    try {
+      assertExecutionId(executionId);
+    } catch {
+      return sendJson({ type: "error", message: "Invalid execution id." });
+    }
+    const command = parseDebugCommand(msg.command);
+    if (!command) return sendJson({ type: "debug-error", executionId, requestId, message: "Invalid debug command." });
+    const error = await this.executions.sendDebugCommand(executionId, requestId, command).catch(() => "The debug service is unavailable.");
+    if (error) sendJson({ type: "debug-error", executionId, requestId, message: error });
   }
 
   private async subscribe(executionId: string, sendJson: (p: unknown) => void, unsubscribers: Set<() => void>) {

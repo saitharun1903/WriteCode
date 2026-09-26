@@ -4,7 +4,7 @@ import type Docker from "dockerode";
 import type { Container } from "dockerode";
 import { SANDBOX_WORKDIR, type ExecutionLimits, type SourceFile } from "@cw/shared";
 import type { StepOutcome } from "./classify.js";
-import { buildWriteBatches } from "./files.js";
+import { buildWriteBatches, type SandboxFile } from "./files.js";
 
 export const SANDBOX_LABEL = "cw.sandbox";
 const NOBODY = "65534:65534";
@@ -17,6 +17,14 @@ export interface SandboxOptions {
   runtime?: string;
   workspaceMb: number;
   maxFileSizeBytes: number;
+  /** How long the idle container may live; defaults to compile + run limits plus a margin. */
+  lifetimeSeconds?: number;
+}
+
+export interface InteractiveProcess {
+  write(data: string): void;
+  /** Resolves with the exit code once the process ends (null when unknown or killed). */
+  exited: Promise<number | null>;
 }
 
 export interface StepOptions {
@@ -52,7 +60,7 @@ export class Sandbox {
 
   async start(): Promise<void> {
     const { limits, image, executionId, runtime, workspaceMb, maxFileSizeBytes } = this.opts;
-    const lifetimeSeconds = Math.ceil((limits.compileTimeoutMs + limits.timeoutMs) / 1000) + 30;
+    const lifetimeSeconds = this.opts.lifetimeSeconds ?? Math.ceil((limits.compileTimeoutMs + limits.timeoutMs) / 1000) + 30;
     this.container = await this.docker.createContainer({
       Image: image,
       Cmd: ["sleep", String(lifetimeSeconds)],
@@ -96,8 +104,8 @@ export class Sandbox {
    * Writes project files, the program's stdin and the compiler output directory,
    * usually in a single exec. Throws on failure (a system error, not a user error).
    */
-  async prepare(files: readonly SourceFile[], stdin: string): Promise<void> {
-    const entries: SourceFile[] = [...files, { path: STDIN_PATH, content: stdin }, { path: "out/.keep", content: "" }];
+  async prepare(files: readonly SourceFile[], stdin: string, extra: readonly SandboxFile[] = []): Promise<void> {
+    const entries: SandboxFile[] = [...files, { path: STDIN_PATH, content: stdin }, { path: "out/.keep", content: "" }, ...extra];
     for (const batch of buildWriteBatches(entries)) await this.execSimple(batch.argv);
   }
 
@@ -176,6 +184,56 @@ export class Sandbox {
     }
     outcome.oomKilled = await this.wasOomKilled();
     return { ...outcome, durationMs };
+  }
+
+  /**
+   * Starts a long-running process with an open stdin (used for debug adapters).
+   * Output is delivered as decoded text; the caller enforces its own limits.
+   */
+  async startInteractive(
+    argv: string[],
+    handlers: { onStdout: (chunk: string) => void; onStderr: (chunk: string) => void },
+  ): Promise<InteractiveProcess> {
+    const container = this.requireContainer();
+    const exec = await container.exec({
+      Cmd: argv,
+      User: NOBODY,
+      WorkingDir: SANDBOX_WORKDIR,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false,
+    });
+    const stream = await exec.start({ hijack: true, stdin: true });
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const outDecoder = new StringDecoder("utf8");
+    const errDecoder = new StringDecoder("utf8");
+    stdout.on("data", (c: Buffer) => handlers.onStdout(outDecoder.write(c)));
+    stderr.on("data", (c: Buffer) => handlers.onStderr(errDecoder.write(c)));
+    this.docker.modem.demuxStream(stream, stdout, stderr);
+
+    const exited = new Promise<number | null>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        if (this.killed) return resolve(null);
+        exec.inspect().then(
+          (info) => resolve(info.ExitCode ?? null),
+          () => resolve(null),
+        );
+      };
+      stream.on("end", done);
+      stream.on("close", done);
+      stream.on("error", done);
+    });
+    return {
+      write: (data) => {
+        if (!stream.destroyed) stream.write(data);
+      },
+      exited,
+    };
   }
 
   /**

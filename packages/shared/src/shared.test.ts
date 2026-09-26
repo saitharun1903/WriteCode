@@ -10,6 +10,7 @@ import {
   rebase,
   validateExecutionRequest,
   validateName,
+  parseDebugCommand,
 } from "./index.js";
 
 describe("language registry", () => {
@@ -154,5 +155,30 @@ describe("tree", () => {
   it("rebases paths on rename", () => {
     expect(rebase("src/a/b.py", "src/a", "lib")).toBe("lib/b.py");
     expect(rebase("src/ab/b.py", "src/a", "lib")).toBe("src/ab/b.py");
+  });
+});
+
+describe("debug protocol", () => {
+  const base = { language: "java", files: [{ path: "Main.java", content: "" }], entry: "Main.java" };
+
+  it("accepts debug mode with breakpoints for Java", () => {
+    const r = validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Main.java": [3, 3, 1] } });
+    expect(r.ok && r.value.breakpoints).toEqual({ "Main.java": [1, 3] });
+  });
+
+  it("rejects debug mode for languages without a debugger and bad breakpoints", () => {
+    expect(validateExecutionRequest({ language: "cpp", files: [{ path: "main.cpp", content: "" }], entry: "main.cpp", mode: "debug" }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Main.java": [0] } }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "fly" }).ok).toBe(false);
+  });
+
+  it("parses only well-formed debug commands", () => {
+    expect(parseDebugCommand({ cmd: "stepOver", extra: 1 })).toEqual({ cmd: "stepOver" });
+    expect(parseDebugCommand({ cmd: "variables", ref: 4 })).toEqual({ cmd: "variables", ref: 4 });
+    expect(parseDebugCommand({ cmd: "variables", ref: -1 })).toBeNull();
+    expect(parseDebugCommand({ cmd: "evaluate", expression: "x * 2", frame: 0 })).toEqual({ cmd: "evaluate", expression: "x * 2", frame: 0 });
+    expect(parseDebugCommand({ cmd: "evaluate", expression: " ", frame: 0 })).toBeNull();
+    expect(parseDebugCommand({ cmd: "launch" })).toBeNull();
   });
 });
