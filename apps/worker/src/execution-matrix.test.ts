@@ -896,8 +896,15 @@ int main() {
     expect(ex.result.message).toContain("SIGABRT");
     // (GCC rewrites 1 / z as a comparison, so divide a non-constant numerator.)
     const fpe = await run("cpp", { "main.cpp": "#include <iostream>\nint main() {\n    volatile int n = 7, z = 0;\n    std::cout << n / z;\n}\n" });
-    expect(fpe.result.exitCode).toBe(136);
-    expect(fpe.result.message).toContain("SIGFPE");
+    // Integer division by zero is undefined behaviour; the hardware decides. x86 traps
+    // (SIGFPE); Arm64's sdiv returns 0 and the program continues.
+    if (process.arch === "arm64") {
+      expect(fpe.result.status).toBe("SUCCESS");
+      expect(fpe.result.stdout).toBe("0");
+    } else {
+      expect(fpe.result.exitCode).toBe(136);
+      expect(fpe.result.message).toContain("SIGFPE");
+    }
   });
 
   it("an infinite loop is stopped", { timeout: T }, async () => {
