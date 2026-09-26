@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { HistoryEntry, Project, ProjectSummary, Snapshot } from "@cw/shared";
-import { summarize } from "./operations";
+import { lastActivity, summarize } from "./operations";
 
 /**
  * Local persistence. V1 has no accounts, so projects, history and snapshots
@@ -44,7 +44,7 @@ export async function resetDbConnection() {
 export const projectRepo = {
   async list(): Promise<ProjectSummary[]> {
     const all = await (await db()).getAll("projects");
-    return all.map(summarize).sort((a, b) => b.updatedAt - a.updatedAt);
+    return all.map(summarize).sort((a, b) => lastActivity(b) - lastActivity(a));
   },
   async get(id: string): Promise<Project | undefined> {
     return (await db()).get("projects", id);
@@ -76,6 +76,17 @@ export const historyRepo = {
     let cursor = await d.transaction("history").store.index("createdAt").openCursor(null, "prev");
     while (cursor && out.length < limit) {
       out.push(cursor.value);
+      cursor = await cursor.continue();
+    }
+    return out;
+  },
+  /** Latest run time per project that has run history. */
+  async lastRunByProject(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    let cursor = await (await db()).transaction("history").store.openCursor();
+    while (cursor) {
+      const { projectId, createdAt } = cursor.value;
+      out.set(projectId, Math.max(out.get(projectId) ?? 0, createdAt));
       cursor = await cursor.continue();
     }
     return out;

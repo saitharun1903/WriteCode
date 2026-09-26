@@ -1,5 +1,6 @@
 import {
   basename,
+  getLanguage,
   isWithin,
   joinPath,
   parentOf,
@@ -32,8 +33,28 @@ export function createProject(id: string, name: string, languageId: string, now 
   };
 }
 
+/** True when the project's files and folders are exactly its language's starter template. */
+export function matchesTemplate(p: Project): boolean {
+  const template = getLanguage(p.language)?.template;
+  if (!template || p.folders.length > 0 || p.files.length !== template.length) return false;
+  return template.every((t) => p.files.some((f) => f.path === t.path && f.content === t.content));
+}
+
 export function summarize(p: Project): ProjectSummary {
-  return { id: p.id, name: p.name, language: p.language, fileCount: p.files.length, updatedAt: p.updatedAt };
+  return {
+    id: p.id,
+    name: p.name,
+    language: p.language,
+    fileCount: p.files.length,
+    updatedAt: p.updatedAt,
+    lastRunAt: p.lastRunAt,
+    untouched: !p.lastRunAt && matchesTemplate(p),
+  };
+}
+
+/** Most recent activity: an edit or a run. Recent projects are ordered by it. */
+export function lastActivity(p: Pick<ProjectSummary, "updatedAt" | "lastRunAt">): number {
+  return Math.max(p.updatedAt, p.lastRunAt ?? 0);
 }
 
 function pathExists(p: Project, path: string): boolean {

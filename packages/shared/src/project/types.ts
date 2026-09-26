@@ -19,6 +19,8 @@ export interface Project {
   breakpoints?: Record<string, number[]>;
   createdAt: number;
   updatedAt: number;
+  /** When the project was last run or debugged. Unset until its first run. */
+  lastRunAt?: number;
 }
 
 /** Lightweight listing entry used by the start screen without loading file contents. */
@@ -28,6 +30,13 @@ export interface ProjectSummary {
   language: string;
   fileCount: number;
   updatedAt: number;
+  lastRunAt?: number;
+  /**
+   * Never run, and its files are still exactly the language template: the
+   * project was only opened. Such projects are not listed as recent work and
+   * are discarded when the user leaves them.
+   */
+  untouched: boolean;
 }
 
 export interface HistoryEntry {

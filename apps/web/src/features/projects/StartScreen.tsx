@@ -12,16 +12,21 @@ import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
 import { useWorkspace } from "./store";
 
-function relativeTime(ts: number): string {
+function relativeTime(verb: string, ts: number): string {
   const diff = Date.now() - ts;
   const min = Math.round(diff / 60_000);
-  if (min < 1) return "Edited just now";
-  if (min < 60) return `Edited ${min} min ago`;
+  if (min < 1) return `${verb} just now`;
+  if (min < 60) return `${verb} ${min} min ago`;
   const h = Math.round(min / 60);
-  if (h < 24) return `Edited ${h} h ago`;
+  if (h < 24) return `${verb} ${h} h ago`;
   const d = Math.round(h / 24);
-  if (d < 30) return `Edited ${d} d ago`;
-  return `Edited ${new Date(ts).toLocaleDateString()}`;
+  if (d < 30) return `${verb} ${d} d ago`;
+  return `${verb} ${new Date(ts).toLocaleDateString()}`;
+}
+
+/** "Ran 5 min ago" or "Edited 2 h ago", whichever happened last. */
+function activityLabel(p: ProjectSummary): string {
+  return p.lastRunAt && p.lastRunAt >= p.updatedAt ? relativeTime("Ran", p.lastRunAt) : relativeTime("Edited", p.updatedAt);
 }
 
 /** Brand-coloured tile with a language monogram. */
@@ -49,7 +54,9 @@ export function LanguageMark({ id, size = 40, className }: { id: string; size?: 
 
 /** Welcome screen shown when no project is open. */
 export function StartScreen() {
-  const projects = useWorkspace((s) => s.projects);
+  const allProjects = useWorkspace((s) => s.projects);
+  // Projects that were only opened (never run or changed) are not recent work.
+  const projects = allProjects.filter((p) => !p.untouched);
   const status = useWorkspace((s) => s.status);
   const createProject = useWorkspace((s) => s.createProject);
   const [query, setQuery] = useState("");
@@ -156,7 +163,7 @@ function ProjectCard({ project }: { project: ProjectSummary }) {
               <LanguageMark id={project.language} size={14} className="rounded-[3px]" />
               {lang?.name} · {project.fileCount} file{project.fileCount === 1 ? "" : "s"}
             </span>
-            <span className="mt-2 block text-xs text-fg-subtle">{relativeTime(project.updatedAt)}</span>
+            <span className="mt-2 block text-xs text-fg-subtle">{activityLabel(project)}</span>
           </span>
         </button>
       )}

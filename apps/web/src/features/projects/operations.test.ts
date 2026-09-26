@@ -94,3 +94,19 @@ describe("project operations", () => {
     expect(p.breakpoints).toEqual({ "Main.java": [1] });
   });
 });
+
+describe("recent-work tracking", () => {
+  it("treats a project as untouched only until it is run or changed", () => {
+    const fresh = ops.createProject("p1", "Java project", "java");
+    expect(ops.summarize(fresh).untouched).toBe(true);
+    expect(ops.summarize({ ...fresh, lastRunAt: Date.now() }).untouched).toBe(false);
+    const edited = ops.updateFileContent(fresh, "Main.java", fresh.files[0]!.content + "// note\n");
+    expect(ops.summarize(edited).untouched).toBe(false);
+    expect(ops.summarize({ ...fresh, folders: ["src"] }).untouched).toBe(false);
+  });
+
+  it("orders by the latest edit or run", () => {
+    expect(ops.lastActivity({ updatedAt: 10, lastRunAt: 50 })).toBe(50);
+    expect(ops.lastActivity({ updatedAt: 70 })).toBe(70);
+  });
+});

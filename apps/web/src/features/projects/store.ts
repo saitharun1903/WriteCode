@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { getLanguage, isWithin, rebase, type Project, type ProjectSummary } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
-import { projectRepo } from "./db";
+import { historyRepo, projectRepo } from "./db";
 import * as ops from "./operations";
 
 type SaveState = "saved" | "pending" | "saving" | "error";
@@ -43,6 +43,8 @@ interface WorkspaceState {
   setBreakpoints: (file: string, lines: number[]) => void;
   clearBreakpoints: () => void;
   setStdin: (stdin: string) => void;
+  /** Records that the open project was run or debugged, which makes it recent work. */
+  markRun: () => void;
   flush: () => Promise<void>;
 }
 
@@ -104,6 +106,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     }
   };
 
+  /** Deletes a project the user only opened (never ran, never changed) once they leave it. */
+  const discardIfUntouched = async (project: Project | null) => {
+    if (!project || !ops.summarize(project).untouched || get().project?.id === project.id) return;
+    try {
+      await projectRepo.delete(project.id);
+      localStorage.removeItem(tabsKey(project.id));
+    } catch {
+      // Best effort: an untouched project is harmless if it lingers.
+    }
+    set((s) => ({ projects: s.projects.filter((p) => p.id !== project.id) }));
+  };
+
   const loadProject = (project: Project) => {
     const saved = readJSON<{ openTabs: string[]; activeFile: string | null }>(tabsKey(project.id));
     const exists = (p: string) => project.files.some((f) => f.path === p);
@@ -130,8 +144,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         // so projects and history stay until the user deletes them.
         void navigator.storage?.persist?.().catch(() => false);
         try {
-          const projects = await projectRepo.list();
+          // Projects saved before run tracking: take their last run from history.
+          const runs = await historyRepo.lastRunByProject().catch(() => new Map<string, number>());
+          for (const summary of await projectRepo.list()) {
+            const ranAt = runs.get(summary.id);
+            if (summary.lastRunAt || !ranAt) continue;
+            const stored = await projectRepo.get(summary.id);
+            if (stored) await projectRepo.put({ ...stored, lastRunAt: ranAt });
+          }
           const last = readJSON<string>(LAST_PROJECT_KEY);
+          // Projects that were only opened and then left are not kept.
+          let projects = await projectRepo.list();
+          for (const p of projects) if (p.untouched && p.id !== last) await projectRepo.delete(p.id);
+          projects = projects.filter((p) => !p.untouched || p.id === last);
           if (last && projects.some((p) => p.id === last)) {
             const project = await projectRepo.get(last);
             if (project) loadProject(project);
@@ -155,18 +180,22 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       } catch (e) {
         return void toast.error("Could not create project", errorMessage(e));
       }
+      const previous = get().project;
       set((s) => ({ projects: [ops.summarize(project), ...s.projects] }));
       loadProject(project);
+      await discardIfUntouched(previous);
     },
 
     async openProject(id) {
       const token = ++openToken;
       await get().flush();
+      const previous = get().project;
       try {
         const project = await projectRepo.get(id);
         if (token !== openToken) return;
         if (!project) return void toast.error("Project not found", "It may have been deleted in another tab.");
         loadProject(project);
+        await discardIfUntouched(previous);
       } catch (e) {
         toast.error("Could not open project", errorMessage(e));
       }
@@ -174,11 +203,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     closeProject() {
       openToken++;
-      void get().flush();
+      const previous = get().project;
+      void get()
+        .flush()
+        .then(() => discardIfUntouched(previous));
       set({ project: null, openTabs: [], activeFile: null });
       try {
         localStorage.removeItem(LAST_PROJECT_KEY);
       } catch {}
+    },
+
+    markRun() {
+      const project = get().project;
+      if (project) commit({ ...project, lastRunAt: Date.now() });
     },
 
     async renameProject(id, name) {

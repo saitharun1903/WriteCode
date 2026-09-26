@@ -107,3 +107,26 @@ test("run reports an actionable error when the execution service is down", async
   await expect(page.getByText("Execution service unreachable")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 });
+
+test("a project that is only opened is not kept as recent work; an edited one is", async ({ page }) => {
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
+  await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+  // Still gone after a reload: it was discarded, not just hidden.
+  await page.reload();
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /New Python project/ }).click();
+  await editorText(page).click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n# my change");
+  await waitSaved(page);
+  await page.getByRole("button", { name: "Home" }).click();
+  const recent = page.getByRole("list", { name: "Recent projects" });
+  await expect(recent.getByRole("listitem")).toHaveCount(1);
+  await expect(recent).toContainText("Python project");
+  await expect(recent).toContainText("Edited just now");
+});

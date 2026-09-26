@@ -154,7 +154,10 @@ export function TitleBar({ compact }: { compact: boolean }) {
           <DropdownMenu
             entries={[
               { kind: "label", label: "Recent projects" },
-              ...projects.slice(0, 10).map((p) => ({
+              ...projects
+                .filter((p) => !p.untouched || p.id === project.id)
+                .slice(0, 10)
+                .map((p) => ({
                 label: p.name,
                 checked: p.id === project.id,
                 onSelect: () => void useWorkspace.getState().openProject(p.id),
