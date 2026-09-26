@@ -2,6 +2,14 @@ packages:
   - apps/*
   - packages/*
 
+# Dependencies allowed to run install scripts. Everything else is blocked.
 allowBuilds:
   sharp: true
   unrs-resolver: true
+  prisma: true
+  "@prisma/engines": true
+  msgpackr-extract: true
+  cpu-features: set this to true or false
+  protobufjs: set this to true or false
+  ssh2: set this to true or false
+  esbuild: set this to true or false

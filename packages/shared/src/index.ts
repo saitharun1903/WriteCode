@@ -3,6 +3,7 @@ export * from "./languages/registry.js";
 export * from "./execution/types.js";
 export * from "./execution/validate.js";
 export * from "./execution/command.js";
+export * from "./execution/queue.js";
 export * from "./diagnostics/parse.js";
 export * from "./project/types.js";
 export * from "./project/tree.js";

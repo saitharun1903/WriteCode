@@ -88,7 +88,8 @@ export const DEFAULT_LIMITS: ExecutionLimits = {
   compileTimeoutMs: 30_000,
   memoryMb: 256,
   cpus: 1,
-  pids: 64,
+  // Counts threads too; a JVM on one CPU uses roughly 20.
+  pids: 128,
   maxOutputBytes: 1_000_000,
 };
 

@@ -42,9 +42,10 @@ describe("expandCommand", () => {
 
   it("expands sources filtered by extension", () => {
     const java = getLanguage("java")!;
-    expect(expandCommand(java.compiler!.command, { entry: "Main.java", files, sourceExtensions: [".java"] })).toEqual([
-      "javac", "-g", "-d", "out", "Main.java", "util/Helper.java",
-    ]);
+    const argv = expandCommand(java.compiler!.command, { entry: "Main.java", files, sourceExtensions: [".java"] });
+    expect(argv[0]).toBe("javac");
+    expect(argv.slice(-2)).toEqual(["Main.java", "util/Helper.java"]);
+    expect(argv).not.toContain("README.md");
   });
 
   it("derives a JVM class name from a nested entry", () => {

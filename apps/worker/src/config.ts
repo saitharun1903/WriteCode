@@ -1,0 +1,39 @@
+import { existsSync } from "node:fs";
+import { hostname } from "node:os";
+import { resolve } from "node:path";
+import { DEFAULT_LIMITS, type ExecutionLimits } from "@cw/shared";
+
+// One .env at the repository root serves every service; it is optional.
+for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(), ".env")]) {
+  if (existsSync(path)) process.loadEnvFile(path);
+}
+
+function int(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < min || n > max) throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  return n;
+}
+
+export const config = {
+  workerId: `${hostname()}-${process.pid}`,
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  concurrency: int("WORKER_CONCURRENCY", 2, 1, 32),
+  /** Optional OCI runtime such as gVisor's `runsc` for stronger isolation. */
+  runtime: process.env.SANDBOX_RUNTIME || undefined,
+  dockerHost: process.env.DOCKER_HOST || undefined,
+  limits: {
+    ...DEFAULT_LIMITS,
+    timeoutMs: int("SANDBOX_TIMEOUT_MS", DEFAULT_LIMITS.timeoutMs, 1000, 60_000),
+    memoryMb: int("SANDBOX_MEMORY_MB", DEFAULT_LIMITS.memoryMb, 64, 4096),
+  } satisfies ExecutionLimits,
+  /** Workspace tmpfs size. Counts against the memory limit. */
+  workspaceMb: 64,
+  /** Largest single file a program may write (RLIMIT_FSIZE). */
+  maxFileSizeBytes: 16 * 1024 * 1024,
+  /** Characters of each stream kept in Postgres; the live stream carries everything. */
+  storedOutputChars: 64 * 1024,
+};
+
+export type WorkerConfig = typeof config;

@@ -20,12 +20,13 @@ const java: LanguageDefinition = {
     },
   ],
   compiler: {
-    command: ["javac", "-g", "-d", "out", "{sources}"],
+    // Serial GC and C1-only JIT keep javac fast and small inside a 1-CPU sandbox.
+    command: ["javac", "-J-XX:+UseSerialGC", "-J-XX:TieredStopAtLevel=1", "-g", "-encoding", "UTF-8", "-d", "out", "{sources}"],
     sourceExtensions: [".java"],
   },
   runtime: {
     image: "eclipse-temurin:21-jdk",
-    command: ["java", "-cp", "out", "{entryClass}"],
+    command: ["java", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss8m", "-cp", "out", "{entryClass}"],
   },
   debugger: { protocol: "jdwp", supportLevel: "planned" },
   visualizer: { supportLevel: "planned" },
