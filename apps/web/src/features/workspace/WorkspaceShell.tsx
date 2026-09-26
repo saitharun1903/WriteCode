@@ -68,6 +68,12 @@ function DesktopWorkbench() {
     if (!layout.bottomOpen && !p.isCollapsed()) p.collapse();
   }, [layout.bottomOpen]);
 
+  // The visualizer draws frames and objects side by side; give it room when it opens.
+  useEffect(() => {
+    const p = bottomRef.current;
+    if (!p || !layout.bottomOpen || layout.bottomTab !== "visualize") return;
+    if (p.getSize().asPercentage < 50) p.resize("55%");
+  }, [layout.bottomOpen, layout.bottomTab]);
 
   return (
     <div className="flex min-h-0 flex-1">

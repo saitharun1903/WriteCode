@@ -1,12 +1,12 @@
 "use client";
 
-import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Square, Sun } from "lucide-react";
+import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Square, Sun, Workflow } from "lucide-react";
 import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
-import { canDebug, getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
+import { canDebug, canVisualize, getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
 import { FileIcon, ProjectBadge } from "@/features/explorer/file-icon";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -27,8 +27,8 @@ function fromCommands(ids: (string | "-")[]): MenuEntry[] {
 const MENUS: { label: string; items: (string | "-")[] }[] = [
   { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
   { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format", "edit.goToLine"] },
-  { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
-  { label: "Run", items: ["run.execute", "run.currentFile", "debug.startOrContinue", "run.cancel", "-", "run.clearOutput", "view.input"] },
+  { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.visualize", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
+  { label: "Run", items: ["run.execute", "run.currentFile", "debug.startOrContinue", "run.visualize", "run.cancel", "-", "run.clearOutput", "view.input"] },
   {
     label: "Debug",
     items: ["debug.startOrContinue", "debug.pause", "debug.stepOver", "debug.stepIn", "debug.stepOut", "-", "debug.restart", "run.cancel", "-", "debug.toggleBreakpoint", "debug.clearBreakpoints"],
@@ -101,6 +101,11 @@ function RunControls() {
       {canDebug() && (
         <IconButton label="Debug program" shortcut="F5" disabled={running} onClick={() => runCommand("debug.startOrContinue")} className="ml-0.5 size-7 text-success">
           <Bug />
+        </IconButton>
+      )}
+      {canVisualize() && (
+        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 text-accent">
+          <Workflow />
         </IconButton>
       )}
       <IconButton

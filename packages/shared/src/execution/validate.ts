@@ -83,7 +83,13 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
   if (interactive && stdin) return { ok: false, error: "Interactive runs take input while running; do not send stdin as well." };
 
   const mode = body.mode ?? "run";
-  if (mode !== "run" && mode !== "debug") return { ok: false, error: "mode must be 'run' or 'debug'." };
+  if (mode !== "run" && mode !== "debug" && mode !== "visualize") return { ok: false, error: "mode must be 'run', 'debug' or 'visualize'." };
+  if (mode === "visualize") {
+    const lang = getLanguage(body.language)!;
+    if (!lang.visualizer || lang.visualizer.supportLevel === "planned") {
+      return { ok: false, error: `The visualizer is not available for ${lang.name} yet.` };
+    }
+  }
   let breakpoints: Record<string, number[]> | undefined;
   if (mode === "debug") {
     const lang = getLanguage(body.language)!;

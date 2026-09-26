@@ -29,7 +29,7 @@ const java: LanguageDefinition = {
     command: ["java", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss8m", "-cp", "out", "{entryClass}"],
   },
   debugger: { protocol: "jdwp", supportLevel: "beta" },
-  visualizer: { supportLevel: "planned" },
+  visualizer: { supportLevel: "beta" },
 };
 
 const python: LanguageDefinition = {
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     command: ["python3", "-u", "{entry}"],
   },
   debugger: { protocol: "settrace", supportLevel: "beta" },
-  visualizer: { supportLevel: "planned" },
+  visualizer: { supportLevel: "beta" },
 };
 
 const cpp: LanguageDefinition = {

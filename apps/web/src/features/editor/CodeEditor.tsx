@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { findEntryPoints, getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
 import { currentLocation, useDebug } from "@/features/debug/store";
+import { stepLocation, useVisualize } from "@/features/visualize/store";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { resolveTheme, useSettings } from "@/features/settings/store";
@@ -41,7 +42,11 @@ export function CodeEditor() {
   const currentFile = useDebug((s) => currentLocation(s)?.file ?? null);
   const pausedLine = useDebug((s) => currentLocation(s)?.line ?? null);
   const currentTop = useDebug((s) => currentLocation(s)?.top ?? true);
-  const currentLine = currentFile === activeFile ? pausedLine : null;
+  // The visualizer's step is shown while its tool window is open and no debug session is paused.
+  const vizOpen = useSettings((s) => s.layout.bottomOpen && s.layout.bottomTab === "visualize");
+  const vizFile = useVisualize((s) => stepLocation(s)?.file ?? null);
+  const vizLine = useVisualize((s) => stepLocation(s)?.line ?? null);
+  const currentLine = currentFile === activeFile ? pausedLine : !pausedLine && vizOpen && vizFile === activeFile ? vizLine : null;
   const language = project?.language;
   const content = file?.content;
   // A string key keeps the decorations effect from re-running when unrelated text changes.

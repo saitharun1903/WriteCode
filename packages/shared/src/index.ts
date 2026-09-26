@@ -6,6 +6,7 @@ export * from "./execution/command.js";
 export * from "./execution/queue.js";
 export * from "./diagnostics/parse.js";
 export * from "./debug/types.js";
+export * from "./visualize/types.js";
 export * from "./project/types.js";
 export * from "./project/tree.js";
 export * from "./project/entry-points.js";

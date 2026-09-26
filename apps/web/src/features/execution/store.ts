@@ -20,6 +20,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
 import { createId } from "@/lib/id";
 import { useDebug } from "@/features/debug/store";
+import { useVisualize } from "@/features/visualize/store";
 import { ApiError, api, streamExecution, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
@@ -227,7 +228,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           entry: project.entryFile,
           stdin: project.stdin || undefined,
           interactive,
-          ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : {}),
+          ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : mode === "visualize" ? { mode } : {}),
         }));
       } catch (e) {
         if (e instanceof ApiError && e.status === 0) {
@@ -238,6 +239,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
         return fail("Could not start execution", e instanceof Error ? e.message : String(e), e instanceof ApiError ? e.requestId : undefined);
       }
 
+      if (mode === "visualize") useVisualize.getState().clear();
       set((s) => ({ runner: "online", run: s.run ? { ...s.run, id, status: "QUEUED" } : s.run }));
       useWorkspace.getState().markRun();
       if (mode === "debug") useDebug.getState().onStarted(id);
@@ -256,6 +258,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
               break;
             case "debug":
               useDebug.getState().onEvent(event.event);
+              break;
+            case "trace":
+              useVisualize.getState().setTrace(id, event.trace);
               break;
             case "result":
               void finish(event.result, project);

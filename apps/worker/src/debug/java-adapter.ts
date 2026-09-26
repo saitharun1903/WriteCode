@@ -8,13 +8,15 @@ import { Sandbox } from "../sandbox/sandbox.js";
 export const ADAPTER_DIR = "/tmp/cwdbg";
 export const ADAPTER_MAIN = "CwDebugAdapter";
 
-const SOURCE_URL = new URL("../../debug-adapters/java/CwDebugAdapter.java", import.meta.url);
+/** The debug adapter and the visualizer's tracer, which shares its JSON helpers. */
+const SOURCES = ["CwDebugAdapter.java", "CwTracer.java"];
+const sourceUrl = (name: string) => new URL(`../../debug-adapters/java/${name}`, import.meta.url);
 
 let cached: Promise<SandboxFile[]> | null = null;
 
 /**
- * Compiles the Java debug adapter once per worker process, inside a sandbox
- * built from the same JDK image, and returns its class files for reuse.
+ * Compiles the Java debug adapter and tracer once per worker process, inside
+ * a sandbox built from the same JDK image, and returns the class files for reuse.
  */
 export function javaAdapterClasses(docker: Docker): Promise<SandboxFile[]> {
   cached ??= compile(docker).catch((e) => {
@@ -25,7 +27,7 @@ export function javaAdapterClasses(docker: Docker): Promise<SandboxFile[]> {
 }
 
 async function compile(docker: Docker): Promise<SandboxFile[]> {
-  const source = await readFile(SOURCE_URL, "utf8");
+  const sources = await Promise.all(SOURCES.map(async (name) => ({ path: `adapter/${name}`, content: await readFile(sourceUrl(name), "utf8") })));
   const image = requireLanguage("java").runtime.image;
   const sandbox = new Sandbox(docker, {
     image,
@@ -36,10 +38,10 @@ async function compile(docker: Docker): Promise<SandboxFile[]> {
   });
   try {
     await sandbox.start();
-    await sandbox.prepare([{ path: "adapter/CwDebugAdapter.java", content: source }], "");
+    await sandbox.prepare(sources, "");
     let log = "";
     const res = await sandbox.runStep({
-      argv: ["javac", "--release", "21", "-J-XX:+UseSerialGC", "-d", "adapter/classes", "adapter/CwDebugAdapter.java"],
+      argv: ["javac", "--release", "21", "-J-XX:+UseSerialGC", "-d", "adapter/classes", ...sources.map((s) => s.path)],
       timeoutMs: 60_000,
       maxOutputBytes: 64 * 1024,
       onStdout: (c) => (log += c),
@@ -65,7 +67,9 @@ async function compile(docker: Docker): Promise<SandboxFile[]> {
         const [name, b64] = line.split(" ");
         return { path: `${ADAPTER_DIR}/${name}`, content: b64 ?? "", base64: true } satisfies SandboxFile;
       });
-    if (!files.some((f) => f.path.endsWith(`/${ADAPTER_MAIN}.class`))) throw new Error("debug adapter classes missing after compile");
+    for (const main of [ADAPTER_MAIN, "CwTracer"]) {
+      if (!files.some((f) => f.path.endsWith(`/${main}.class`))) throw new Error(`${main} classes missing after compile`);
+    }
     return files;
   } finally {
     await sandbox.dispose();

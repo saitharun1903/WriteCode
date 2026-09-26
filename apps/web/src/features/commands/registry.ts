@@ -57,6 +57,13 @@ function activeFileRunnable(): boolean {
   return !!file && findEntryPoints(project.language, [file]).length > 0;
 }
 
+/** True when the open project's language has a working visualizer. */
+export function canVisualize(): boolean {
+  const project = useWorkspace.getState().project;
+  const viz = project ? getLanguage(project.language)?.visualizer : undefined;
+  return !!viz && viz.supportLevel !== "planned";
+}
+
 export function showBottom(tab: BottomTab) {
   useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: tab });
   useUI.getState().setDrawer("bottom");
@@ -72,6 +79,17 @@ export const COMMANDS: Command[] = [
     run: () => {
       showBottom("run");
       void useExecution.getState().execute();
+    },
+  },
+  {
+    id: "run.visualize",
+    title: "Visualize Execution",
+    category: "Run",
+    shortcut: "Mod+Alt+Enter",
+    enabled: () => hasProject() && canVisualize() && !isRunning(useExecution.getState().run),
+    run: () => {
+      showBottom("visualize");
+      void useExecution.getState().execute({ mode: "visualize" });
     },
   },
   {
@@ -350,6 +368,7 @@ export const COMMANDS: Command[] = [
   { id: "view.search", title: "Search in Project", category: "View", shortcut: "Mod+Shift+F", enabled: hasProject, run: () => showSide("search") },
   { id: "view.history", title: "Show Run History", category: "View", shortcut: "Mod+Shift+H", run: () => showSide("history") },
   { id: "view.run", title: "Show Run", category: "View", shortcut: "Alt+4", run: () => showBottom("run") },
+  { id: "view.visualize", title: "Show Visualize", category: "View", run: () => showBottom("visualize") },
   { id: "view.problems", title: "Show Problems", category: "View", shortcut: "Mod+Shift+M", run: () => showBottom("problems") },
   { id: "view.input", title: "Show Program Input (stdin)", category: "View", run: () => showBottom("input") },
   { id: "view.resetLayout", title: "Reset Layout", category: "View", run: () => useSettings.getState().resetLayout() },

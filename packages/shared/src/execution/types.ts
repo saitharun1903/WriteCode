@@ -1,4 +1,5 @@
 import type { DebugEvent } from "../debug/types.js";
+import type { Trace } from "../visualize/types.js";
 
 export const EXECUTION_STATUSES = [
   "QUEUED",
@@ -40,7 +41,8 @@ export interface SourceFile {
   content: string;
 }
 
-export type ExecutionMode = "run" | "debug";
+/** `visualize` runs the program under a tracer and returns a step-by-step trace. */
+export type ExecutionMode = "run" | "debug" | "visualize";
 
 export interface ExecutionRequest {
   language: string;
@@ -106,7 +108,9 @@ export type ExecutionStreamEvent =
   /** Echo of input the user typed into a running program. */
   | { type: "stdin"; executionId: string; chunk: string }
   | { type: "result"; executionId: string; result: ExecutionResult }
-  | { type: "debug"; executionId: string; event: DebugEvent };
+  | { type: "debug"; executionId: string; event: DebugEvent }
+  /** Visualize mode: the recorded trace, sent once before the result. */
+  | { type: "trace"; executionId: string; trace: Trace };
 
 /** Interactive runs: typed-input waits do not count toward `timeoutMs`, within these caps. */
 export const INTERACTIVE_LIMITS = {

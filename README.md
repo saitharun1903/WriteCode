@@ -18,7 +18,7 @@ A browser-native IDE that compiles and runs real code in isolated sandboxes. No 
 | Entry points: Java `main` classes (package-aware), C/C++ `main`, choice when several exist | Working, E2E-tested |
 | Java debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
 | Python debugger: breakpoints, stepping, pause, variables, watch, call stack, exception stops | Working (beta), E2E-tested against Docker |
-| Visualizer (execution events) | Not started (planned) |
+| Visualizer: step through a run with frames, objects and references (Python, Java) | Working (beta), tested against Docker and in the browser |
 
 Languages: **Java 21, Python 3.13, C++ (GCC 14)** are the primary targets. C, JavaScript and TypeScript are marked *beta*.
 
@@ -59,6 +59,15 @@ For both languages, commands flow browser → WebSocket → API → Redis stream
 - Watch expressions support variables, fields, array indexing, `.length`, arithmetic, comparisons and logic. They never call methods, so evaluating them cannot change program state.
 - Python watches also support slicing, f-strings and built-ins such as `len()`, `min()`, `max()` and `sum()` on built-in values. They never call your functions, properties or `__repr__`, and objects are shown by their fields.
 - Debug sessions use a separate queue and pool (`DEBUG_CONCURRENCY`, default 2), with limits of 15 minutes per session, 10 minutes idle and 30 seconds of cumulative running time while not paused. A session whose browser disconnects is stopped after 5 seconds.
+
+### Visualizer
+
+Visualize runs the program under a tracer in the same sandbox as a normal run and records every line: the call stack, each frame's variables and every object reachable from them, plus how much output had been printed. The browser then lets you move back and forth through the steps, drawing references as arrows.
+
+- Python: `apps/worker/tracers/python/cw_trace.py` runs the program under `sys.settrace`.
+- Java: `apps/worker/debug-adapters/java/CwTracer.java` launches the program through JDI and single-steps the main thread through the project's classes. `ArrayList`, `LinkedList`, `HashMap`, `LinkedHashMap`, `TreeMap` and sets are read from their internal fields.
+- Objects are read without calling program code (no `__repr__`, properties, `toString()` or getters), so recording cannot change what the program does.
+- Up to 1,000 steps and 8 MB are recorded; past that the program keeps running unrecorded and the panel says so. Typed input works while visualizing.
 
 ### Sandbox security model
 
@@ -132,6 +141,7 @@ Playwright uses the installed Microsoft Edge by default. Set `PW_CHANNEL=chromiu
 | Action | Shortcut |
 | --- | --- |
 | Run | `Ctrl/⌘ + Enter` |
+| Visualize execution | `Ctrl/⌘ + Alt + Enter` |
 | Run current file | `Ctrl/⌘ + Shift + F10`, or click the green arrow next to a `main` |
 | End program input (EOF) | `Ctrl + D` in the input bar |
 | Start debugging / Continue | `F5` (runs normally for languages without a debugger) |

@@ -2,17 +2,20 @@ import type Docker from "dockerode";
 import type { Redis } from "ioredis";
 import {
   INTERACTIVE_LIMITS,
+  TRACE_LIMITS,
   expandCommand,
   requireLanguage,
   type ExecutionLimits,
   type ExecutionRequest,
   type ExecutionResult,
   type ExecutionStatus,
+  type Trace,
 } from "@cw/shared";
 import type { EventEmitter } from "./events.js";
 import { classifyCompile, classifyRun, explainRuntimeError, messageFor, timeLimitMessage } from "./sandbox/classify.js";
-import { InputChannel, applyInput, readCommands } from "./sandbox/input.js";
-import { Sandbox } from "./sandbox/sandbox.js";
+import { INPUT_FIFO, InputChannel, applyInput, readCommands } from "./sandbox/input.js";
+import { STDIN_PATH, Sandbox } from "./sandbox/sandbox.js";
+import { tracerFor, type Tracer } from "./visualize/tracers.js";
 
 export interface RunContext {
   docker: Docker;
@@ -31,10 +34,13 @@ export interface RunContext {
 
 /** Compiles (if the language needs it) and runs one request in a fresh sandbox. */
 export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
-  const { request, limits, events } = ctx;
+  const { request, events } = ctx;
   const lang = requireLanguage(request.language);
   const createdAt = new Date().toISOString();
   const interactive = request.interactive === true && !!ctx.commandRedis;
+  // Visualize mode runs the program under the language's tracer instead of its run command.
+  const tracer: Tracer | null = request.mode === "visualize" ? await tracerFor(ctx.docker, request, interactive ? INPUT_FIFO : STDIN_PATH) : null;
+  const limits = tracer ? tracer.limits(ctx.limits) : ctx.limits;
 
   let stdout = "";
   let stderr = "";
@@ -68,7 +74,8 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     events.status("STARTING");
     const startupBegan = performance.now();
     await sandbox.start();
-    await sandbox.prepare(request.files, request.stdin ?? "");
+    await sandbox.prepare(request.files, request.stdin ?? "", tracer?.files ?? []);
+    for (const argv of tracer?.setup ?? []) await sandbox.exec(argv);
     if (interactive) await InputChannel.createFifo(sandbox);
     startupTime = Math.round(performance.now() - startupBegan);
 
@@ -110,12 +117,12 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     }
 
     events.status("RUNNING");
-    const argv = expandCommand(lang.runtime.command, { entry: request.entry, files: request.files });
+    const argv = tracer ? tracer.argv : expandCommand(lang.runtime.command, { entry: request.entry, files: request.files });
     const run = await sandbox.runStep({
       argv,
       timeoutMs: limits.timeoutMs,
       maxOutputBytes: limits.maxOutputBytes,
-      stdin: interactive ? "fifo" : "file",
+      stdin: tracer && !tracer.ownsStdin ? undefined : interactive ? "fifo" : "file",
       ...(channel
         ? {
             clock: {
@@ -138,14 +145,21 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     });
     if (channel && !channel.detection) ctx.log("input wait detection unavailable; typed-input waits counted as run time");
     const status = classifyRun(run);
-    // The cgroup peak includes the compiler, so it is only meaningful for interpreted languages.
-    const memoryUsed = lang.compiler ? undefined : await sandbox.peakMemoryBytes();
+    let traceNote: string | undefined;
+    if (tracer) {
+      const trace = await readTrace(sandbox, tracer);
+      if (trace) events.trace(trace);
+      else traceNote = "No trace was recorded: the program ended before the tracer could save it.";
+    }
+    // The cgroup peak includes the compiler (and the tracer), so it is only meaningful for plain interpreted runs.
+    const memoryUsed = lang.compiler || tracer ? undefined : await sandbox.peakMemoryBytes();
     const message =
-      status === "TIME_LIMIT"
+      traceNote ??
+      (status === "TIME_LIMIT"
         ? timeLimitMessage(run.limit, limits, interactive ? INTERACTIVE_LIMITS : undefined)
         : status === "RUNTIME_ERROR"
           ? explainRuntimeError(run.exitCode, stderr)
-          : undefined;
+          : undefined);
     return finish(status, {
       exitCode: run.exitCode ?? undefined,
       executionTime: run.durationMs,
@@ -160,5 +174,18 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     reader?.stop();
     // Remove in the background so the result is not delayed; the startup sweep catches failures.
     void sandbox.dispose();
+  }
+}
+
+/** Reads and sanity-checks the trace the tracer wrote. The program shares the sandbox, so the file is untrusted. */
+async function readTrace(sandbox: Sandbox, tracer: Tracer): Promise<Trace | null> {
+  const text = await sandbox.readText(tracer.outPath, TRACE_LIMITS.maxTraceBytes + 64 * 1024);
+  if (!text) return null;
+  try {
+    const trace = JSON.parse(text) as Trace;
+    if (!Array.isArray(trace.steps) || typeof trace.stdout !== "string") return null;
+    return trace;
+  } catch {
+    return null;
   }
 }

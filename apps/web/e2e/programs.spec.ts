@@ -338,3 +338,64 @@ test("debugging a program that reads input: Java stops at a breakpoint after the
   await expect(output(page)).toContainText("50", { timeout: 30_000 });
   await expect(page.getByText("Success", { exact: true })).toBeVisible();
 });
+
+test("visualizer: steps through a recorded Python run with frames, objects and output", async ({ page }) => {
+  await freshProject(page, "Python");
+  await setCode(
+    page,
+    'def square(x):\n    return x * x\n\n\nnums = [1, 2]\nalias = nums\nresult = square(3)\nprint("result", result)\nnums.append(result)\n',
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  const viz = page.getByRole("region", { name: "Visualize" });
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  const frames = viz.getByRole("region", { name: "Frames" });
+  const objects = viz.getByRole("region", { name: "Objects" });
+  await expect(frames.getByRole("group", { name: "Frame <module>" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).not.toHaveText("");
+
+  // Step forward to line 7 (after nums and alias exist): both names point at one list.
+  const next = viz.getByRole("button", { name: "Next step" });
+  while (!(await viz.getByText("main.py:7").isVisible())) await next.click();
+  await expect(objects.getByRole("group", { name: "list object" })).toHaveCount(1);
+  await expect(frames.getByRole("row", { name: "nums = reference" })).toBeVisible();
+  await expect(frames.getByRole("row", { name: "alias = reference" })).toBeVisible();
+  // Arrows: square -> its function object, and nums and alias -> the same list.
+  await expect(objects.getByRole("group", { name: "function object" })).toContainText("square(x)");
+  await expect(viz.locator("svg path[marker-end]")).toHaveCount(3);
+  await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(1);
+
+  // Into square(3): a second frame, then its return value.
+  await next.click();
+  await expect(frames.getByRole("group", { name: "Frame square" })).toBeVisible();
+  await expect(frames.getByRole("row", { name: "x = 3" })).toBeVisible();
+  await next.click();
+  await expect(viz.getByText("square returns")).toBeVisible();
+  await expect(frames.getByRole("row", { name: "return value = 9" })).toBeVisible();
+
+  // Output appears only from the step after print().
+  await expect(viz.getByLabel("Output so far")).toHaveText("Nothing printed yet");
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByLabel("Output so far")).toHaveText("result 9");
+  await expect(objects.getByRole("group", { name: "list object" })).toContainText("9");
+
+  // Keyboard stepping backwards from the end.
+  await viz.getByRole("button", { name: "Previous step" }).focus();
+  await page.keyboard.press("Home");
+  await expect(viz.getByText(/^Step 1 of/)).toBeVisible();
+});
+
+test("visualizer: records a Java run across classes", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(
+    page,
+    "import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        List<Integer> xs = new ArrayList<>();\n        xs.add(4);\n        Box b = new Box(xs);\n        System.out.println(b.items.size());\n    }\n}\n\nclass Box {\n    List<Integer> items;\n\n    Box(List<Integer> items) {\n        this.items = items;\n    }\n}\n",
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  const viz = page.getByRole("region", { name: "Visualize" });
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByLabel("Output so far")).toHaveText("1");
+  const objects = viz.getByRole("region", { name: "Objects" });
+  await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("4");
+  await expect(objects.getByRole("group", { name: "Box object" })).toContainText("items");
+});

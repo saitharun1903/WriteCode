@@ -7,6 +7,7 @@ import {
   type ExecutionResult,
   type ExecutionStatus,
   type ExecutionStreamEvent,
+  type Trace,
 } from "@cw/shared";
 
 type ChunkType = "stdout" | "stderr" | "compile" | "stdin";
@@ -39,6 +40,12 @@ export class EventEmitter {
     // Flush pending output first so the client sees output before the pause that follows it.
     this.flushChunks();
     this.push({ type: "debug", executionId: this.executionId, event });
+  }
+
+  /** Visualize mode: the recorded trace, after all program output. */
+  trace(trace: Trace) {
+    this.flushChunks();
+    this.push({ type: "trace", executionId: this.executionId, trace });
   }
 
   chunk(type: ChunkType, text: string) {

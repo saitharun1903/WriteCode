@@ -1,0 +1,215 @@
+import { randomUUID } from "node:crypto";
+import { Redis } from "ioredis";
+import { afterAll, describe, expect, it } from "vitest";
+import { STREAM_FIELD, redisKeys, type ExecutionResult, type ExecutionStatus, type Trace, type TraceStep, type TraceValue } from "@cw/shared";
+import { config } from "../config.js";
+import { createDocker } from "../docker.js";
+import type { EventEmitter } from "../events.js";
+import { runExecution } from "../runner.js";
+
+/**
+ * Visualizer traces recorded by the real tracers (CPython settrace, JDI) in
+ * real Docker sandboxes. Run with: E2E_EXECUTION=1 pnpm --filter @cw/worker test
+ */
+const enabled = !!process.env.E2E_EXECUTION;
+const docker = createDocker(config.dockerHost);
+const redis = enabled ? new Redis(config.redisUrl, { maxRetriesPerRequest: null, lazyConnect: true }) : null;
+afterAll(() => redis?.disconnect());
+
+async function visualize(language: string, files: Record<string, string>, opts: { stdin?: string; typed?: string[] } = {}) {
+  const executionId = randomUUID();
+  let trace: Trace | undefined;
+  const statuses: ExecutionStatus[] = [];
+  const typed = [...(opts.typed ?? [])];
+  const commandRedis = opts.typed ? redis!.duplicate() : undefined;
+  const events = {
+    status(s: ExecutionStatus) {
+      statuses.push(s);
+      const next = s === "WAITING_FOR_INPUT" ? typed.shift() : undefined;
+      if (next) void redis!.xadd(redisKeys.commands(executionId), "*", STREAM_FIELD, JSON.stringify({ stdin: next, eof: false }));
+    },
+    chunk() {},
+    debug() {},
+    trace(t: Trace) {
+      trace = t;
+    },
+    async result() {},
+  } as unknown as EventEmitter;
+  try {
+    const result: ExecutionResult = await runExecution({
+      docker,
+      executionId,
+      request: {
+        language,
+        files: Object.entries(files).map(([path, content]) => ({ path, content })),
+        entry: Object.keys(files)[0]!,
+        stdin: opts.stdin,
+        interactive: !!opts.typed,
+        mode: "visualize",
+      },
+      limits: config.limits,
+      workspaceMb: config.workspaceMb,
+      maxFileSizeBytes: config.maxFileSizeBytes,
+      events,
+      isCancelled: async () => false,
+      log: () => {},
+      commandRedis,
+    });
+    return { result, trace: trace!, statuses };
+  } finally {
+    commandRedis?.disconnect();
+  }
+}
+
+const top = (s: TraceStep) => s.frames[s.frames.length - 1]!;
+const local = (s: TraceStep, name: string, frame = s.frames.length - 1) => s.frames[frame]!.locals.find(([n]) => n === name)?.[1];
+const text = (v: TraceValue | undefined) => (v?.kind === "value" ? v.text : undefined);
+const T = 120_000;
+
+describe.skipIf(!enabled).concurrent("visualizer traces", () => {
+  it("Python: every line, frames, references to shared objects, return values and output offsets", { timeout: T }, async () => {
+    const code = `class Node:
+    def __init__(self, val, nxt=None):
+        self.val = val
+        self.next = nxt
+
+
+def square(x):
+    return x * x
+
+
+shared = [1, 2]
+alias = shared
+head = Node(1, Node(2))
+total = square(3)
+print("total", total)
+shared.append(total)
+`;
+    const { result, trace } = await visualize("python", { "main.py": code });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("total 9\n");
+    expect(trace.language).toBe("python");
+    expect(trace.stdout).toBe("total 9\n");
+    expect(trace.truncated).toBeUndefined();
+
+    const lines = trace.steps.filter((s) => s.event === "line" && top(s).name === "<module>").map((s) => top(s).line);
+    expect(lines).toEqual([1, 7, 11, 12, 13, 14, 15, 16]);
+
+    // Both names refer to the same list object.
+    const at13 = trace.steps.find((s) => s.event === "line" && top(s).line === 13)!;
+    const shared = local(at13, "shared")!;
+    expect(shared).toEqual(local(at13, "alias"));
+    expect(shared.kind).toBe("ref");
+    expect(at13.heap[(shared as { id: string }).id]).toMatchObject({ kind: "sequence", type: "list", items: [{ text: "1" }, { text: "2" }] });
+
+    // square(3) returns 9, seen on its return step.
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "square")!;
+    expect(ret.frames.map((f) => f.name)).toEqual(["<module>", "square"]);
+    expect(text(top(ret).returnValue)).toBe("9");
+
+    // The linked list: head -> Node(1) -> Node(2).
+    const at14 = trace.steps.find((s) => s.event === "line" && top(s).line === 14)!;
+    const headObj = at14.heap[(local(at14, "head") as { id: string }).id]!;
+    expect(headObj).toMatchObject({ kind: "object", type: "Node" });
+    const next = headObj.fields!.find(([n]) => n === "next")![1] as { id: string };
+    expect(at14.heap[next.id]!.fields!.find(([n]) => n === "val")![1]).toMatchObject({ text: "2" });
+
+    // Output offsets: nothing printed before line 16, "total 9\n" after.
+    const at15 = trace.steps.find((s) => s.event === "line" && top(s).line === 15)!;
+    const at16 = trace.steps.find((s) => s.event === "line" && top(s).line === 16)!;
+    expect(at15.stdoutLength).toBe(0);
+    expect(at16.stdoutLength).toBe(8);
+  });
+
+  it("Python: an uncaught exception is recorded, then reported like a normal run", { timeout: T }, async () => {
+    const { result, trace } = await visualize("python", { "main.py": "def div(a, b):\n    return a // b\n\n\nprint(div(7, 2))\nprint(div(1, 0))\n" });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.stdout).toBe("3\n");
+    expect(result.stderr).toContain("ZeroDivisionError: integer division or modulo by zero");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("ZeroDivisionError: integer division or modulo by zero");
+    expect(top(ex)).toMatchObject({ name: "div", line: 2 });
+    expect(text(local(ex, "b"))).toBe("0");
+  });
+
+  it("Python: long programs are recorded up to the step limit and still finish", { timeout: T }, async () => {
+    const { result, trace } = await visualize("python", { "main.py": "total = 0\nfor i in range(5000):\n    total += i\nprint(total)\n" });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("12497500\n");
+    expect(trace.steps).toHaveLength(1000);
+    expect(trace.truncated).toMatch(/after 1000 steps/);
+  });
+
+  it("Python: typed input while visualizing", { timeout: T }, async () => {
+    const { result, trace, statuses } = await visualize("python", { "main.py": 'name = input("name? ")\nprint("hi", name)\n' }, { typed: ["Ada\n"] });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("name? hi Ada\n");
+    expect(statuses).toContain("WAITING_FOR_INPUT");
+    const at2 = trace.steps.find((s) => s.event === "line" && top(s).line === 2)!;
+    expect(text(local(at2, "name"))).toBe("'Ada'");
+  });
+
+  it("Java: steps through methods and constructors across files with collections and objects", { timeout: T }, async () => {
+    const files = {
+      "Main.java": `import java.util.*;
+
+public class Main {
+    static int square(int x) {
+        int r = x * x;
+        return r;
+    }
+
+    public static void main(String[] args) {
+        List<String> names = new ArrayList<>();
+        names.add("ada");
+        Map<String, Integer> ages = new HashMap<>();
+        ages.put("ada", 36);
+        Point p = new Point(1, 2);
+        int total = square(3);
+        System.out.println("total=" + total + " " + p.x);
+    }
+}
+`,
+      "Point.java": "public class Point {\n    int x, y;\n\n    Point(int x, int y) {\n        this.x = x;\n        this.y = y;\n    }\n}\n",
+    };
+    const { result, trace } = await visualize("java", files);
+    expect(result.status, result.compileOutput + result.stderr).toBe("SUCCESS");
+    expect(result.stdout).toBe("total=9 1\n");
+    expect(trace.language).toBe("java");
+
+    const mainLines = trace.steps.filter((s) => s.event === "line" && s.frames.length === 1).map((s) => top(s).line);
+    expect(mainLines).toEqual(expect.arrayContaining([10, 11, 12, 13, 14, 15, 16, 17]));
+
+    const ctor = trace.steps.find((s) => top(s).name === "Point.<init>" && top(s).line === 6)!;
+    expect(ctor.frames.map((f) => `${f.name}@${f.file}`)).toEqual(["Main.main@Main.java", "Point.<init>@Point.java"]);
+    const self = ctor.heap[(local(ctor, "this") as { id: string }).id]!;
+    expect(self).toMatchObject({ kind: "object", type: "Point" });
+    expect(self.fields).toEqual([
+      ["x", { kind: "value", text: "1", type: "int" }],
+      ["y", { kind: "value", text: "0", type: "int" }],
+    ]);
+
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "Main.square")!;
+    expect(text(top(ret).returnValue)).toBe("9");
+
+    const at16 = trace.steps.find((s) => s.event === "line" && s.frames.length === 1 && top(s).line === 16)!;
+    const names = at16.heap[(local(at16, "names") as { id: string }).id]!;
+    expect(names).toMatchObject({ kind: "sequence", type: "ArrayList", items: [{ text: '"ada"' }] });
+    const ages = at16.heap[(local(at16, "ages") as { id: string }).id]!;
+    expect(ages).toMatchObject({ kind: "map", type: "HashMap", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    expect(text(local(at16, "total"))).toBe("9");
+    expect(at16.stdoutLength).toBe(0);
+    const at17 = trace.steps.find((s) => s.event === "line" && s.frames.length === 1 && top(s).line === 17)!;
+    expect(at17.stdoutLength).toBe("total=9 1\n".length);
+  });
+
+  it("Java: typed input reaches the traced program", { timeout: T }, async () => {
+    const code = "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        int n = new Scanner(System.in).nextInt();\n        int doubled = n * 2;\n        System.out.println(doubled);\n    }\n}\n";
+    const { result, trace, statuses } = await visualize("java", { "Main.java": code }, { typed: ["25\n"] });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("50\n");
+    expect(statuses).toContain("WAITING_FOR_INPUT");
+    const at7 = trace.steps.find((s) => s.event === "line" && top(s).line === 7)!;
+    expect(text(local(at7, "doubled"))).toBe("50");
+  });
+});

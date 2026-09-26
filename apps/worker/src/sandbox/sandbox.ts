@@ -9,7 +9,8 @@ import { INPUT_FIFO } from "./input.js";
 
 export const SANDBOX_LABEL = "cw.sandbox";
 const NOBODY = "65534:65534";
-const STDIN_PATH = "/tmp/cw-stdin";
+/** Prepared input for batch runs. */
+export const STDIN_PATH = "/tmp/cw-stdin";
 
 export interface SandboxOptions {
   image: string;
@@ -273,6 +274,17 @@ export class Sandbox {
       },
       exited,
     };
+  }
+
+  /** Reads a text file the program produced, or null when it is missing or larger than `maxBytes`. */
+  async readText(path: string, maxBytes: number): Promise<string | null> {
+    if (!this.container || this.killed) return null;
+    try {
+      const text = await this.execCapture(["head", "-c", String(maxBytes + 1), path]);
+      return Buffer.byteLength(text) > maxBytes ? null : text;
+    } catch {
+      return null;
+    }
   }
 
   /**
