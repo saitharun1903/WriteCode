@@ -10,6 +10,14 @@ test.setTimeout(180_000);
 const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first();
 const output = (page: Page) => page.getByRole("log", { name: "Program output" });
 
+/** Waits until autosave has written the project to IndexedDB. */
+async function waitSaved(page: Page) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
+    return w.__cwWorkspace?.getState().saveState === "saved";
+  });
+}
+
 async function freshProject(page: Page, button: RegExp) {
   await page.goto("/");
   await page.evaluate(async () => {
@@ -37,7 +45,7 @@ async function replaceCode(page: Page, code: string) {
     const ed = monaco.editor.getEditors().find((e) => e.hasTextFocus()) ?? monaco.editor.getEditors()[0]!;
     ed.getModel().setValue(text);
   }, code);
-  await expect(page.getByText("Saved locally")).toBeVisible();
+  await waitSaved(page);
 }
 
 async function run(page: Page) {
@@ -71,17 +79,17 @@ test("Java: compilation errors link to the source line", async ({ page }) => {
   await expect(page.getByText("Compilation error", { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(output(page)).toContainText("';' expected");
 
-  await page.getByRole("tab", { name: /Problems/ }).click();
+  await page.getByRole("button", { name: "Problems" }).click();
   const problem = page.getByRole("button", { name: /';' expected.*Main\.java:3/ });
   await expect(problem).toBeVisible();
   await problem.click();
-  await expect(page.getByText("Ln 3,")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^3:/);
 });
 
 test("Python: reads stdin and reports runtime errors", async ({ page }) => {
   await freshProject(page, /New Python project/);
   await replaceCode(page, "name = input()\nprint(f'Hi {name}')\nprint(1 / 0)\n");
-  await page.getByRole("tab", { name: /Input/ }).click();
+  await page.getByRole("button", { name: "Program Input" }).click();
   await page.getByRole("textbox", { name: "Program input (stdin)" }).fill("Ada");
   await run(page);
   await expect(output(page)).toContainText("Hi Ada", { timeout: 60_000 });
@@ -112,4 +120,23 @@ test("sandbox has no network access", async ({ page }) => {
   await run(page);
   await expect(output(page)).toContainText("NETWORK_BLOCKED", { timeout: 60_000 });
   await expect(output(page)).not.toContainText("NETWORK_OPEN");
+});
+
+test("run history survives reloads and is private to each browser", async ({ page, browser }) => {
+  await freshProject(page, /New Python project/);
+  await run(page);
+  await expect(output(page)).toContainText("Hello World", { timeout: 60_000 });
+
+  await page.reload();
+  await page.keyboard.press("Control+Shift+H");
+  const sidebar = page.getByRole("complementary", { name: "Sidebar" });
+  await expect(sidebar.getByText("Success")).toHaveCount(1);
+
+  // A different browser profile has its own storage and starts empty.
+  const other = await browser.newContext();
+  const otherPage = await other.newPage();
+  await otherPage.goto("/");
+  await expect(otherPage.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(otherPage.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+  await other.close();
 });

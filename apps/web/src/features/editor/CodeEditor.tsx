@@ -17,6 +17,21 @@ import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 
 const NO_LINES: number[] = [];
 
+/** Patterns for a program's entry point, used to place the gutter run marker. */
+const ENTRY_POINTS: Record<string, RegExp> = {
+  java: /\bpublic\s+static\s+void\s+main\s*\(/,
+  python: /^if\s+__name__\s*==\s*["']__main__["']/,
+  cpp: /\bint\s+main\s*\(/,
+  c: /\bint\s+main\s*\(/,
+};
+
+function entryPointLine(language: string, content: string): number | null {
+  const pattern = ENTRY_POINTS[language];
+  if (!pattern) return null;
+  const idx = content.split("\n").findIndex((l) => pattern.test(l));
+  return idx === -1 ? null : idx + 1;
+}
+
 export function CodeEditor() {
   const project = useWorkspace((s) => s.project);
   const activeFile = useWorkspace((s) => s.activeFile);
@@ -24,6 +39,11 @@ export function CodeEditor() {
   const { theme, fontSize, tabSize, wordWrap, minimap } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
 
+  // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
+  const [codeFont] = useState(() => {
+    const v = typeof window === "undefined" ? "" : getComputedStyle(document.documentElement).getPropertyValue("--font-code").trim();
+    return `${v ? `${v}, ` : ""}"JetBrains Mono", Consolas, monospace`;
+  });
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -37,6 +57,7 @@ export function CodeEditor() {
   const pausedLine = useDebug((s) => currentLocation(s)?.line ?? null);
   const currentTop = useDebug((s) => currentLocation(s)?.top ?? true);
   const currentLine = currentFile === activeFile ? pausedLine : null;
+  const runLine = project && activeFile === project.entryFile && file ? entryPointLine(project.language, file.content) : null;
 
   const handleMount: OnMount = (ed, monaco) => {
     editorRef.current = ed;
@@ -88,8 +109,9 @@ export function CodeEditor() {
       lines: fileBreakpoints,
       unverified,
       current: currentLine ? { line: currentLine, top: currentTop } : null,
+      runLine,
     });
-  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop]);
+  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, runLine]);
 
   // Drop models for files that no longer exist (deleted, renamed, other project).
   useEffect(() => {
@@ -149,10 +171,10 @@ export function CodeEditor() {
         </div>
       }
       options={{
-        fontFamily: "var(--font-code), ui-monospace, monospace",
+        fontFamily: codeFont,
         fontSize,
-        fontLigatures: true,
-        lineHeight: Math.round(fontSize * 1.6),
+        fontLigatures: false,
+        lineHeight: Math.round(fontSize * 1.45),
         tabSize,
         insertSpaces: true,
         detectIndentation: false,
@@ -161,12 +183,13 @@ export function CodeEditor() {
         automaticLayout: true,
         scrollBeyondLastLine: false,
         smoothScrolling: true,
-        cursorBlinking: "smooth",
+        cursorBlinking: "blink",
         cursorSmoothCaretAnimation: "on",
-        renderLineHighlight: "all",
-        bracketPairColorization: { enabled: true },
-        guides: { bracketPairs: "active", indentation: true },
-        padding: { top: 12, bottom: 12 },
+        renderLineHighlight: "line",
+        bracketPairColorization: { enabled: false },
+        guides: { bracketPairs: false, indentation: true },
+        padding: { top: 6, bottom: 6 },
+        lineDecorationsWidth: 18,
         stickyScroll: { enabled: true },
         folding: true,
         glyphMargin: debuggable,

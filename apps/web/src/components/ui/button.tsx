@@ -8,15 +8,15 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "sm" | "md";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-accent-fg hover:brightness-110 active:brightness-95 font-medium",
-  secondary: "bg-surface-3 text-fg border border-line hover:border-line-strong hover:bg-active",
-  ghost: "text-fg-muted hover:text-fg hover:bg-hover active:bg-active",
-  danger: "bg-danger-soft text-danger hover:bg-danger hover:text-white",
+  primary: "bg-accent text-accent-fg hover:brightness-110 active:brightness-95",
+  secondary: "border border-line-strong text-fg hover:bg-hover active:bg-active",
+  ghost: "text-fg-muted hover:bg-hover hover:text-fg active:bg-active",
+  danger: "bg-danger text-white hover:brightness-110",
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-6 px-2 gap-1.5 text-xs rounded-sm",
-  md: "h-7 px-2.5 gap-1.5 text-sm rounded-md",
+  sm: "h-6 px-2 gap-1.5 text-xs",
+  md: "h-7 px-3 gap-1.5 text-sm",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -34,8 +34,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap transition-[background-color,color,filter,border-color] duration-100",
-        "disabled:pointer-events-none disabled:opacity-45",
+        "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-[4px] transition-[background-color,color,filter] duration-75",
+        "disabled:pointer-events-none disabled:opacity-40",
         variants[variant],
         sizes[size],
         className,
@@ -69,9 +69,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         aria-label={label}
         aria-pressed={active}
         className={cn(
-          "inline-flex shrink-0 items-center justify-center rounded-sm text-fg-subtle transition-colors duration-100",
-          "hover:bg-hover hover:text-fg active:bg-active disabled:pointer-events-none disabled:opacity-40",
-          size === "sm" ? "size-5 [&_svg]:size-3.5" : "size-7 [&_svg]:size-4",
+          "inline-flex shrink-0 items-center justify-center rounded-[5px] text-fg-muted transition-colors duration-75",
+          "hover:bg-hover active:bg-active disabled:pointer-events-none disabled:opacity-35",
+          size === "sm" ? "size-6 [&_svg]:size-3.5" : "size-7 [&_svg]:size-4",
           active && "bg-active text-fg",
           className,
         )}

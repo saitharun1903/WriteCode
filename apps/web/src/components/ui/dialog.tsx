@@ -19,16 +19,16 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/50 animate-fade" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 animate-fade" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-[18vh] z-50 w-[calc(100vw-32px)] max-w-md -translate-x-1/2 rounded-lg border border-line bg-overlay shadow-float animate-pop",
+            "fixed left-1/2 top-[16vh] z-50 w-[calc(100vw-32px)] max-w-md -translate-x-1/2 rounded-lg bg-overlay shadow-float animate-pop",
             className,
           )}
         >
           <div className="flex items-start justify-between gap-4 px-4 pb-2 pt-4">
             <div>
-              <DialogPrimitive.Title className="text-base font-medium text-fg">{title}</DialogPrimitive.Title>
+              <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
               {description ? (
                 <DialogPrimitive.Description className="mt-1 text-sm text-fg-muted">{description}</DialogPrimitive.Description>
               ) : (
@@ -43,7 +43,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
             </DialogPrimitive.Close>
           </div>
           <div className="px-4 pb-4">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-line px-4 py-3">{footer}</div>}
+          {footer && <div className="flex justify-end gap-2 px-4 pb-4 pt-1">{footer}</div>}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

@@ -10,14 +10,22 @@ async function freshStart(page: Page) {
     });
   });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Start coding" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
 }
 
 const editorText = (page: Page) => page.locator(".monaco-editor .view-lines").first();
 
+/** Waits until autosave has written the project to IndexedDB. */
+async function waitSaved(page: Page) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
+    return w.__cwWorkspace?.getState().saveState === "saved";
+  });
+}
+
 test("creates a Java project from the start screen", async ({ page }) => {
   await freshStart(page);
-  await expect(page.getByText("No projects yet")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
   await page.getByRole("button", { name: /New Java project/ }).click();
 
   await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
@@ -35,7 +43,7 @@ test("edits persist across reload and the project reopens", async ({ page }) => 
   await page.keyboard.press("Control+End");
   await page.keyboard.type("\n# persisted-marker");
   await expect(editorText(page)).toContainText("# persisted-marker");
-  await expect(page.getByText("Saved locally")).toBeVisible();
+  await waitSaved(page);
 
   await page.reload();
   await expect(editorText(page)).toContainText("# persisted-marker");

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import {
+  expandCommand,
   isTerminalStatus,
   parseDiagnostics,
   requireLanguage,
@@ -30,6 +31,8 @@ export interface LogChunk {
 export interface RunState {
   id?: string;
   projectId: string;
+  /** Entry file the run was started with. */
+  entry: string;
   mode: ExecutionMode;
   /** SUBMITTING covers the gap between clicking Run and the server accepting the job. */
   status: ExecutionStatus | "SUBMITTING";
@@ -152,6 +155,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
         set({
           run: {
             projectId: project.id,
+            entry: project.entryFile,
             mode,
             status: "SYSTEM_ERROR",
             log: [],
@@ -167,9 +171,11 @@ export const useExecution = create<ExecutionState>((set, get) => {
         diagnostics: [],
         run: {
           projectId: project.id,
+          entry: project.entryFile,
           mode,
           status: "SUBMITTING",
-          log: [{ stream: "system", text: `${mode === "debug" ? "Debugging" : "Running"} ${project.entryFile} · ${lang.name} ${lang.version}\n` }],
+          // The real command the sandbox runs, shown first like a desktop IDE console.
+          log: [{ stream: "system", text: `${expandCommand(lang.runtime.command, { entry: project.entryFile, files: project.files }).join(" ")}\n` }],
           startedAt: Date.now(),
         },
       });

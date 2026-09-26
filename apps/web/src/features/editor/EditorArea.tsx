@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronRight, FileCode2, Play, X } from "lucide-react";
+import { CircleX, Play, TriangleAlert, X } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useRef } from "react";
+import { Fragment, useRef } from "react";
 import { basename } from "@cw/shared";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "@/components/ui/menu";
@@ -32,7 +32,7 @@ export function EditorTabs() {
   const diagnostics = useExecution((s) => s.diagnostics);
   const listRef = useRef<HTMLDivElement>(null);
 
-  if (openTabs.length === 0) return <div className="h-9 shrink-0 border-b border-line bg-surface" />;
+  if (openTabs.length === 0) return null;
 
   return (
     <div
@@ -42,7 +42,7 @@ export function EditorTabs() {
       onWheel={(e) => {
         if (listRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) listRef.current.scrollLeft += e.deltaY;
       }}
-      className="flex h-9 shrink-0 items-stretch overflow-x-auto overflow-y-hidden border-b border-line bg-surface [scrollbar-width:none]"
+      className="flex h-9 shrink-0 items-stretch overflow-x-auto overflow-y-hidden border-b border-line-strong/60 bg-surface-2 [scrollbar-width:none]"
     >
       {openTabs.map((path) => {
         const active = path === activeFile;
@@ -68,14 +68,13 @@ export function EditorTabs() {
                 if (e.key === "Enter" || e.key === " ") openFile(path);
               }}
               className={cn(
-                "group relative flex min-w-0 max-w-56 shrink-0 items-center gap-2 border-r border-line pl-3 pr-1.5 text-sm",
-                active ? "bg-surface-2 text-fg" : "text-fg-subtle hover:bg-hover hover:text-fg-muted",
+                "group relative flex min-w-0 max-w-60 shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-sm",
+                active ? "text-fg" : "text-fg-muted hover:bg-hover",
               )}
             >
-              {active && <span className="absolute inset-x-0 top-0 h-px bg-accent" />}
+              {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />}
               <FileIcon name={path} />
-              <span className={cn("truncate", errors > 0 && "text-danger")}>{basename(path)}</span>
-              {errors > 0 && <span className="rounded-sm bg-danger-soft px-1 text-2xs text-danger">{errors}</span>}
+              <span className={cn("truncate", errors > 0 && "text-danger underline decoration-wavy decoration-danger/60 underline-offset-2")}>{basename(path)}</span>
               <button
                 aria-label={`Close ${basename(path)}`}
                 tabIndex={-1}
@@ -84,11 +83,11 @@ export function EditorTabs() {
                   closeTab(path);
                 }}
                 className={cn(
-                  "rounded-sm p-0.5 text-fg-subtle hover:bg-active hover:text-fg",
+                  "ml-0.5 rounded-[4px] p-0.5 text-fg-subtle hover:bg-active hover:text-fg",
                   active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 )}
               >
-                <X className="size-3" />
+                <X className="size-3.5" />
               </button>
             </div>
           </ContextMenu>
@@ -98,23 +97,40 @@ export function EditorTabs() {
   );
 }
 
-function Breadcrumbs() {
+/** Top-right problem counter for the open file, like an IDE inspection widget. */
+function InspectionWidget() {
   const activeFile = useWorkspace((s) => s.activeFile);
-  const projectName = useWorkspace((s) => s.project?.name);
-  if (!activeFile) return null;
-  const parts = activeFile.split("/");
+  const diagnostics = useExecution((s) => s.diagnostics);
+  const errors = diagnostics.filter((d) => d.file === activeFile && d.severity === "error").length;
+  const warnings = diagnostics.filter((d) => d.file === activeFile && d.severity === "warning").length;
+  if (!errors && !warnings) return null;
   return (
-    <nav aria-label="Breadcrumb" className="flex h-6 shrink-0 items-center gap-1 bg-surface-2 px-3 text-xs text-fg-subtle">
-      <span>{projectName}</span>
-      {parts.map((p, i) => (
-        <span key={i} className="flex items-center gap-1">
-          <ChevronRight className="size-3 text-fg-faint" />
-          <span className={cn(i === parts.length - 1 && "text-fg-muted")}>{p}</span>
+    <button
+      onClick={() => runCommand("view.problems")}
+      aria-label={`${errors} errors, ${warnings} warnings in this file`}
+      className="absolute right-5 top-1.5 z-10 flex h-6 items-center gap-2 rounded-[4px] bg-surface-2/90 px-1.5 text-sm hover:bg-hover"
+    >
+      {errors > 0 && (
+        <span className="flex items-center gap-1 text-fg-muted">
+          <CircleX className="size-3.5 text-danger" /> {errors}
         </span>
-      ))}
-    </nav>
+      )}
+      {warnings > 0 && (
+        <span className="flex items-center gap-1 text-fg-muted">
+          <TriangleAlert className="size-3.5 text-warning" /> {warnings}
+        </span>
+      )}
+    </button>
   );
 }
+
+const EMPTY_HINTS: [string, string][] = [
+  ["Search Everywhere", "Mod+Shift+P"],
+  ["Go to File", "Mod+P"],
+  ["Run", "Mod+Enter"],
+  ["Debug", "F5"],
+  ["Toggle Breakpoint", "F9"],
+];
 
 export function EditorArea() {
   const activeFile = useWorkspace((s) => s.activeFile);
@@ -124,27 +140,30 @@ export function EditorArea() {
     <div className="flex h-full min-h-0 flex-col bg-surface-2">
       <EditorTabs />
       {activeFile ? (
-        <>
-          <Breadcrumbs />
-          <div className="min-h-0 flex-1">
-            <CodeEditor />
-          </div>
-        </>
+        <div className="relative min-h-0 flex-1">
+          <InspectionWidget />
+          <CodeEditor />
+        </div>
+      ) : hasFiles ? (
+        <div className="flex flex-1 items-center justify-center">
+          <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-2.5 text-sm">
+            {EMPTY_HINTS.map(([label, shortcut]) => (
+              <Fragment key={label}>
+                <dt className="text-right text-fg-subtle">{label}</dt>
+                <dd>
+                  <Kbd shortcut={shortcut} className="text-sm text-accent" />
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        </div>
       ) : (
         <EmptyState
-          icon={<FileCode2 />}
-          title={hasFiles ? "No file open" : "This project has no files"}
-          description={
-            <span className="inline-flex flex-wrap items-center justify-center gap-1.5">
-              Open a file with <Kbd shortcut="Mod+P" /> or from the explorer.
-            </span>
-          }
+          title="This project has no files"
           action={
-            !hasFiles && (
-              <Button size="sm" onClick={() => runCommand("file.newFile")}>
-                New file
-              </Button>
-            )
+            <Button size="sm" onClick={() => runCommand("file.newFile")}>
+              New file
+            </Button>
           }
         />
       )}

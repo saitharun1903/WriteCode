@@ -1,61 +1,78 @@
 "use client";
 
-import { ChevronDown, X } from "lucide-react";
+import { CircleCheck, CircleX, Loader2, Minus, OctagonAlert, Pause } from "lucide-react";
+import { basename } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
+import { DebugToolWindow } from "@/features/debug/DebugPanel";
+import { useDebug } from "@/features/debug/store";
+import { FileIcon } from "@/features/explorer/file-icon";
 import { InputPanel } from "@/features/execution/InputPanel";
-import { OutputPanel } from "@/features/execution/OutputPanel";
+import { RunMetrics, RunToolWindow } from "@/features/execution/OutputPanel";
 import { ProblemsPanel } from "@/features/execution/ProblemsPanel";
-import { useExecution } from "@/features/execution/store";
-import { useWorkspace } from "@/features/projects/store";
+import { STATUS_META } from "@/features/execution/status";
+import { isRunning, useExecution } from "@/features/execution/store";
 import { useSettings, type BottomTab } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 
-export function BottomPanel({ onClose }: { onClose: () => void }) {
-  const tab = useSettings((s) => s.layout.bottomTab);
-  const updateLayout = useSettings((s) => s.updateLayout);
-  const problemCount = useExecution((s) => s.diagnostics.length);
-  const hasStdin = useWorkspace((s) => !!s.project?.stdin);
+const TITLES: Record<BottomTab, string> = {
+  run: "Run",
+  debug: "Debug",
+  problems: "Problems",
+  input: "Program Input",
+};
 
-  const tabs: { id: BottomTab; label: string; badge?: React.ReactNode }[] = [
-    { id: "output", label: "Output" },
-    {
-      id: "problems",
-      label: "Problems",
-      badge: problemCount > 0 && <span className="rounded-sm bg-danger-soft px-1 text-2xs text-danger">{problemCount}</span>,
-    },
-    { id: "input", label: "Input", badge: hasStdin && <span className="size-1.5 rounded-full bg-accent" aria-label="has input" /> },
-  ];
+const toneClass = {
+  neutral: "text-fg-subtle",
+  running: "text-fg-subtle",
+  success: "text-success",
+  danger: "text-danger",
+  warning: "text-warning",
+};
+
+/** The session tab next to the tool window title: entry file, state icon and state label. */
+function SessionTab() {
+  const run = useExecution((s) => s.run);
+  const paused = useDebug((s) => s.phase === "paused");
+  if (!run) return null;
+  const running = isRunning(run);
+  const meta = STATUS_META[run.error ? "SYSTEM_ERROR" : run.status];
+  const label = run.error ? "Failed to start" : running && run.mode === "debug" && paused ? "Paused" : meta.label;
+  const tone = running && run.mode === "debug" && paused ? "warning" : meta.tone;
+  const Icon = running && run.mode === "debug" && paused ? Pause : running ? Loader2 : meta.tone === "success" ? CircleCheck : meta.tone === "danger" ? CircleX : meta.tone === "warning" ? OctagonAlert : null;
 
   return (
-    <section aria-label="Panel" className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="flex h-8 shrink-0 items-center border-b border-line pl-1 pr-1">
-        <div role="tablist" className="flex h-full items-stretch">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => updateLayout({ bottomTab: t.id })}
-              className={cn(
-                "relative flex items-center gap-1.5 px-2.5 text-xs font-medium uppercase tracking-[0.06em]",
-                tab === t.id ? "text-fg" : "text-fg-subtle hover:text-fg-muted",
-              )}
-            >
-              {t.label}
-              {t.badge}
-              {tab === t.id && <span className="absolute inset-x-2 bottom-0 h-px bg-accent" />}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center">
-          <IconButton label="Hide panel" shortcut="Mod+J" size="sm" onClick={onClose}>
-            <span className="hidden sm:inline"><X /></span>
-            <span className="sm:hidden"><ChevronDown /></span>
+    <div className="flex h-full min-w-0 items-center gap-2">
+      <span className="relative flex h-full items-center gap-1.5 px-2 text-sm text-fg">
+        <FileIcon name={run.entry} />
+        <span className="truncate">{basename(run.entry)}</span>
+        <span className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-accent" />
+      </span>
+      <span className={cn("flex items-center gap-1 text-sm", toneClass[tone])}>
+        {Icon && <Icon className={cn("size-3.5", running && !paused && "animate-spin")} />}
+        {label}
+      </span>
+    </div>
+  );
+}
+
+export function BottomPanel({ onClose }: { onClose: () => void }) {
+  const tab = useSettings((s) => s.layout.bottomTab);
+
+  return (
+    <section aria-label={TITLES[tab]} className="flex h-full min-h-0 flex-col bg-surface">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line pl-3 pr-1.5">
+        <h2 className="text-sm font-semibold text-fg">{TITLES[tab]}</h2>
+        {(tab === "run" || tab === "debug") && <SessionTab />}
+        <div className="ml-auto flex items-center gap-2">
+          {tab === "run" && <RunMetrics />}
+          <IconButton label="Hide" shortcut="Mod+J" size="sm" onClick={onClose}>
+            <Minus />
           </IconButton>
         </div>
       </div>
-      <div role="tabpanel" className="min-h-0 flex-1">
-        {tab === "output" && <OutputPanel />}
+      <div className="min-h-0 flex-1">
+        {tab === "run" && <RunToolWindow />}
+        {tab === "debug" && <DebugToolWindow />}
         {tab === "problems" && <ProblemsPanel />}
         {tab === "input" && <InputPanel />}
       </div>

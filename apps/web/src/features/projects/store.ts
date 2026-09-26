@@ -126,6 +126,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     init() {
       // Idempotent: React StrictMode and remounts may call this more than once.
       initPromise ??= (async () => {
+        // Ask the browser not to evict our IndexedDB data under storage pressure,
+        // so projects and history stay until the user deletes them.
+        void navigator.storage?.persist?.().catch(() => false);
         try {
           const projects = await projectRepo.list();
           const last = readJSON<string>(LAST_PROJECT_KEY);

@@ -23,7 +23,7 @@ import { cn } from "@/lib/cn";
 import { FileIcon, FolderIcon } from "./file-icon";
 
 const ROW_HEIGHT = 24;
-const INDENT = 12;
+const INDENT = 18;
 const OVERSCAN = 8;
 
 type Row =
@@ -231,7 +231,7 @@ export function FileExplorer() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PanelHeader
-        title="Explorer"
+        title="Project"
         actions={
           <>
             <IconButton label="New File" size="sm" onClick={() => startCreate("", "file")}>
@@ -349,26 +349,23 @@ export function FileExplorer() {
                     onContextMenu={() => setFocused(node.path)}
                     style={{ top, height: ROW_HEIGHT, paddingLeft: 8 + depth * INDENT }}
                     className={cn(
-                      "group absolute inset-x-0 flex items-center gap-1.5 pr-2 text-sm text-fg-muted",
-                      "hover:bg-hover hover:text-fg",
-                      activeFile === node.path && "bg-active text-fg",
-                      focused === node.path && "ring-1 ring-inset ring-accent-line",
+                      "group absolute inset-x-1 flex items-center gap-1.5 rounded-[4px] pr-2 text-sm text-fg",
+                      "hover:bg-hover",
+                      activeFile === node.path && "bg-accent-soft hover:bg-accent-soft",
+                      focused === node.path && "ring-1 ring-inset ring-accent",
                       dropTarget === dropDir && dropTarget !== "" && isWithin(node.path, dropDir) && "bg-accent-soft",
                     )}
                   >
-                    {depth > 0 && (
-                      <span aria-hidden className="pointer-events-none absolute inset-y-0 w-px bg-line" style={{ left: 8 + (depth - 1) * INDENT + 6 }} />
-                    )}
                     {node.kind === "folder" ? (
-                      <ChevronRight className={cn("size-3 shrink-0 text-fg-subtle transition-transform duration-100", isOpen && "rotate-90")} />
+                      <ChevronRight className={cn("size-3.5 shrink-0 text-fg-subtle transition-transform duration-100", isOpen && "rotate-90")} />
                     ) : (
-                      <span className="w-3 shrink-0" />
+                      <span className="w-3.5 shrink-0" />
                     )}
                     {node.kind === "folder" ? <FolderIcon open={isOpen} /> : <FileIcon name={node.name} />}
                     <span className="truncate">{node.name}</span>
                     {project.entryFile === node.path && (
-                      <span title="Entry file" className="ml-auto flex items-center text-accent">
-                        <Play className="size-2.5 fill-current" />
+                      <span title="Entry file (run configuration)" className="ml-auto flex items-center text-success">
+                        <Play className="size-3 fill-current" />
                       </span>
                     )}
                   </div>

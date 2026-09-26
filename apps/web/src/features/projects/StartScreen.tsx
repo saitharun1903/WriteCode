@@ -1,37 +1,60 @@
 "use client";
 
-import { Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
+import { LANGUAGES, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu } from "@/components/ui/menu";
 import { Input } from "@/components/ui/primitives";
-import { FileIcon } from "@/features/explorer/file-icon";
+import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
-import { LogoMark } from "@/features/workspace/Logo";
+import { cn } from "@/lib/cn";
 import { useWorkspace } from "./store";
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const min = Math.round(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min} min ago`;
+  if (min < 1) return "Edited just now";
+  if (min < 60) return `Edited ${min} min ago`;
   const h = Math.round(min / 60);
-  if (h < 24) return `${h} h ago`;
+  if (h < 24) return `Edited ${h} h ago`;
   const d = Math.round(h / 24);
-  if (d < 30) return `${d} d ago`;
-  return new Date(ts).toLocaleDateString();
+  if (d < 30) return `Edited ${d} d ago`;
+  return `Edited ${new Date(ts).toLocaleDateString()}`;
 }
 
-const PRIMARY = ["java", "python", "cpp"];
+/** Brand-coloured tile with a language monogram. */
+const MARKS: Record<string, { text: string; bg: string; fg: string }> = {
+  java: { text: "J", bg: "#e76f00", fg: "#fff" },
+  python: { text: "Py", bg: "#3776ab", fg: "#ffd43b" },
+  cpp: { text: "C++", bg: "#00599c", fg: "#fff" },
+  c: { text: "C", bg: "#5c6bc0", fg: "#fff" },
+  javascript: { text: "JS", bg: "#f0db4f", fg: "#1e1f22" },
+  typescript: { text: "TS", bg: "#3178c6", fg: "#fff" },
+};
 
+export function LanguageMark({ id, size = 40, className }: { id: string; size?: number; className?: string }) {
+  const m = MARKS[id] ?? { text: "?", bg: "#6c707e", fg: "#fff" };
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-[10px] font-bold tracking-tight", className)}
+      style={{ width: size, height: size, background: m.bg, color: m.fg, fontSize: size * (m.text.length > 2 ? 0.3 : 0.38) }}
+    >
+      {m.text}
+    </span>
+  );
+}
+
+/** Welcome screen shown when no project is open. */
 export function StartScreen() {
   const projects = useWorkspace((s) => s.projects);
   const status = useWorkspace((s) => s.status);
   const createProject = useWorkspace((s) => s.createProject);
+  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const filtered = projects.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const create = async (id: string) => {
     setBusy(id);
@@ -40,94 +63,71 @@ export function StartScreen() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-surface">
-      <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-12 sm:px-8 sm:py-20">
-        <header className="flex items-center gap-3">
-          <LogoMark className="size-7" />
-          <div>
-            <h1 className="text-base font-semibold tracking-tight text-fg">{PRODUCT.name}</h1>
-            <p className="text-sm text-fg-subtle">Write, compile and run real code in the browser.</p>
-          </div>
-        </header>
-
-        <section aria-labelledby="start-heading">
-          <h2 id="start-heading" className="mb-3 text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-            Start coding
-          </h2>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {PRIMARY.map((id) => {
-              const lang = getLanguage(id)!;
-              return (
-                <button
-                  key={id}
-                  onClick={() => create(id)}
-                  disabled={!!busy}
-                  className="group flex items-center gap-3 rounded-md border border-line bg-surface-2 px-3 py-3 text-left transition-colors hover:border-line-strong hover:bg-surface-3 disabled:opacity-60"
-                >
-                  <span className="flex size-8 items-center justify-center rounded-md border border-line bg-surface">
-                    <FileIcon name={lang.entryFile} className="size-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-fg">New {lang.name} project</span>
-                    <span className="block truncate text-xs text-fg-subtle">{lang.version}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-            <span className="text-fg-subtle">Also:</span>
-            {LANGUAGES.filter((l) => !PRIMARY.includes(l.id)).map((l) => (
-              <button key={l.id} onClick={() => create(l.id)} disabled={!!busy} className="text-fg-muted underline-offset-4 hover:text-fg hover:underline">
-                {l.name}
-                {l.supportLevel === "beta" && <span className="ml-1 text-2xs text-warning">beta</span>}
-              </button>
-            ))}
-            <span className="ml-auto hidden items-center gap-1.5 text-xs text-fg-subtle sm:flex">
-              Command palette <Kbd shortcut="Mod+Shift+P" />
-            </span>
-          </div>
-        </section>
-
-        <section aria-labelledby="recent-heading">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="recent-heading" className="text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">
-              Recent
-            </h2>
-            <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+    <div className="h-full overflow-y-auto bg-surface-2">
+      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+        <section aria-labelledby="new-heading">
+          <div className="flex items-end justify-between gap-4">
+            <h1 id="new-heading" className="text-2xl font-semibold tracking-tight text-fg">
               New project
+            </h1>
+            <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+              Custom…
             </Button>
           </div>
-          {status === "loading" ? (
-            <div className="space-y-1" aria-busy>
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="h-11 animate-pulse rounded-md bg-surface-2" />
-              ))}
-            </div>
-          ) : status === "error" ? (
-            <p className="rounded-md border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
-              Local storage is unavailable, so projects can’t be saved. Private browsing or blocked site data can cause this.
-            </p>
-          ) : projects.length === 0 ? (
-            <p className="rounded-md border border-dashed border-line px-4 py-6 text-center text-sm text-fg-subtle">No projects yet</p>
-          ) : (
-            <ul className="divide-y divide-line overflow-hidden rounded-md border border-line">
-              {projects.map((p) => (
-                <ProjectRow key={p.id} project={p} />
-              ))}
-            </ul>
-          )}
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {LANGUAGES.map((lang) => (
+              <button
+                key={lang.id}
+                aria-label={`New ${lang.name} project`}
+                disabled={!!busy}
+                onClick={() => create(lang.id)}
+                className={cn(
+                  "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
+                  "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_6px_20px_-10px_rgb(53_116_240/0.5)] disabled:opacity-60",
+                )}
+              >
+                <LanguageMark id={lang.id} size={44} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold text-fg">{lang.name}</span>
+                  <span className="block truncate text-sm text-fg-subtle">{lang.version}</span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+              </button>
+            ))}
+          </div>
         </section>
 
-        <p className="text-xs leading-relaxed text-fg-faint">
-          Projects are stored in this browser only. Code you run is sent to the execution service, compiled and run in an isolated sandbox, then discarded.
-        </p>
+        {status === "error" && (
+          <p className="mt-10 rounded-lg border border-danger/40 bg-danger-soft p-3 text-sm text-fg">
+            Browser storage is unavailable, so projects can’t be saved. Private browsing or blocked site data can cause this.
+          </p>
+        )}
+
+        {projects.length > 0 && (
+          <section aria-labelledby="recent-heading" className="mt-12">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <h2 id="recent-heading" className="text-lg font-semibold tracking-tight text-fg">
+                Recent projects <span className="ml-1 text-sm font-normal text-fg-subtle">{projects.length}</span>
+              </h2>
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
+              </div>
+            </div>
+            <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((p) => (
+                <ProjectCard key={p.id} project={p} />
+              ))}
+            </ul>
+            {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
+          </section>
+        )}
       </div>
     </div>
   );
 }
 
-function ProjectRow({ project }: { project: ProjectSummary }) {
+function ProjectCard({ project }: { project: ProjectSummary }) {
   const { openProject, renameProject, duplicateProject, deleteProject } = useWorkspace.getState();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(project.name);
@@ -135,11 +135,10 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
   const lang = getLanguage(project.language);
 
   return (
-    <li className="group flex items-center gap-3 bg-surface-2 px-3 py-2 hover:bg-surface-3">
-      <FileIcon name={lang?.entryFile ?? ""} className="size-4" />
+    <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
       {renaming ? (
         <form
-          className="flex-1"
+          className="p-4"
           onSubmit={(e) => {
             e.preventDefault();
             void renameProject(project.id, name);
@@ -149,28 +148,35 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
           <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setRenaming(false)} aria-label="Project name" />
         </form>
       ) : (
-        <button onClick={() => void openProject(project.id)} className="min-w-0 flex-1 text-left">
-          <span className="block truncate text-sm text-fg">{project.name}</span>
-          <span className="block text-xs text-fg-subtle">
-            {lang?.name} · {project.fileCount} file{project.fileCount === 1 ? "" : "s"} · edited {relativeTime(project.updatedAt)}
+        <button onClick={() => void openProject(project.id)} className="flex w-full items-start gap-3 p-4 pr-12 text-left">
+          <ProjectBadge name={project.name} className="size-10 rounded-[10px] text-sm" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-semibold text-fg">{project.name}</span>
+            <span className="mt-0.5 flex items-center gap-1.5 text-sm text-fg-subtle">
+              <LanguageMark id={project.language} size={14} className="rounded-[3px]" />
+              {lang?.name} · {project.fileCount} file{project.fileCount === 1 ? "" : "s"}
+            </span>
+            <span className="mt-2 block text-xs text-fg-subtle">{relativeTime(project.updatedAt)}</span>
           </span>
         </button>
       )}
-      <DropdownMenu
-        align="end"
-        trigger={
-          <IconButton label={`Actions for ${project.name}`} className="opacity-60 group-hover:opacity-100 data-[state=open]:opacity-100">
-            <MoreHorizontal />
-          </IconButton>
-        }
-        entries={[
-          { label: "Open", icon: <FolderOpen />, onSelect: () => void openProject(project.id) },
-          { label: "Rename", icon: <Pencil />, onSelect: () => (setName(project.name), setRenaming(true)) },
-          { label: "Duplicate", icon: <Copy />, onSelect: () => void duplicateProject(project.id) },
-          { kind: "separator" },
-          { label: "Delete", icon: <Trash2 />, danger: true, onSelect: () => setConfirm(true) },
-        ]}
-      />
+      <div className="absolute right-2 top-2">
+        <DropdownMenu
+          align="end"
+          trigger={
+            <IconButton label={`Actions for ${project.name}`} className="opacity-60 group-hover:opacity-100 data-[state=open]:opacity-100">
+              <MoreHorizontal />
+            </IconButton>
+          }
+          entries={[
+            { label: "Open", icon: <FolderOpen />, onSelect: () => void openProject(project.id) },
+            { label: "Rename…", icon: <Pencil />, onSelect: () => (setName(project.name), setRenaming(true)) },
+            { label: "Duplicate", icon: <Copy />, onSelect: () => void duplicateProject(project.id) },
+            { kind: "separator" },
+            { label: "Delete…", icon: <Trash2 />, danger: true, onSelect: () => setConfirm(true) },
+          ]}
+        />
+      </div>
       <Dialog
         open={confirm}
         onOpenChange={setConfirm}
@@ -178,9 +184,9 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
         description="The project, its snapshots and its run history are removed from this browser. This cannot be undone."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
+            <Button onClick={() => setConfirm(false)}>Cancel</Button>
             <Button variant="danger" autoFocus onClick={() => void deleteProject(project.id).then(() => setConfirm(false))}>
-              Delete project
+              Delete
             </Button>
           </>
         }

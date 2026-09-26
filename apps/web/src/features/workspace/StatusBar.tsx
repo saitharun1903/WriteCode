@@ -1,17 +1,17 @@
 "use client";
 
-import { AlertTriangle, Check, CircleDot, Loader2, XCircle } from "lucide-react";
-import { getLanguage } from "@cw/shared";
+import { ChevronRight, Loader2 } from "lucide-react";
+import { Fragment } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { runCommand } from "@/features/commands/registry";
 import { useCursor } from "@/features/editor/bridge";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
-import { runCommand } from "@/features/commands/registry";
 import { cn } from "@/lib/cn";
 
-function Item({ children, onClick, label }: { children: React.ReactNode; onClick?: () => void; label?: string }) {
-  const cls = "flex h-full items-center gap-1.5 px-2 text-2xs text-fg-subtle";
+function Widget({ children, onClick, label, className }: { children: React.ReactNode; onClick?: () => void; label?: string; className?: string }) {
+  const cls = cn("flex h-full items-center gap-1.5 rounded-[4px] px-1.5 text-sm text-fg-subtle", className);
   if (!onClick) return <span className={cls}>{children}</span>;
   return (
     <button onClick={onClick} aria-label={label} className={cn(cls, "hover:bg-hover hover:text-fg")}>
@@ -20,74 +20,67 @@ function Item({ children, onClick, label }: { children: React.ReactNode; onClick
   );
 }
 
+/** Status bar: navigation path on the left, editor and runner state on the right. */
 export function StatusBar() {
   const project = useWorkspace((s) => s.project);
   const activeFile = useWorkspace((s) => s.activeFile);
   const saveState = useWorkspace((s) => s.saveState);
   const runner = useExecution((s) => s.runner);
   const runnerReason = useExecution((s) => s.runnerReason);
-  const diagnostics = useExecution((s) => s.diagnostics);
   const cursor = useCursor();
   const tabSize = useSettings((s) => s.tabSize);
-  const lang = project ? getLanguage(project.language) : undefined;
-  const errors = diagnostics.filter((d) => d.severity === "error").length;
-  const warnings = diagnostics.filter((d) => d.severity === "warning").length;
 
   const runnerLabel = { unknown: "Checking runner…", online: "Runner online", offline: "Runner offline", unavailable: "Runner unavailable" }[runner];
+  const crumbs = project ? [project.name, ...(activeFile ? activeFile.split("/") : [])] : [];
 
   return (
-    <footer className="flex h-6 shrink-0 items-stretch border-t border-line bg-canvas">
-      <Tooltip content={runnerReason ?? runnerLabel} side="top">
-        <button
-          onClick={() => void useExecution.getState().checkHealth()}
-          aria-label={`${runnerLabel}. Click to recheck.`}
-          className="flex items-center gap-1.5 px-2 text-2xs text-fg-subtle hover:bg-hover hover:text-fg"
-        >
-          <CircleDot
-            className={cn(
-              "size-2.5",
-              runner === "online" && "text-success",
-              (runner === "offline" || runner === "unavailable") && "text-danger",
-              runner === "unknown" && "text-fg-faint",
-            )}
-          />
-          {runnerLabel}
-        </button>
-      </Tooltip>
-      {project && (
-        <Item onClick={() => runCommand("view.problems")} label={`${errors} errors, ${warnings} warnings`}>
-          <XCircle className="size-3" /> {errors}
-          <AlertTriangle className="ml-1 size-3" /> {warnings}
-        </Item>
-      )}
-      {project && (
-        <Item>
-          {saveState === "saving" || saveState === "pending" ? (
-            <>
-              <Loader2 className="size-3 animate-spin" /> Saving
-            </>
-          ) : saveState === "error" ? (
-            <span className="text-danger">Save failed</span>
-          ) : (
-            <>
-              <Check className="size-3" /> Saved locally
-            </>
-          )}
-        </Item>
-      )}
-      <div className="ml-auto flex items-stretch">
+    <footer className="flex h-7 shrink-0 items-center gap-0.5 border-t border-line bg-canvas px-1.5">
+      <nav aria-label="Navigation path" className="flex min-w-0 items-center">
+        {crumbs.map((c, i) => (
+          <Fragment key={i}>
+            {i > 0 && <ChevronRight className="size-3.5 shrink-0 text-fg-faint" />}
+            <span className={cn("truncate px-1 text-sm", i === crumbs.length - 1 ? "text-fg-muted" : "text-fg-subtle")}>{c}</span>
+          </Fragment>
+        ))}
+      </nav>
+
+      <div className="ml-auto flex h-full items-center py-0.5">
+        {saveState === "saving" || saveState === "pending" ? (
+          <Widget>
+            <Loader2 className="size-3.5 animate-spin" /> Saving…
+          </Widget>
+        ) : saveState === "error" ? (
+          <Widget className="text-danger">Save failed</Widget>
+        ) : null}
         {activeFile && (
-          <Item onClick={() => runCommand("edit.goToLine")} label="Go to line">
-            Ln {cursor.line}, Col {cursor.column}
-          </Item>
+          <Widget onClick={() => runCommand("edit.goToLine")} label="Go to line">
+            {cursor.line}:{cursor.column}
+          </Widget>
         )}
-        {project && <Item>Spaces: {tabSize}</Item>}
-        {lang && (
-          <Item>
-            {lang.name} {lang.version}
-            {lang.supportLevel === "beta" && <span className="rounded-sm bg-warning-soft px-1 text-warning">beta</span>}
-          </Item>
+        {project && (
+          <>
+            <Widget>LF</Widget>
+            <Widget>UTF-8</Widget>
+            <Widget>{tabSize} spaces</Widget>
+          </>
         )}
+        <Tooltip content={runnerReason ?? runnerLabel} side="top">
+          <button
+            onClick={() => void useExecution.getState().checkHealth()}
+            aria-label={`${runnerLabel}. Click to recheck.`}
+            className="flex h-full items-center gap-1.5 rounded-[4px] px-1.5 text-sm text-fg-subtle hover:bg-hover hover:text-fg"
+          >
+            <span
+              className={cn(
+                "size-2 rounded-full",
+                runner === "online" && "bg-success",
+                (runner === "offline" || runner === "unavailable") && "bg-danger",
+                runner === "unknown" && "bg-fg-faint",
+              )}
+            />
+            {runnerLabel}
+          </button>
+        </Tooltip>
       </div>
     </footer>
   );

@@ -2,7 +2,7 @@
 
 import type { Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { canDebug } from "@/features/commands/registry";
+import { canDebug, runCommand } from "@/features/commands/registry";
 import { useWorkspace } from "@/features/projects/store";
 
 /**
@@ -16,6 +16,9 @@ interface EditorDebugState {
   breakpoints: editor.IEditorDecorationsCollection;
   hint: editor.IEditorDecorationsCollection;
   current: editor.IEditorDecorationsCollection;
+  run: editor.IEditorDecorationsCollection;
+  /** Line carrying the run marker, if any. */
+  runLine: number | null;
   /** File the breakpoint decorations were last rendered for. */
   renderedFile: string | null;
 }
@@ -36,22 +39,27 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
     breakpoints: ed.createDecorationsCollection(),
     hint: ed.createDecorationsCollection(),
     current: ed.createDecorationsCollection(),
+    run: ed.createDecorationsCollection(),
+    runLine: null,
     renderedFile: null,
   };
   states.set(ed, state);
   const { MouseTargetType } = monaco.editor;
-  const inGutter = (t: editor.IMouseTarget) =>
-    t.type === MouseTargetType.GUTTER_GLYPH_MARGIN || t.type === MouseTargetType.GUTTER_LINE_DECORATIONS;
 
   ed.onMouseDown((e) => {
-    if (!inGutter(e.target) || !e.target.position || !canDebug()) return;
+    // The run marker sits in the line-decorations column, right of the line numbers.
+    if (e.target.type === MouseTargetType.GUTTER_LINE_DECORATIONS && e.target.position?.lineNumber === state.runLine) {
+      runCommand("run.execute");
+      return;
+    }
+    if (e.target.type !== MouseTargetType.GUTTER_GLYPH_MARGIN || !e.target.position || !canDebug()) return;
     const file = fileOf(ed);
     if (file) useWorkspace.getState().toggleBreakpoint(file, e.target.position.lineNumber);
   });
 
   // Faint dot under the pointer shows where a click would add a breakpoint.
   ed.onMouseMove((e) => {
-    if (!inGutter(e.target) || !e.target.position || !canDebug()) return state.hint.clear();
+    if (e.target.type !== MouseTargetType.GUTTER_GLYPH_MARGIN || !e.target.position || !canDebug()) return state.hint.clear();
     const line = e.target.position.lineNumber;
     state.hint.set([{ range: new monaco.Range(line, 1, line, 1), options: { glyphMarginClassName: "cw-bp-hint" } }]);
   });
@@ -73,7 +81,14 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
 export function renderDebugDecorations(
   ed: editor.IStandaloneCodeEditor,
   monaco: Monaco,
-  input: { file: string; lines: number[]; unverified: number[]; current: { line: number; top: boolean } | null },
+  input: {
+    file: string;
+    lines: number[];
+    unverified: number[];
+    current: { line: number; top: boolean } | null;
+    /** Entry point line to mark with a run icon. */
+    runLine: number | null;
+  },
 ) {
   const state = states.get(ed);
   if (!state || fileOf(ed) !== input.file) return;
@@ -87,6 +102,7 @@ export function renderDebugDecorations(
         options: {
           stickiness,
           glyphMarginClassName: unverified ? "cw-bp cw-bp-unverified" : "cw-bp",
+          ...(unverified ? {} : { isWholeLine: true, className: "cw-bp-line" }),
           glyphMarginHoverMessage: {
             value: unverified ? "Breakpoint not set: there is no executable code on this line." : "Breakpoint",
           },
@@ -95,6 +111,13 @@ export function renderDebugDecorations(
     }),
   );
   state.renderedFile = input.file;
+
+  state.runLine = input.runLine;
+  state.run.set(
+    input.runLine
+      ? [{ range: new monaco.Range(input.runLine, 1, input.runLine, 1), options: { linesDecorationsClassName: "cw-run-glyph" } }]
+      : [],
+  );
 
   if (input.current) {
     const { line, top } = input.current;

@@ -18,7 +18,7 @@ const placeholders: Record<PaletteMode, string> = {
 };
 
 const itemClass =
-  "flex h-8 cursor-default select-none items-center gap-2.5 rounded-sm px-2 text-sm text-fg-muted data-[selected=true]:bg-active data-[selected=true]:text-fg data-[disabled=true]:opacity-40";
+  "flex h-7 cursor-default select-none items-center gap-2.5 rounded-[4px] px-2 text-sm text-fg data-[selected=true]:bg-accent-soft data-[disabled=true]:opacity-40";
 
 export function CommandPalette() {
   const { open, mode } = useUI((s) => s.palette);
@@ -56,7 +56,7 @@ export function CommandPalette() {
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/30 animate-fade" />
         <DialogPrimitive.Content
           aria-describedby={undefined}
-          className="fixed left-1/2 top-[12vh] z-50 w-[calc(100vw-32px)] max-w-xl -translate-x-1/2 overflow-hidden rounded-lg border border-line bg-overlay shadow-float animate-pop"
+          className="fixed left-1/2 top-[12vh] z-50 w-[calc(100vw-32px)] max-w-2xl -translate-x-1/2 overflow-hidden rounded-lg bg-overlay shadow-float animate-pop"
         >
           <DialogPrimitive.Title className="sr-only">Command palette</DialogPrimitive.Title>
           <Cmdk loop label="Command palette" className="flex flex-col">
@@ -64,7 +64,7 @@ export function CommandPalette() {
               value={search}
               onValueChange={onValueChange}
               placeholder={placeholders[mode]}
-              className="h-11 border-b border-line bg-transparent px-4 text-base text-fg outline-none placeholder:text-fg-faint"
+              className="h-10 border-b border-line-strong bg-transparent px-3 text-base text-fg outline-none placeholder:text-fg-subtle"
             />
             <Cmdk.List className="max-h-[min(420px,60vh)] overflow-y-auto p-1.5">
               <Cmdk.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">No matches.</Cmdk.Empty>
@@ -74,7 +74,7 @@ export function CommandPalette() {
                   <Cmdk.Group
                     key={category}
                     heading={category}
-                    className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-2xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.08em] [&_[cmdk-group-heading]]:text-fg-faint"
+                    className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-fg-subtle"
                   >
                     {COMMANDS.filter((c) => c.category === category).map((c) => (
                       <Cmdk.Item
@@ -122,12 +122,9 @@ export function CommandPalette() {
                   </Cmdk.Item>
                 ))}
             </Cmdk.List>
-            <div className="flex h-8 items-center gap-3 border-t border-line px-3 text-2xs text-fg-subtle">
-              <span className="flex items-center gap-1"><Kbd shortcut="↑" /><Kbd shortcut="↓" /> navigate</span>
-              <span className="flex items-center gap-1"><Kbd shortcut="Enter" /> select</span>
-              <span className="flex items-center gap-1"><Kbd shortcut="Esc" /> close</span>
-              {mode === "files" && <span className="ml-auto">Type &gt; for commands</span>}
-            </div>
+            {mode === "files" && (
+              <div className="flex h-7 items-center border-t border-line-strong px-3 text-xs text-fg-subtle">Type &gt; to search actions</div>
+            )}
           </Cmdk>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

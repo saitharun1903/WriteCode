@@ -1,15 +1,17 @@
 "use client";
 
-import { Bug, ChevronDown, Command, Menu, Play, Square } from "lucide-react";
-import { getLanguage } from "@cw/shared";
-import { Button, IconButton } from "@/components/ui/button";
+import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Square, Sun } from "lucide-react";
+import { PRODUCT, getLanguage } from "@cw/shared";
+import { IconButton } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { canDebug, getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
-import { DebugControls } from "@/features/debug/DebugControls";
+import { FileIcon, ProjectBadge } from "@/features/explorer/file-icon";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
-import { useSettings } from "@/features/settings/store";
+import { resolveTheme, useSettings } from "@/features/settings/store";
+import { cn } from "@/lib/cn";
 import { useUI } from "./ui-store";
 import { LogoMark } from "./Logo";
 
@@ -24,116 +26,175 @@ function fromCommands(ids: (string | "-")[]): MenuEntry[] {
 
 const MENUS: { label: string; items: (string | "-")[] }[] = [
   { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
-  { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format"] },
-  { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.problems", "view.input", "-", "prefs.toggleTheme", "prefs.wordWrap", "prefs.minimap", "view.resetLayout"] },
-  { label: "Run", items: ["run.execute", "run.cancel", "-", "run.clearOutput", "view.input"] },
+  { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format", "edit.goToLine"] },
+  { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
+  { label: "Run", items: ["run.execute", "debug.startOrContinue", "run.cancel", "-", "run.clearOutput", "view.input"] },
   {
     label: "Debug",
-    items: ["debug.startOrContinue", "debug.pause", "debug.stepOver", "debug.stepIn", "debug.stepOut", "-", "debug.restart", "run.cancel", "-", "debug.toggleBreakpoint", "debug.clearBreakpoints", "view.debug"],
+    items: ["debug.startOrContinue", "debug.pause", "debug.stepOver", "debug.stepIn", "debug.stepOut", "-", "debug.restart", "run.cancel", "-", "debug.toggleBreakpoint", "debug.clearBreakpoints"],
   },
+  { label: "Settings", items: ["prefs.open", "-", "prefs.toggleTheme", "prefs.wordWrap", "prefs.minimap", "-", "prefs.fontIncrease", "prefs.fontDecrease", "prefs.fontReset"] },
 ];
+
+function ThemeToggle() {
+  const theme = useSettings((s) => s.theme);
+  const dark = resolveTheme(theme) === "dark";
+  return (
+    <IconButton label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={() => runCommand("prefs.toggleTheme")}>
+      {dark ? <Sun /> : <Moon />}
+    </IconButton>
+  );
+}
+
+/** Grouped run controls: run configuration, Run, Debug and Stop in one capsule. */
+function RunControls() {
+  const project = useWorkspace((s) => s.project)!;
+  const run = useExecution((s) => s.run);
+  const running = isRunning(run);
+  const lang = getLanguage(project.language);
+  const runnable = lang ? project.files.filter((f) => lang.extensions.some((e) => f.path.toLowerCase().endsWith(e))) : [];
+
+  return (
+    <div className="flex h-8 items-center rounded-[7px] border border-line-strong bg-surface-2 p-0.5">
+      <DropdownMenu
+        align="end"
+        entries={[
+          { kind: "label", label: "Entry file" },
+          ...(runnable.length
+            ? runnable.map((f) => ({
+                label: f.path,
+                checked: f.path === project.entryFile,
+                onSelect: () => useWorkspace.getState().setEntryFile(f.path),
+              }))
+            : [{ label: `No ${lang?.name ?? ""} files`, disabled: true, onSelect: () => {} }]),
+          { kind: "separator" },
+          { label: "Program input (stdin)…", onSelect: () => runCommand("view.input") },
+        ]}
+        trigger={
+          <button
+            aria-label="Run configuration"
+            className="flex h-full max-w-48 items-center gap-1.5 rounded-[5px] px-2 text-sm text-fg hover:bg-hover data-[state=open]:bg-active"
+          >
+            <FileIcon name={project.entryFile || "file"} />
+            <span className="truncate">{project.entryFile ? project.entryFile.split("/").pop() : "No entry file"}</span>
+            <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
+          </button>
+        }
+      />
+      <span aria-hidden className="mx-0.5 h-4 w-px bg-line-strong" />
+      <Tooltip content="Run" shortcut="Mod+Enter">
+        <button
+          aria-label="Run program"
+          disabled={running}
+          onClick={() => runCommand("run.execute")}
+          className="flex h-full items-center gap-1.5 rounded-[5px] bg-[#1f8f4e] px-2.5 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:brightness-95 disabled:opacity-45"
+        >
+          <Play className="size-3.5 fill-current" />
+          Run
+        </button>
+      </Tooltip>
+      {canDebug() && (
+        <IconButton label="Debug program" shortcut="F5" disabled={running} onClick={() => runCommand("debug.startOrContinue")} className="ml-0.5 size-7 text-success">
+          <Bug />
+        </IconButton>
+      )}
+      <IconButton
+        label="Stop program"
+        shortcut="Shift+F5"
+        disabled={!running}
+        onClick={() => runCommand("run.cancel")}
+        className={cn("size-7", running && "text-danger")}
+      >
+        <Square className={cn(running && "fill-current")} />
+      </IconButton>
+    </div>
+  );
+}
 
 export function TitleBar({ compact }: { compact: boolean }) {
   const project = useWorkspace((s) => s.project);
   const projects = useWorkspace((s) => s.projects);
-  const run = useExecution((s) => s.run);
-  const running = isRunning(run);
   // Re-render menus when layout toggles so their enabled state is fresh.
   useSettings((s) => s.layout);
 
-  const lang = project ? getLanguage(project.language) : undefined;
-
   return (
-    <header className="flex h-10 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2">
-      {compact && project && (
-        <IconButton label="Explorer" onClick={() => useUI.getState().setDrawer(useUI.getState().drawer === "sidebar" ? "none" : "sidebar")}>
-          <Menu />
-        </IconButton>
-      )}
+    <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5 shadow-[0_1px_0_rgb(0_0_0/0.04)]">
       <button
         onClick={() => useWorkspace.getState().closeProject()}
-        className="flex items-center gap-2 rounded-sm px-1 py-1 hover:bg-hover"
+        className="flex h-8 items-center gap-2 rounded-[6px] pl-1 pr-2 hover:bg-hover"
         aria-label="Home"
-        title="Home"
       >
-        <LogoMark />
+        <LogoMark className="size-6" />
+        {!compact && <span className="text-[15px] font-semibold tracking-tight text-fg">{PRODUCT.name}</span>}
       </button>
 
-      {!compact && (
-        <nav aria-label="Main menu" className="flex items-center">
-          {MENUS.map((m) => (
-            <DropdownMenu
-              key={m.label}
-              entries={fromCommands(m.items)}
-              trigger={
-                <button className="h-7 rounded-sm px-2 text-sm text-fg-muted hover:bg-hover hover:text-fg data-[state=open]:bg-active data-[state=open]:text-fg">
-                  {m.label}
-                </button>
-              }
-            />
-          ))}
-        </nav>
+      {compact && project ? (
+        <IconButton label="Project files" onClick={() => useUI.getState().setDrawer(useUI.getState().drawer === "sidebar" ? "none" : "sidebar")}>
+          <PanelLeft />
+        </IconButton>
+      ) : (
+        <DropdownMenu
+          entries={MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) }))}
+          trigger={
+            <button aria-label="Main menu" className="flex size-8 items-center justify-center rounded-[6px] text-fg-muted hover:bg-hover data-[state=open]:bg-active">
+              <Menu className="size-[18px]" />
+            </button>
+          }
+        />
       )}
 
       {project && (
-        <div className="mx-auto flex min-w-0 items-center">
+        <>
+          <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />
           <DropdownMenu
-            align="center"
             entries={[
-              { kind: "label", label: "Projects" },
-              ...projects.slice(0, 8).map((p) => ({
+              { kind: "label", label: "Recent projects" },
+              ...projects.slice(0, 10).map((p) => ({
                 label: p.name,
+                checked: p.id === project.id,
                 onSelect: () => void useWorkspace.getState().openProject(p.id),
               })),
               { kind: "separator" },
-              { label: "All projects…", shortcut: primaryShortcut("project.switch"), onSelect: () => runCommand("project.switch") },
+              { label: "Open project…", shortcut: primaryShortcut("project.switch"), onSelect: () => runCommand("project.switch") },
               { label: "New project…", shortcut: primaryShortcut("project.new"), onSelect: () => runCommand("project.new") },
+              { label: "Close project", onSelect: () => runCommand("project.close") },
             ]}
             trigger={
-              <button className="flex h-7 min-w-0 max-w-[40vw] items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-sm text-fg hover:border-line-strong data-[state=open]:border-line-strong">
+              <button className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[6px] px-1.5 text-sm font-semibold text-fg hover:bg-hover data-[state=open]:bg-active">
+                <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
                 <span className="truncate">{project.name}</span>
-                {lang && <span className="hidden shrink-0 text-xs text-fg-subtle sm:inline">{lang.name}</span>}
-                <ChevronDown className="size-3 shrink-0 text-fg-subtle" />
+                <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
               </button>
             }
           />
+        </>
+      )}
+
+      {!compact && (
+        <div className="pointer-events-none absolute inset-x-0 flex justify-center">
+          <button
+            onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}
+            className="pointer-events-auto flex h-8 w-[min(420px,32vw)] items-center gap-2 rounded-[7px] border border-line-strong bg-surface-2 px-2.5 text-sm text-fg-subtle transition-colors hover:border-fg-faint hover:text-fg-muted"
+          >
+            <Search className="size-4" />
+            <span className="truncate">{project ? "Search files and actions" : "Search actions"}</span>
+            <Kbd shortcut={project ? "Mod+P" : "Mod+Shift+P"} className="ml-auto" />
+          </button>
         </div>
       )}
 
-      <div className="ml-auto flex items-center gap-1.5">
-        {!compact && (
-          <Tooltip content="Command palette" shortcut="Mod+Shift+P">
-            <button
-              onClick={() => runCommand("workbench.commandPalette")}
-              aria-label="Command palette"
-              className="flex h-7 items-center gap-2 rounded-md px-2 text-xs text-fg-subtle hover:bg-hover hover:text-fg"
-            >
-              <Command className="size-3.5" />
-            </button>
-          </Tooltip>
+      <div className="relative ml-auto flex items-center gap-1">
+        {project && <RunControls />}
+        {project && <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />}
+        {compact && (
+          <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand("workbench.commandPalette")}>
+            <Search />
+          </IconButton>
         )}
-        {project && running && run?.mode === "debug" && <DebugControls />}
-        {project && running && run?.mode !== "debug" && (
-          <Button variant="secondary" aria-label="Stop program" icon={<Square className="size-3 fill-current" />} onClick={() => runCommand("run.cancel")}>
-            Stop
-          </Button>
-        )}
-        {project && !running && (
-          <>
-            {canDebug() && (
-              <Tooltip content="Start debugging" shortcut="F5">
-                <Button variant="secondary" aria-label="Debug program" icon={<Bug className="size-3.5" />} onClick={() => runCommand("debug.startOrContinue")}>
-                  {!compact && "Debug"}
-                </Button>
-              </Tooltip>
-            )}
-            <Tooltip content="Run entry file" shortcut="Mod+Enter">
-              <Button variant="primary" aria-label="Run program" icon={<Play className="size-3 fill-current" />} onClick={() => runCommand("run.execute")}>
-                Run
-              </Button>
-            </Tooltip>
-          </>
-        )}
+        <ThemeToggle />
+        <IconButton label="Settings" shortcut="Mod+," onClick={() => runCommand("prefs.open")}>
+          <Settings />
+        </IconButton>
       </div>
     </header>
   );

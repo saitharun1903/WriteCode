@@ -3,7 +3,9 @@
 import { create } from "zustand";
 
 export type ThemePreference = "dark" | "light" | "system";
-export type BottomTab = "output" | "problems" | "input";
+/** Bottom tool windows. */
+export type BottomTab = "run" | "debug" | "problems" | "input";
+const BOTTOM_TABS: readonly BottomTab[] = ["run", "debug", "problems", "input"];
 export type SideView = "explorer" | "search" | "history";
 
 export interface Settings {
@@ -17,7 +19,6 @@ export interface Settings {
   layout: {
     sidebarOpen: boolean;
     bottomOpen: boolean;
-    inspectorOpen: boolean;
     sideView: SideView;
     bottomTab: BottomTab;
   };
@@ -25,17 +26,16 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
-  fontSize: 13.5,
+  fontSize: 14,
   tabSize: 4,
   wordWrap: false,
-  minimap: true,
+  minimap: false,
   recordHistory: true,
   layout: {
     sidebarOpen: true,
     bottomOpen: true,
-    inspectorOpen: false,
     sideView: "explorer",
-    bottomTab: "output",
+    bottomTab: "run",
   },
 };
 
@@ -46,7 +46,12 @@ function load(): Settings {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    return { ...DEFAULT_SETTINGS, ...parsed, layout: { ...DEFAULT_SETTINGS.layout, ...parsed.layout } };
+    const layout = { ...DEFAULT_SETTINGS.layout, ...parsed.layout };
+    // Older layouts used an "output" tab; unknown values fall back to Run.
+    if (!BOTTOM_TABS.includes(layout.bottomTab)) layout.bottomTab = "run";
+    // 13.5 was the previous default size; move it to the new default.
+    if (parsed.fontSize === 13.5) parsed.fontSize = DEFAULT_SETTINGS.fontSize;
+    return { ...DEFAULT_SETTINGS, ...parsed, layout };
   } catch {
     return DEFAULT_SETTINGS;
   }

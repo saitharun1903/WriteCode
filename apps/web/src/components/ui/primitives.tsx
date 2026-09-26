@@ -12,11 +12,11 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
-/** Uppercase section label used at the top of side panels. */
+/** Tool window title bar: title-case name on the left, actions on the right. */
 export function PanelHeader({ title, actions, className }: { title: string; actions?: ReactNode; className?: string }) {
   return (
     <div className={cn("flex h-9 shrink-0 items-center justify-between gap-2 pl-3 pr-1.5", className)}>
-      <h2 className="truncate text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">{title}</h2>
+      <h2 className="truncate text-sm font-semibold text-fg">{title}</h2>
       {actions && <div className="flex items-center gap-0.5">{actions}</div>}
     </div>
   );
@@ -38,8 +38,8 @@ export function EmptyState({
   return (
     <div className={cn("flex h-full flex-col items-center justify-center gap-2 p-6 text-center", className)}>
       {icon && <div className="text-fg-faint [&_svg]:size-5">{icon}</div>}
-      <p className="text-sm text-fg-muted">{title}</p>
-      {description && <p className="max-w-64 text-xs text-fg-subtle">{description}</p>}
+      <p className="text-sm text-fg-subtle">{title}</p>
+      {description && <p className="max-w-72 text-sm text-fg-subtle">{description}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>
   );
@@ -53,8 +53,8 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "h-7 w-full rounded-md border border-line bg-surface px-2 text-sm text-fg placeholder:text-fg-faint",
-        "outline-none transition-colors focus:border-accent-line focus:ring-2 focus:ring-accent-soft",
+        "h-7 w-full rounded-[4px] border border-line-strong bg-surface-2 px-2 text-sm text-fg placeholder:text-fg-subtle",
+        "outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent",
         "aria-[invalid=true]:border-danger",
         className,
       )}

@@ -1,33 +1,98 @@
-import { File, FileCode2, FileJson, FileText, Folder, FolderOpen } from "lucide-react";
+import { Folder, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-/** Muted per-language tints; icons stay monochrome-ish so the tree reads calmly. */
-const TINTS: Record<string, string> = {
-  java: "text-[#e76f51]",
-  py: "text-[#6fa8dc]",
-  cpp: "text-[#7c9ee6]",
-  cc: "text-[#7c9ee6]",
-  cxx: "text-[#7c9ee6]",
-  hpp: "text-[#a58fe0]",
-  h: "text-[#a58fe0]",
-  c: "text-[#8fa4c7]",
-  js: "text-[#e5c07b]",
-  mjs: "text-[#e5c07b]",
-  cjs: "text-[#e5c07b]",
-  ts: "text-[#5aa9e6]",
-  mts: "text-[#5aa9e6]",
+/**
+ * Compact file-type glyphs in the style of desktop IDE file icons: a class
+ * marker for Java sources, and a document with a coloured type tag for the rest.
+ */
+
+const TAGS: Record<string, { text: string; color: string }> = {
+  py: { text: "PY", color: "#3d8fd6" },
+  cpp: { text: "C++", color: "#5b8dd9" },
+  cc: { text: "C++", color: "#5b8dd9" },
+  cxx: { text: "C++", color: "#5b8dd9" },
+  hpp: { text: "H", color: "#9b7fd9" },
+  h: { text: "H", color: "#9b7fd9" },
+  c: { text: "C", color: "#6e8fb8" },
+  js: { text: "JS", color: "#c9a227" },
+  mjs: { text: "JS", color: "#c9a227" },
+  cjs: { text: "JS", color: "#c9a227" },
+  ts: { text: "TS", color: "#3178c6" },
+  mts: { text: "TS", color: "#3178c6" },
+  json: { text: "{}", color: "#b3ae60" },
+  md: { text: "MD", color: "#7c8591" },
 };
 
+function extOf(name: string): string {
+  return name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+}
+
 export function FileIcon({ name, className }: { name: string; className?: string }) {
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const cls = cn("size-3.5 shrink-0", className);
-  if (ext === "json") return <FileJson className={cn(cls, "text-[#cbcb41]")} />;
-  if (ext === "md" || ext === "txt") return <FileText className={cn(cls, "text-fg-subtle")} />;
-  if (TINTS[ext]) return <FileCode2 className={cn(cls, TINTS[ext])} />;
-  return <File className={cn(cls, "text-fg-subtle")} />;
+  const ext = extOf(name);
+  const cls = cn("size-4 shrink-0", className);
+
+  if (ext === "java") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden className={cls}>
+        <circle cx="8" cy="8" r="6.5" fill="#548af7" fillOpacity="0.16" stroke="#548af7" strokeWidth="1" />
+        <path d="M10.1 6.1A2.6 2.6 0 1 0 10.1 9.9" fill="none" stroke="#548af7" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  const tag = TAGS[ext];
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className={cls}>
+      <path
+        d="M3.5 1.5h6l3 3v10h-9z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinejoin="round"
+        className="text-fg-subtle"
+      />
+      <path d="M9.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" className="text-fg-subtle" />
+      {tag && (
+        <>
+          <rect x={tag.text.length > 2 ? 0.5 : 2} y="8.5" width={tag.text.length > 2 ? 15 : 12} height="6.5" rx="1.2" fill={tag.color} />
+          <text
+            x="8"
+            y="13.4"
+            textAnchor="middle"
+            fontSize={tag.text.length > 2 ? 5 : 5.4}
+            fontWeight="700"
+            fill="#fff"
+            fontFamily="Inter, 'Segoe UI', sans-serif"
+          >
+            {tag.text}
+          </text>
+        </>
+      )}
+    </svg>
+  );
 }
 
 export function FolderIcon({ open, className }: { open: boolean; className?: string }) {
   const Icon = open ? FolderOpen : Folder;
-  return <Icon className={cn("size-3.5 shrink-0 text-fg-subtle", className)} />;
+  return <Icon strokeWidth={1.5} className={cn("size-4 shrink-0 text-fg-subtle", className)} />;
+}
+
+/** Colour-coded square with initials, used for project identity (like IDE project widgets). */
+const PROJECT_COLORS = ["#4f7ed6", "#c75450", "#4c9a6a", "#b0782f", "#8d63c7", "#3f9aa8", "#c0588d", "#6f7f33"];
+
+export function ProjectBadge({ name, className }: { name: string; className?: string }) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const initials = ((words[0]?.[0] ?? "?") + (words[1]?.[0] ?? words[0]?.[1] ?? "")).toUpperCase();
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  const color = PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length];
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-[4px] text-[10px] font-semibold text-white", className)}
+      style={{ background: color }}
+    >
+      {initials}
+    </span>
+  );
 }

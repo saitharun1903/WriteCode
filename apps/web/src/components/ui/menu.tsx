@@ -2,6 +2,7 @@
 
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
+import { Check, ChevronRight } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Kbd } from "./kbd";
@@ -18,16 +19,17 @@ export type MenuEntry =
       shortcut?: string;
       danger?: boolean;
       disabled?: boolean;
+      checked?: boolean;
       onSelect: () => void;
     }
+  | { kind: "submenu"; label: string; icon?: ReactNode; entries: MenuEntry[] }
   | { kind: "separator" }
   | { kind: "label"; label: string };
 
-const contentClass =
-  "z-50 min-w-48 overflow-hidden rounded-md border border-line bg-overlay p-1 text-sm text-fg shadow-float animate-pop";
+const contentClass = "z-50 min-w-52 overflow-hidden rounded-lg bg-overlay p-1 text-sm text-fg shadow-float animate-pop";
 const itemClass = cn(
-  "relative flex h-7 select-none items-center gap-2 rounded-sm px-2 outline-none",
-  "data-[highlighted]:bg-active data-[disabled]:opacity-40 [&_svg]:size-3.5 [&_svg]:text-fg-subtle",
+  "relative flex h-[26px] select-none items-center gap-2 rounded-[4px] px-2 outline-none",
+  "data-[highlighted]:bg-accent-soft data-[state=open]:bg-accent-soft data-[disabled]:opacity-40 [&_svg]:size-4 [&_svg]:text-fg-subtle",
 );
 
 type Primitives = typeof DropdownPrimitive | typeof ContextMenuPrimitive;
@@ -50,15 +52,31 @@ function useSelectionFocusGuard() {
   };
 }
 
-function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => void) {
+function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => void): ReactNode[] {
   return entries.map((entry, i) => {
-    if (entry.kind === "separator") return <P.Separator key={i} className="-mx-1 my-1 h-px bg-line" />;
+    if (entry.kind === "separator") return <P.Separator key={i} className="-mx-1 my-1 h-px bg-line-strong" />;
     if (entry.kind === "label")
       return (
-        <P.Label key={i} className="px-2 pb-1 pt-1.5 text-2xs font-medium uppercase tracking-wider text-fg-subtle">
+        <P.Label key={i} className="px-2 pb-1 pt-1.5 text-xs text-fg-subtle">
           {entry.label}
         </P.Label>
       );
+    if (entry.kind === "submenu") {
+      return (
+        <P.Sub key={i}>
+          <P.SubTrigger className={itemClass}>
+            <span className="flex w-4 justify-center">{entry.icon}</span>
+            <span className="flex-1 truncate">{entry.label}</span>
+            <ChevronRight className="-mr-0.5" />
+          </P.SubTrigger>
+          <P.Portal>
+            <P.SubContent sideOffset={6} alignOffset={-4} className={contentClass}>
+              {renderEntries(P, entry.entries, markSelected)}
+            </P.SubContent>
+          </P.Portal>
+        </P.Sub>
+      );
+    }
     return (
       <P.Item
         key={i}
@@ -69,9 +87,9 @@ function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => 
         }}
         className={cn(itemClass, entry.danger && "text-danger [&_svg]:text-danger")}
       >
-        <span className="flex w-4 justify-center">{entry.icon}</span>
+        <span className="flex w-4 justify-center">{entry.checked ? <Check className="!text-fg" /> : entry.icon}</span>
         <span className="flex-1 truncate">{entry.label}</span>
-        {entry.shortcut && <Kbd shortcut={entry.shortcut} className="ml-4" />}
+        {entry.shortcut && <Kbd shortcut={entry.shortcut} className="ml-6" />}
       </P.Item>
     );
   });

@@ -29,6 +29,14 @@ const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first(
 const debugPanel = (page: Page) => page.getByRole("complementary", { name: "Debugger" });
 const output = (page: Page) => page.getByRole("log", { name: "Program output" });
 
+/** Waits until autosave has written the project to IndexedDB. */
+async function waitSaved(page: Page) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __cwWorkspace?: { getState(): { saveState: string } } };
+    return w.__cwWorkspace?.getState().saveState === "saved";
+  });
+}
+
 async function javaProject(page: Page, code: string) {
   await page.goto("/");
   await page.evaluate(async () => {
@@ -47,7 +55,7 @@ async function javaProject(page: Page, code: string) {
     const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
     m.editor.getEditors()[0]!.getModel().setValue(text);
   }, code);
-  await expect(page.getByText("Saved locally")).toBeVisible();
+  await waitSaved(page);
 }
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
@@ -71,7 +79,7 @@ test("breakpoints, variables, watches, stepping and continue", async ({ page }) 
   const panel = debugPanel(page);
   await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
   await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(1);
-  await expect(page.getByText("Ln 12,")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("12:1");
 
   const vars = panel.getByRole("tree", { name: "Variables" });
   await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
@@ -87,18 +95,20 @@ test("breakpoints, variables, watches, stepping and continue", async ({ page }) 
 
   await page.keyboard.press("F11");
   await expect(panel.getByText("Paused after step")).toBeVisible();
-  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("Main.square()");
+  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("square:3, Main");
   await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
 
   await page.keyboard.press("Shift+F11");
-  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("Main.square()");
+  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("square:");
 
   await page.keyboard.press("F5");
   await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
   await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
 
   // Removing the breakpoint mid-session lets the program run to completion.
-  await panel.getByRole("button", { name: "Remove breakpoint Main.java:12" }).click();
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint Main.java:12" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
   await page.keyboard.press("F5");
   await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
   await expect(page.getByText("Success", { exact: true })).toBeVisible();
@@ -113,10 +123,11 @@ test("breakpoints persist and follow edits", async ({ page }) => {
   await cursorTo(page, 1);
   await page.keyboard.press("End");
   await page.keyboard.insertText("\n// one\n// two");
-  await expect(page.getByText("Saved locally")).toBeVisible();
+  await waitSaved(page);
   await page.reload();
   await page.keyboard.press("Control+Shift+D");
-  await expect(debugPanel(page).getByRole("list", { name: "Breakpoints" })).toContainText("Main.java:14");
+  await debugPanel(page).getByRole("button", { name: "View Breakpoints" }).click();
+  await expect(page.getByRole("list", { name: "Breakpoints" })).toContainText("Main.java:14");
 });
 
 test("pause a running program, then stop it", async ({ page }) => {
@@ -137,7 +148,7 @@ test("stops on uncaught exceptions", async ({ page }) => {
   const panel = debugPanel(page);
   await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 90_000 });
   await expect(panel.getByRole("alert")).toContainText("ArrayIndexOutOfBoundsException");
-  await expect(page.getByText("Ln 4,")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("4:1");
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
 });

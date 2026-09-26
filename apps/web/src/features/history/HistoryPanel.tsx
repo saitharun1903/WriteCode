@@ -115,7 +115,7 @@ function RunHistory() {
       ) : (
         groupByDay(visible).map(([day, items]) => (
           <section key={day} className="pb-2">
-            <h3 className="sticky top-0 z-[1] bg-surface px-3 py-1 text-2xs font-semibold uppercase tracking-[0.08em] text-fg-subtle">{day}</h3>
+            <h3 className="sticky top-0 z-[1] bg-surface px-3 py-1 text-xs font-semibold text-fg-subtle">{day}</h3>
             <ul>
               {items.map((e) => (
                 <li key={e.id}>

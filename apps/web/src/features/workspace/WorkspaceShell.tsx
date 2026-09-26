@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/primitives";
 import { CommandPalette } from "@/features/commands/CommandPalette";
-import { DebugPanel } from "@/features/debug/DebugPanel";
 import { useDebugSync } from "@/features/debug/use-debug-sync";
 import { useGlobalKeybindings } from "@/features/commands/keybindings";
 import { EditorArea } from "@/features/editor/EditorArea";
@@ -49,9 +48,8 @@ function DesktopWorkbench() {
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
-  const inspectorRef = useRef<PanelImperativeHandle | null>(null);
 
-  const outer = useDefaultLayout({ id: "cw-outer", panelIds: ["side", "main", "inspector"] });
+  const outer = useDefaultLayout({ id: "cw-outer", panelIds: ["side", "main"] });
   const inner = useDefaultLayout({ id: "cw-inner", panelIds: ["editor", "bottom"] });
 
   // Keep imperative panel state in sync with persisted layout flags.
@@ -69,12 +67,6 @@ function DesktopWorkbench() {
     if (!layout.bottomOpen && !p.isCollapsed()) p.collapse();
   }, [layout.bottomOpen]);
 
-  useEffect(() => {
-    const p = inspectorRef.current;
-    if (!p) return;
-    if (layout.inspectorOpen && p.isCollapsed()) p.expand();
-    if (!layout.inspectorOpen && !p.isCollapsed()) p.collapse();
-  }, [layout.inspectorOpen]);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -118,22 +110,6 @@ function DesktopWorkbench() {
             </Panel>
           </Group>
         </Panel>
-        <Separator className={cn(separatorClass, "w-px")} />
-        <Panel
-          id="inspector"
-          panelRef={inspectorRef}
-          defaultSize={layout.inspectorOpen ? "300px" : "0px"}
-          minSize="240px"
-          maxSize="40%"
-          collapsible
-          collapsedSize={0}
-          onResize={(size) => {
-            const open = size.inPixels > 0;
-            if (open !== useSettings.getState().layout.inspectorOpen) updateLayout({ inspectorOpen: open });
-          }}
-        >
-          <DebugPanel />
-        </Panel>
       </Group>
     </div>
   );
@@ -145,6 +121,7 @@ function CompactWorkbench() {
   const setDrawer = useUI((s) => s.setDrawer);
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideView = useSettings((s) => s.layout.sideView);
+  const bottomTab = useSettings((s) => s.layout.bottomTab);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -170,12 +147,23 @@ function CompactWorkbench() {
             {label}
           </button>
         ))}
-        <button onClick={() => setDrawer(drawer === "bottom" ? "none" : "bottom")} className={cn("flex-1 text-fg-subtle", drawer === "bottom" && "text-fg")}>
-          Output
-        </button>
-        <button onClick={() => setDrawer(drawer === "debug" ? "none" : "debug")} className={cn("flex-1 text-fg-subtle", drawer === "debug" && "text-fg")}>
-          Debug
-        </button>
+        {(
+          [
+            ["run", "Run"],
+            ["debug", "Debug"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => {
+              updateLayout({ bottomTab: id });
+              setDrawer(drawer === "bottom" && bottomTab === id ? "none" : "bottom");
+            }}
+            className={cn("flex-1 text-fg-subtle", drawer === "bottom" && bottomTab === id && "text-fg")}
+          >
+            {label}
+          </button>
+        ))}
       </nav>
 
       {drawer !== "none" && (
@@ -184,11 +172,6 @@ function CompactWorkbench() {
       {drawer === "sidebar" && (
         <div className="absolute inset-y-0 bottom-10 left-0 z-30 w-[min(320px,85vw)] border-r border-line shadow-float animate-slide-up">
           <SideView />
-        </div>
-      )}
-      {drawer === "debug" && (
-        <div className="absolute inset-y-0 bottom-10 right-0 z-30 w-[min(340px,90vw)] border-l border-line shadow-float animate-slide-up">
-          <DebugPanel />
         </div>
       )}
       {drawer === "bottom" && (

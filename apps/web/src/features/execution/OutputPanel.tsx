@@ -1,20 +1,18 @@
 "use client";
 
-import { Check, Copy, Pause, RotateCw, Search, Square, TerminalSquare, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, IconButton } from "@/components/ui/button";
+import { ArrowDownToLine, Check, Copy, RotateCw, Search, Square, Trash2, WrapText, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { EmptyState } from "@/components/ui/primitives";
 import { runCommand } from "@/features/commands/registry";
-import { useDebug } from "@/features/debug/store";
 import { cn } from "@/lib/cn";
-import { STATUS_META, StatusPill, formatBytes, formatDuration } from "./status";
-import { isRunning, useExecution, type LogChunk } from "./store";
+import { STATUS_META } from "./status";
+import { isRunning, useExecution, type LogChunk, type RunState } from "./store";
 
 const streamClass: Record<LogChunk["stream"], string> = {
   stdout: "text-fg",
   stderr: "text-danger",
-  compile: "text-warning",
+  compile: "text-danger",
   system: "text-fg-subtle",
 };
 
@@ -22,12 +20,12 @@ function highlight(text: string, query: string) {
   if (!query) return text;
   const lower = text.toLowerCase();
   const q = query.toLowerCase();
-  const out: React.ReactNode[] = [];
+  const out: ReactNode[] = [];
   let i = 0;
   for (let hit = lower.indexOf(q); hit !== -1; hit = lower.indexOf(q, i)) {
     if (hit > i) out.push(text.slice(i, hit));
     out.push(
-      <mark key={hit} className="rounded-[2px] bg-warning/35 text-fg">
+      <mark key={hit} className="rounded-[2px] bg-warning/40 text-fg">
         {text.slice(hit, hit + q.length)}
       </mark>,
     );
@@ -37,17 +35,131 @@ function highlight(text: string, query: string) {
   return out;
 }
 
-export function OutputPanel() {
+/** Closing line printed after the program ends, in the style of an IDE run console. */
+function Epilogue({ run }: { run: RunState }) {
+  const r = run.result;
+  if (!r) return null;
+  let line: ReactNode;
+  switch (r.status) {
+    case "SUCCESS":
+    case "RUNTIME_ERROR":
+      line = <span className="text-fg-subtle">Process finished with exit code {r.exitCode ?? "unknown"}</span>;
+      break;
+    case "COMPILATION_ERROR":
+      line = <span className="text-danger">{r.message ?? `Compilation failed${r.exitCode !== undefined ? ` (exit code ${r.exitCode})` : ""}`}</span>;
+      break;
+    case "CANCELLED":
+      line = <span className="text-fg-subtle">{r.message ?? "Process stopped"}</span>;
+      break;
+    case "SYSTEM_ERROR":
+      line = <span className="text-danger">{r.message ?? STATUS_META.SYSTEM_ERROR.hint}</span>;
+      break;
+    default:
+      line = <span className="text-warning">{r.message ?? STATUS_META[r.status].hint}</span>;
+  }
+  return <div className="mt-[20px]">{line}</div>;
+}
+
+/** Scrollable console output of the current run or debug session. */
+export function ConsoleView({ query = "", wrap = true, follow = true }: { query?: string; wrap?: boolean; follow?: boolean }) {
   const run = useExecution((s) => s.run);
   const runner = useExecution((s) => s.runner);
-  const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-
   const running = isRunning(run);
-  const debugPaused = useDebug((s) => s.phase === "paused") && run?.mode === "debug" && running;
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && follow && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [run?.log, run?.result, follow]);
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      }}
+      className="h-full min-h-0 overflow-auto bg-surface-2"
+      role="log"
+      aria-live="polite"
+      aria-label="Program output"
+    >
+      {!run && (
+        <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center text-sm text-fg-subtle">
+          {runner === "offline" ? (
+            <>
+              <p>The execution service is not reachable.</p>
+              <p>Start it with pnpm dev, see the README.</p>
+            </>
+          ) : (
+            <p className="flex items-center gap-1.5">
+              Run the program with <Kbd shortcut="Mod+Enter" /> or debug it with <Kbd shortcut="F5" />
+            </p>
+          )}
+        </div>
+      )}
+
+      {run && (
+        <div
+          className={cn(
+            "px-3 py-2 font-mono text-[13px] leading-[20px]",
+            wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
+          )}
+        >
+          {run.log.map((chunk, i) => (
+            <span key={i} className={streamClass[chunk.stream]}>
+              {chunk.stream === "system" ? chunk.text : highlight(chunk.text, query)}
+            </span>
+          ))}
+          {run.error && (
+            <div role="alert" className="font-sans">
+              <p className="text-danger">{run.error.title}</p>
+              {run.error.detail && <p className="text-fg-subtle">{run.error.detail}</p>}
+              {run.error.requestId && <p className="font-mono text-xs text-fg-faint">Request ID: {run.error.requestId}</p>}
+              <button onClick={() => runCommand("run.execute")} className="mt-1 text-accent hover:underline">
+                Retry
+              </button>
+            </div>
+          )}
+          {!run.error && <Epilogue run={run} />}
+          {running && run.status !== "RUNNING" && (
+            <span className="text-fg-subtle">{run.status === "COMPILING" ? "Compiling…" : "Starting…"}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatMs(ms?: number) {
+  if (ms === undefined) return null;
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
+}
+
+/** Run metrics shown in the tool window header, e.g. "compile 490 ms · run 732 ms · 22 MB". */
+export function RunMetrics() {
+  const r = useExecution((s) => s.run?.result);
+  if (!r) return null;
+  const parts = [
+    r.compileTime !== undefined && `compile ${formatMs(r.compileTime)}`,
+    r.executionTime !== undefined && `run ${formatMs(r.executionTime)}`,
+    r.memoryUsed !== undefined && `${(r.memoryUsed / 1024 / 1024).toFixed(1)} MB`,
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return <span className="hidden truncate text-xs text-fg-subtle md:inline">{parts.join(" · ")}</span>;
+}
+
+/** Run tool window: vertical action toolbar plus the console. */
+export function RunToolWindow() {
+  const run = useExecution((s) => s.run);
+  const running = isRunning(run);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [wrap, setWrap] = useState(true);
+  const [follow, setFollow] = useState(true);
+  const [copied, setCopied] = useState(false);
+
   const plainText = useMemo(() => run?.log.filter((c) => c.stream !== "system").map((c) => c.text).join("") ?? "", [run?.log]);
   const matchCount = useMemo(() => {
     if (!query) return 0;
@@ -58,12 +170,6 @@ export function OutputPanel() {
     return n;
   }, [plainText, query]);
 
-  // Follow new output unless the user scrolled up to read.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [run?.log]);
-
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(plainText);
@@ -72,147 +178,66 @@ export function OutputPanel() {
     } catch {}
   };
 
-  const result = run?.result;
-  const meta = run && !run.error ? STATUS_META[run.status] : null;
-
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-2">
-        {run && !run.error && (debugPaused ? (
-          <span className="inline-flex h-5 items-center gap-1.5 rounded-sm bg-warning-soft px-1.5 text-xs font-medium text-warning">
-            <Pause className="size-3 fill-current" /> Paused
-          </span>
-        ) : (
-          <StatusPill status={run.status} />
-        ))}
-        {result && (
-          <dl className="flex items-center gap-3 text-xs text-fg-subtle">
-            {result.exitCode !== undefined && (
-              <div className="flex gap-1">
-                <dt>exit</dt>
-                <dd className={cn("font-mono", result.exitCode === 0 ? "text-fg-muted" : "text-danger")}>{result.exitCode}</dd>
-              </div>
-            )}
-            {result.compileTime !== undefined && (
-              <div className="flex gap-1">
-                <dt>compile</dt>
-                <dd className="font-mono text-fg-muted">{formatDuration(result.compileTime)}</dd>
-              </div>
-            )}
-            {result.executionTime !== undefined && (
-              <div className="flex gap-1">
-                <dt>run</dt>
-                <dd className="font-mono text-fg-muted">{formatDuration(result.executionTime)}</dd>
-              </div>
-            )}
-            {result.memoryUsed !== undefined && (
-              <div className="hidden gap-1 sm:flex">
-                <dt>mem</dt>
-                <dd className="font-mono text-fg-muted">{formatBytes(result.memoryUsed)}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-        <div className="ml-auto flex items-center gap-0.5">
-          {searchOpen && (
-            <div className="mr-1 flex h-6 items-center gap-1 rounded-sm border border-line bg-surface pl-1.5 pr-0.5">
-              <Search className="size-3 text-fg-subtle" />
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setQuery("");
-                    setSearchOpen(false);
-                  }
-                }}
-                aria-label="Search output"
-                placeholder="Find in output"
-                className="w-32 bg-transparent text-xs text-fg outline-none placeholder:text-fg-faint"
-              />
-              {query && <span className="text-2xs tabular-nums text-fg-subtle">{matchCount}</span>}
-              <IconButton label="Close search" size="sm" onClick={() => (setQuery(""), setSearchOpen(false))}>
-                <X />
-              </IconButton>
-            </div>
-          )}
-          {running && (
-            <Button size="sm" variant="ghost" icon={<Square className="size-3 fill-current" />} onClick={() => runCommand("run.cancel")}>
-              Stop
-            </Button>
-          )}
-          <IconButton label="Search output" size="sm" onClick={() => setSearchOpen((v) => !v)} active={searchOpen}>
-            <Search />
-          </IconButton>
-          <IconButton label={copied ? "Copied" : "Copy output"} size="sm" onClick={copy} disabled={!plainText}>
-            {copied ? <Check /> : <Copy />}
-          </IconButton>
-          <IconButton label="Clear output" size="sm" onClick={() => runCommand("run.clearOutput")} disabled={!run}>
-            <Trash2 />
-          </IconButton>
-        </div>
+    <div className="flex h-full min-h-0">
+      <div role="toolbar" aria-label="Run actions" aria-orientation="vertical" className="flex w-9 shrink-0 flex-col items-center gap-0.5 border-r border-line py-1">
+        <IconButton
+          label={run?.mode === "debug" ? "Rerun in debugger" : "Rerun"}
+          shortcut={run?.mode === "debug" ? "F5" : "Mod+Enter"}
+          tooltipSide="right"
+          disabled={running}
+          className="text-success"
+          onClick={() => runCommand(run?.mode === "debug" ? "debug.startOrContinue" : "run.execute")}
+        >
+          <RotateCw />
+        </IconButton>
+        <IconButton label="Stop" shortcut="Shift+F5" tooltipSide="right" disabled={!running} className={cn(running && "text-danger")} onClick={() => runCommand("run.cancel")}>
+          <Square className={cn(running && "fill-current")} />
+        </IconButton>
+        <span className="my-1 h-px w-5 bg-line-strong" />
+        <IconButton label="Soft-wrap" tooltipSide="right" active={wrap} onClick={() => setWrap((v) => !v)}>
+          <WrapText />
+        </IconButton>
+        <IconButton label="Scroll to end" tooltipSide="right" active={follow} onClick={() => setFollow((v) => !v)}>
+          <ArrowDownToLine />
+        </IconButton>
+        <IconButton label="Find in output" tooltipSide="right" active={searchOpen} onClick={() => setSearchOpen((v) => !v)}>
+          <Search />
+        </IconButton>
+        <IconButton label={copied ? "Copied" : "Copy output"} tooltipSide="right" onClick={copy} disabled={!plainText}>
+          {copied ? <Check /> : <Copy />}
+        </IconButton>
+        <IconButton label="Clear all" tooltipSide="right" onClick={() => runCommand("run.clearOutput")} disabled={!run}>
+          <Trash2 />
+        </IconButton>
       </div>
-
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        }}
-        className="min-h-0 flex-1 overflow-auto"
-        role="log"
-        aria-live="polite"
-        aria-label="Program output"
-      >
-        {!run && (
-          <EmptyState
-            icon={<TerminalSquare />}
-            title={runner === "offline" ? "Execution service offline" : "No output yet"}
-            description={
-              runner === "offline" ? (
-                "The API isn't reachable, so programs can't run yet. Start it with pnpm dev (see README)."
-              ) : (
-                <span className="inline-flex flex-wrap items-center justify-center gap-1.5">
-                  Run the entry file with <Kbd shortcut="Mod+Enter" />
-                </span>
-              )
-            }
-          />
-        )}
-
-        {run?.error && (
-          <div role="alert" className="m-3 rounded-md border border-danger/30 bg-danger-soft p-3">
-            <p className="text-sm font-medium text-danger">{run.error.title}</p>
-            {run.error.detail && <p className="mt-1 text-xs text-fg-muted">{run.error.detail}</p>}
-            {run.error.requestId && (
-              <p className="mt-2 font-mono text-2xs text-fg-subtle">Request ID: {run.error.requestId}</p>
-            )}
-            <Button size="sm" className="mt-3" icon={<RotateCw className="size-3" />} onClick={() => runCommand("run.execute")}>
-              Retry
-            </Button>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {searchOpen && (
+          <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-2">
+            <Search className="size-3.5 text-fg-subtle" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setQuery("");
+                  setSearchOpen(false);
+                }
+              }}
+              aria-label="Search output"
+              placeholder="Search"
+              className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
+            />
+            {query && <span className="text-xs tabular-nums text-fg-subtle">{matchCount} results</span>}
+            <IconButton label="Close search" size="sm" onClick={() => (setQuery(""), setSearchOpen(false))}>
+              <X />
+            </IconButton>
           </div>
         )}
-
-        {run && run.log.length > 0 && (
-          <pre className="whitespace-pre-wrap break-words px-3 py-2 font-mono text-[12.5px] leading-[1.55]">
-            {run.log.map((chunk, i) => (
-              <span key={i} className={streamClass[chunk.stream]}>
-                {chunk.stream === "system" ? chunk.text : highlight(chunk.text, query)}
-              </span>
-            ))}
-            {running && <span className="ml-px inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg-subtle" />}
-          </pre>
-        )}
-
-        {result && meta?.hint && result.status !== "SUCCESS" && (
-          <p className="mx-3 mb-3 border-l-2 border-line-strong pl-2 text-xs text-fg-subtle">
-            {result.message ?? meta.hint}
-          </p>
-        )}
-        {result && result.status === "SUCCESS" && !plainText && (
-          <p className="px-3 pb-3 text-xs text-fg-subtle">Program finished without printing anything.</p>
-        )}
+        <div className="min-h-0 flex-1">
+          <ConsoleView query={query} wrap={wrap} follow={follow} />
+        </div>
       </div>
     </div>
   );

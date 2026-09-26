@@ -10,6 +10,7 @@ export type DebugPhase = "starting" | "running" | "paused" | "ended";
 
 export interface StopInfo {
   reason: StopReason;
+  thread: string;
   description?: string;
   frames: DebugFrame[];
 }
@@ -94,7 +95,7 @@ export const useDebug = create<DebugState>((set, get) => ({
         const firstOwn = Math.max(0, event.frames.findIndex((f) => f.file));
         set({
           phase: "paused",
-          stop: { reason: event.reason, description: event.description, frames: event.frames },
+          stop: { reason: event.reason, thread: event.thread, description: event.description, frames: event.frames },
           selectedFrame: firstOwn,
           variables: {},
         });

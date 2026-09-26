@@ -37,7 +37,7 @@ const inDebugSession = () => {
 };
 
 function startDebugging() {
-  useSettings.getState().updateLayout({ inspectorOpen: true, bottomOpen: true, bottomTab: "output" });
+  showBottom("debug");
   void useExecution.getState().execute({ mode: "debug" });
 }
 
@@ -59,7 +59,7 @@ export const COMMANDS: Command[] = [
     shortcut: "Mod+Enter",
     enabled: () => hasProject() && !isRunning(useExecution.getState().run),
     run: () => {
-      showBottom("output");
+      showBottom("run");
       void useExecution.getState().execute();
     },
   },
@@ -81,7 +81,7 @@ export const COMMANDS: Command[] = [
       if (debugPhase() === "paused" && inDebugSession()) return useDebug.getState().command("continue");
       if (canDebug()) return startDebugging();
       // Languages without a debugger yet: F5 simply runs.
-      showBottom("output");
+      showBottom("run");
       void useExecution.getState().execute();
     },
   },
@@ -154,14 +154,13 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "view.debug",
-    title: "Toggle Debug Panel",
+    title: "Show Debug",
     category: "View",
     shortcut: "Mod+Shift+D",
     run: () => {
-      const { layout, updateLayout } = useSettings.getState();
-      updateLayout({ inspectorOpen: !layout.inspectorOpen });
-      const ui = useUI.getState();
-      ui.setDrawer(ui.drawer === "debug" ? "none" : "debug");
+      const { layout } = useSettings.getState();
+      if (layout.bottomOpen && layout.bottomTab === "debug") useSettings.getState().updateLayout({ bottomOpen: false });
+      else showBottom("debug");
     },
   },
   {
@@ -326,7 +325,7 @@ export const COMMANDS: Command[] = [
   { id: "view.explorer", title: "Show Explorer", category: "View", shortcut: "Mod+Shift+E", run: () => showSide("explorer") },
   { id: "view.search", title: "Search in Project", category: "View", shortcut: "Mod+Shift+F", enabled: hasProject, run: () => showSide("search") },
   { id: "view.history", title: "Show Run History", category: "View", shortcut: "Mod+Shift+H", run: () => showSide("history") },
-  { id: "view.output", title: "Show Output", category: "View", run: () => showBottom("output") },
+  { id: "view.run", title: "Show Run", category: "View", shortcut: "Alt+4", run: () => showBottom("run") },
   { id: "view.problems", title: "Show Problems", category: "View", shortcut: "Mod+Shift+M", run: () => showBottom("problems") },
   { id: "view.input", title: "Show Program Input (stdin)", category: "View", run: () => showBottom("input") },
   { id: "view.resetLayout", title: "Reset Layout", category: "View", run: () => useSettings.getState().resetLayout() },

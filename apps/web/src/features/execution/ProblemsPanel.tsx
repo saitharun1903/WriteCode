@@ -1,51 +1,66 @@
 "use client";
 
-import { AlertTriangle, CircleCheck, Info, XCircle } from "lucide-react";
-import { EmptyState } from "@/components/ui/primitives";
+import { ChevronDown, CircleX, Info, TriangleAlert } from "lucide-react";
+import { basename, type Diagnostic } from "@cw/shared";
 import { goToLocation } from "@/features/editor/navigate";
-import { cn } from "@/lib/cn";
+import { FileIcon } from "@/features/explorer/file-icon";
 import { useExecution } from "./store";
 
 const icon = {
-  error: <XCircle className="size-3.5 text-danger" />,
-  warning: <AlertTriangle className="size-3.5 text-warning" />,
-  info: <Info className="size-3.5 text-info" />,
+  error: <CircleX className="size-4 shrink-0 text-danger" />,
+  warning: <TriangleAlert className="size-4 shrink-0 text-warning" />,
+  info: <Info className="size-4 shrink-0 text-info" />,
 };
 
+/** Problems tool window: compiler and runtime diagnostics grouped by file. */
 export function ProblemsPanel() {
   const diagnostics = useExecution((s) => s.diagnostics);
   const hasRun = useExecution((s) => !!s.run?.result);
 
   if (diagnostics.length === 0) {
     return (
-      <EmptyState
-        icon={<CircleCheck />}
-        title={hasRun ? "No problems detected in the last run" : "No problems"}
-        description="Compiler errors and uncaught exceptions from runs appear here, linked to their source line."
-      />
+      <div className="flex h-full items-center justify-center bg-surface-2 p-6 text-sm text-fg-subtle">
+        {hasRun ? "No problems found in the last run." : "Compiler errors and uncaught exceptions appear here after a run."}
+      </div>
     );
   }
 
+  const byFile = new Map<string, Diagnostic[]>();
+  for (const d of diagnostics) byFile.set(d.file, [...(byFile.get(d.file) ?? []), d]);
+
   return (
-    <ul className="h-full overflow-auto py-1" aria-label="Problems">
-      {diagnostics.map((d, i) => (
-        <li key={i}>
-          <button
-            onClick={() => goToLocation(d.file, d.line, d.column)}
-            className={cn("flex w-full items-start gap-2 px-3 py-1 text-left text-sm hover:bg-hover focus-visible:bg-hover")}
-          >
-            <span className="mt-0.5">{icon[d.severity]}</span>
-            <span className="min-w-0 flex-1">
-              <span className="break-words text-fg">{d.message}</span>
-              <span className="ml-2 font-mono text-xs text-fg-subtle">
-                {d.file}:{d.line}
-                {d.column ? `:${d.column}` : ""}
-              </span>
+    <div className="h-full overflow-auto bg-surface-2 py-1" aria-label="Problems">
+      {[...byFile].map(([file, items]) => (
+        <section key={file}>
+          <div className="flex h-6 items-center gap-1.5 px-2 text-sm">
+            <ChevronDown className="size-3.5 text-fg-subtle" />
+            <FileIcon name={file} />
+            <span className="text-fg">{basename(file)}</span>
+            <span className="text-fg-subtle">
+              {items.length} problem{items.length === 1 ? "" : "s"}
             </span>
-            <span className="shrink-0 text-2xs uppercase tracking-wider text-fg-faint">{d.source}</span>
-          </button>
-        </li>
+          </div>
+          <ul>
+            {items.map((d, i) => (
+              <li key={i}>
+                <button
+                  onClick={() => goToLocation(d.file, d.line, d.column)}
+                  className="flex min-h-6 w-full items-start gap-2 py-0.5 pl-9 pr-3 text-left text-sm hover:bg-hover focus-visible:bg-accent-soft"
+                >
+                  <span className="mt-px">{icon[d.severity]}</span>
+                  <span className="min-w-0 flex-1 break-words text-fg">
+                    {d.message}{" "}
+                    <span className="whitespace-nowrap text-fg-subtle">
+                      {d.file}:{d.line}
+                      {d.column ? `:${d.column}` : ""}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ))}
-    </ul>
+    </div>
   );
 }

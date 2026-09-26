@@ -52,7 +52,7 @@ export function SearchPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PanelHeader title="Search" />
+      <PanelHeader title="Find in Files" />
       <div className="relative mx-3 mb-2 shrink-0">
         <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle" />
         <Input
