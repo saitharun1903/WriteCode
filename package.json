@@ -6,10 +6,16 @@
     "node": ">=22"
   },
   "scripts": {
+    "setup": "pnpm infra:up && pnpm build:packages && pnpm db:migrate",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "build:packages": "pnpm --filter @cw/shared --filter @cw/db build",
+    "db:migrate": "pnpm --filter @cw/db migrate:deploy",
+    "dev": "pnpm build:packages && pnpm --parallel --filter @cw/shared --filter @cw/web --filter @cw/api --filter @cw/worker dev",
     "build": "pnpm -r build",
-    "dev": "pnpm --filter @cw/shared build && pnpm -r --parallel dev",
+    "typecheck": "pnpm build:packages && pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm build:packages && pnpm -r test",
+    "test:e2e": "pnpm --filter @cw/web test:e2e"
   }
 }

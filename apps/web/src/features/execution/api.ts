@@ -38,8 +38,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface HealthResponse {
   status: "ok" | "degraded";
-  runner: { available: boolean; reason?: string };
-  languages: Pick<LanguageDefinition, "id" | "name" | "version">[];
+  services: { redis: "up" | "down"; database: "up" | "down" };
+  runner: { available: boolean; workers: number; reason?: string };
+  languages: (Pick<LanguageDefinition, "id" | "name" | "version" | "supportLevel"> & { ready: boolean })[];
 }
 
 export const api = {
