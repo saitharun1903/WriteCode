@@ -1,0 +1,73 @@
+import { describe, expect, it } from "vitest";
+import * as ops from "./operations";
+
+const base = () => ops.createProject("p1", "Demo", "java", 1000);
+
+describe("project operations", () => {
+  it("creates a project from the language template", () => {
+    const p = base();
+    expect(p.files.map((f) => f.path)).toEqual(["Main.java"]);
+    expect(p.entryFile).toBe("Main.java");
+    expect(p.language).toBe("java");
+  });
+
+  it("adds files and folders, rejecting duplicates and bad names", () => {
+    let p = base();
+    p = ops.addFolder(p, "", "util").project;
+    p = ops.addFile(p, "util", "Helper.java", "class Helper {}").project;
+    expect(p.files.map((f) => f.path)).toContain("util/Helper.java");
+    expect(() => ops.addFile(p, "util", "Helper.java")).toThrow(ops.ProjectOperationError);
+    expect(() => ops.addFile(p, "", "../evil")).toThrow(ops.ProjectOperationError);
+    expect(() => ops.addFolder(p, "", "util")).toThrow(/already exists/);
+  });
+
+  it("does not create a new object when content is unchanged", () => {
+    const p = base();
+    expect(ops.updateFileContent(p, "Main.java", p.files[0]!.content)).toBe(p);
+    expect(ops.updateFileContent(p, "Main.java", "x")).not.toBe(p);
+  });
+
+  it("renames folders and rewrites nested paths and the entry file", () => {
+    let p = base();
+    p = ops.addFile(p, "", "src").project; // a file named "src" must not collide with folder rename below
+    p = ops.addFolder(p, "", "app").project;
+    p = ops.addFile(p, "app", "Main2.java").project;
+    p = { ...p, entryFile: "app/Main2.java" };
+    const { project, path } = ops.renamePath(p, "app", "core");
+    expect(path).toBe("core");
+    expect(project.files.map((f) => f.path)).toContain("core/Main2.java");
+    expect(project.folders).toEqual(["core"]);
+    expect(project.entryFile).toBe("core/Main2.java");
+  });
+
+  it("prevents moving a folder into itself", () => {
+    let p = ops.addFolder(base(), "", "a").project;
+    p = ops.addFolder(p, "a", "b").project;
+    expect(() => ops.movePath(p, "a", "a/b/a")).toThrow(/into itself/);
+  });
+
+  it("deletes folders recursively and reassigns the entry file", () => {
+    let p = ops.addFolder(base(), "", "lib").project;
+    p = ops.addFile(p, "lib", "X.java").project;
+    p = { ...p, entryFile: "lib/X.java" };
+    const next = ops.deletePath(p, "lib");
+    expect(next.files.map((f) => f.path)).toEqual(["Main.java"]);
+    expect(next.folders).toEqual([]);
+    expect(next.entryFile).toBe("Main.java");
+  });
+
+  it("duplicates with a unique name and fresh id", () => {
+    const p = base();
+    const copy = ops.duplicateProject(p, "p2", ["Demo", "Demo copy"]);
+    expect(copy.id).toBe("p2");
+    expect(copy.name).toBe("Demo copy 2");
+    expect(copy.files).not.toBe(p.files);
+  });
+
+  it("suggests unique file names", () => {
+    let p = base();
+    expect(ops.uniqueName(p, "", "Untitled", ".java")).toBe("Untitled.java");
+    p = ops.addFile(p, "", "Untitled.java").project;
+    expect(ops.uniqueName(p, "", "Untitled", ".java")).toBe("Untitled2.java");
+  });
+});

@@ -1,0 +1,146 @@
+"use client";
+
+import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
+import type { editor } from "monaco-editor";
+import { useEffect, useRef } from "react";
+import { monacoLanguageForPath } from "@cw/shared";
+import { Spinner } from "@/components/ui/primitives";
+import { useExecution } from "@/features/execution/store";
+import { useWorkspace } from "@/features/projects/store";
+import { resolveTheme, useSettings } from "@/features/settings/store";
+import { runCommand } from "@/features/commands/registry";
+import { defineThemes, modelUri } from "./monaco-setup";
+import { editorBridge } from "./bridge";
+import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
+
+export function CodeEditor() {
+  const project = useWorkspace((s) => s.project);
+  const activeFile = useWorkspace((s) => s.activeFile);
+  const diagnostics = useExecution((s) => s.diagnostics);
+  const { theme, fontSize, tabSize, wordWrap, minimap } = useSettings();
+  const compact = useMediaQuery(COMPACT_QUERY);
+
+  const monacoRef = useRef<Monaco | null>(null);
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+
+  const file = project?.files.find((f) => f.path === activeFile);
+
+  const handleMount: OnMount = (ed, monaco) => {
+    editorRef.current = ed;
+    monacoRef.current = monaco;
+    editorBridge.attach(ed, monaco);
+
+    const { KeyMod, KeyCode } = monaco;
+    // Route IDE shortcuts through the command registry even while the editor has focus.
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.Enter, () => runCommand("run.execute"));
+    ed.addCommand(KeyCode.F5, () => runCommand("run.execute"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => runCommand("file.save"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyP, () => runCommand("workbench.quickOpen"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP, () => runCommand("workbench.commandPalette"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyJ, () => runCommand("view.toggleBottomPanel"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyB, () => runCommand("view.toggleSidebar"));
+
+    ed.onDidChangeCursorPosition((e) => editorBridge.setCursor(e.position.lineNumber, e.position.column));
+
+    // Subscribe here rather than via the `onChange` prop: the wrapper attaches that in an
+    // effect after mount, so keystrokes typed immediately after load could be missed.
+    ed.onDidChangeModelContent(() => {
+      const model = ed.getModel();
+      const project = useWorkspace.getState().project;
+      if (!model || !project) return;
+      const prefix = `/${project.id}/`;
+      if (!model.uri.path.startsWith(prefix)) return;
+      useWorkspace.getState().updateFile(decodeURIComponent(model.uri.path.slice(prefix.length)), model.getValue());
+    });
+  };
+
+  useEffect(() => () => editorBridge.detach(), []);
+
+  // Drop models for files that no longer exist (deleted, renamed, other project).
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !project) return;
+    const live = new Set(project.files.map((f) => modelUri(monaco, project.id, f.path).toString()));
+    for (const model of monaco.editor.getModels()) {
+      if (!live.has(model.uri.toString()) && model.uri.scheme === "file") model.dispose();
+    }
+  }, [project]);
+
+  // Mirror parsed compiler/runtime diagnostics into Monaco markers.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !project) return;
+    for (const f of project.files) {
+      const model = monaco.editor.getModel(modelUri(monaco, project.id, f.path));
+      if (!model) continue;
+      const markers = diagnostics
+        .filter((d) => d.file === f.path)
+        .map((d) => {
+          const line = Math.min(Math.max(d.line, 1), model.getLineCount());
+          const col = d.column ?? model.getLineFirstNonWhitespaceColumn(line) ?? 1;
+          return {
+            severity:
+              d.severity === "error"
+                ? monaco.MarkerSeverity.Error
+                : d.severity === "warning"
+                  ? monaco.MarkerSeverity.Warning
+                  : monaco.MarkerSeverity.Info,
+            message: d.message,
+            startLineNumber: line,
+            startColumn: Math.max(col, 1),
+            endLineNumber: line,
+            endColumn: d.column ? d.column + 1 : model.getLineMaxColumn(line),
+            source: d.source,
+          };
+        });
+      monaco.editor.setModelMarkers(model, "execution", markers);
+    }
+  }, [diagnostics, project, activeFile]);
+
+  if (!project || !file) return null;
+
+  return (
+    <Editor
+      key={project.id}
+      path={`file:///${project.id}/${file.path}`}
+      value={file.content}
+      language={monacoLanguageForPath(file.path)}
+      theme={resolveTheme(theme) === "light" ? "cw-light" : "cw-dark"}
+      beforeMount={defineThemes}
+      onMount={handleMount}
+      loading={
+        <div className="flex h-full items-center justify-center gap-2 text-xs text-fg-subtle">
+          <Spinner /> Loading editor…
+        </div>
+      }
+      options={{
+        fontFamily: "var(--font-code), ui-monospace, monospace",
+        fontSize,
+        fontLigatures: true,
+        lineHeight: Math.round(fontSize * 1.6),
+        tabSize,
+        insertSpaces: true,
+        detectIndentation: false,
+        wordWrap: wordWrap ? "on" : "off",
+        minimap: { enabled: minimap && !compact, renderCharacters: false, scale: 1, maxColumn: 100 },
+        automaticLayout: true,
+        scrollBeyondLastLine: false,
+        smoothScrolling: true,
+        cursorBlinking: "smooth",
+        cursorSmoothCaretAnimation: "on",
+        renderLineHighlight: "all",
+        bracketPairColorization: { enabled: true },
+        guides: { bracketPairs: "active", indentation: true },
+        padding: { top: 12, bottom: 12 },
+        stickyScroll: { enabled: true },
+        folding: true,
+        glyphMargin: false,
+        lineNumbersMinChars: 3,
+        overviewRulerBorder: false,
+        scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10, useShadows: false },
+        fixedOverflowWidgets: true,
+        "semanticHighlighting.enabled": true,
+      }}
+    />
+  );
+}

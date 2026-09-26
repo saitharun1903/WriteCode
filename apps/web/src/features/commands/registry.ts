@@ -1,0 +1,287 @@
+"use client";
+
+import { parentOf } from "@cw/shared";
+import { toast } from "@/components/ui/toast";
+import { editorBridge } from "@/features/editor/bridge";
+import { isRunning, useExecution } from "@/features/execution/store";
+import { useWorkspace } from "@/features/projects/store";
+import { useSnapshots } from "@/features/history/snapshot-store";
+import { DEFAULT_SETTINGS, resolveTheme, useSettings, type BottomTab, type SideView } from "@/features/settings/store";
+import { useUI } from "@/features/workspace/ui-store";
+
+export interface Command {
+  id: string;
+  title: string;
+  category: "Run" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
+  /** Display + binding, e.g. "Mod+Shift+P". Multiple bindings separated by " / ". */
+  shortcut?: string;
+  /** Returns false when the command cannot run in the current state. */
+  enabled?: () => boolean;
+  run: () => void;
+}
+
+const hasProject = () => !!useWorkspace.getState().project;
+
+function showSide(view: SideView) {
+  useSettings.getState().updateLayout({ sidebarOpen: true, sideView: view });
+  useUI.getState().setDrawer("sidebar");
+}
+
+function showBottom(tab: BottomTab) {
+  useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: tab });
+  useUI.getState().setDrawer("bottom");
+}
+
+export const COMMANDS: Command[] = [
+  {
+    id: "run.execute",
+    title: "Run",
+    category: "Run",
+    shortcut: "Mod+Enter / F5",
+    enabled: () => hasProject() && !isRunning(useExecution.getState().run),
+    run: () => {
+      showBottom("output");
+      void useExecution.getState().execute();
+    },
+  },
+  {
+    id: "run.cancel",
+    title: "Stop Execution",
+    category: "Run",
+    shortcut: "Shift+F5",
+    enabled: () => isRunning(useExecution.getState().run),
+    run: () => void useExecution.getState().cancel(),
+  },
+  {
+    id: "run.clearOutput",
+    title: "Clear Output",
+    category: "Run",
+    run: () => useExecution.getState().clearOutput(),
+  },
+  {
+    id: "workbench.commandPalette",
+    title: "Show All Commands",
+    category: "View",
+    shortcut: "Mod+Shift+P",
+    run: () => useUI.getState().openPalette("commands"),
+  },
+  {
+    id: "workbench.quickOpen",
+    title: "Go to File…",
+    category: "Go",
+    shortcut: "Mod+P",
+    enabled: hasProject,
+    run: () => useUI.getState().openPalette("files"),
+  },
+  {
+    id: "project.new",
+    title: "New Project…",
+    category: "Project",
+    shortcut: "Alt+N",
+    run: () => useUI.getState().setNewProjectOpen(true),
+  },
+  {
+    id: "project.switch",
+    title: "Open Project…",
+    category: "Project",
+    shortcut: "Mod+Alt+O",
+    run: () => useUI.getState().openPalette("projects"),
+  },
+  {
+    id: "project.close",
+    title: "Close Project",
+    category: "Project",
+    enabled: hasProject,
+    run: () => useWorkspace.getState().closeProject(),
+  },
+  {
+    id: "project.snapshot",
+    title: "Save Snapshot",
+    category: "Project",
+    enabled: hasProject,
+    run: () => void useSnapshots.getState().create(),
+  },
+  {
+    id: "file.save",
+    title: "Save",
+    category: "File",
+    shortcut: "Mod+S",
+    enabled: hasProject,
+    run: () => void useWorkspace.getState().flush(),
+  },
+  {
+    id: "file.newFile",
+    title: "New File…",
+    category: "File",
+    enabled: hasProject,
+    run: () => {
+      const active = useWorkspace.getState().activeFile;
+      showSide("explorer");
+      useUI.getState().requestCreate(active ? parentOf(active) : "", "file");
+    },
+  },
+  {
+    id: "file.newFolder",
+    title: "New Folder…",
+    category: "File",
+    enabled: hasProject,
+    run: () => {
+      showSide("explorer");
+      useUI.getState().requestCreate("", "folder");
+    },
+  },
+  {
+    id: "file.closeTab",
+    title: "Close Editor",
+    category: "File",
+    shortcut: "Alt+W",
+    enabled: () => !!useWorkspace.getState().activeFile,
+    run: () => {
+      const { activeFile, closeTab } = useWorkspace.getState();
+      if (activeFile) closeTab(activeFile);
+    },
+  },
+  {
+    id: "file.setEntry",
+    title: "Set Active File as Entry",
+    category: "File",
+    enabled: () => !!useWorkspace.getState().activeFile,
+    run: () => {
+      const { activeFile, setEntryFile } = useWorkspace.getState();
+      if (activeFile) {
+        setEntryFile(activeFile);
+        toast.success("Entry file updated", activeFile);
+      }
+    },
+  },
+  { id: "edit.find", title: "Find", category: "Edit", shortcut: "Mod+F", enabled: hasProject, run: () => editorBridge.trigger("actions.find") },
+  {
+    id: "edit.replace",
+    title: "Replace",
+    category: "Edit",
+    shortcut: "Mod+H",
+    enabled: hasProject,
+    run: () => editorBridge.trigger("editor.action.startFindReplaceAction"),
+  },
+  {
+    id: "edit.goToLine",
+    title: "Go to Line…",
+    category: "Go",
+    shortcut: "Mod+G",
+    enabled: hasProject,
+    run: () => editorBridge.trigger("editor.action.gotoLine"),
+  },
+  {
+    id: "edit.format",
+    title: "Format Document",
+    category: "Edit",
+    shortcut: "Shift+Alt+F",
+    enabled: hasProject,
+    run: () => editorBridge.trigger("editor.action.formatDocument"),
+  },
+  {
+    id: "edit.toggleComment",
+    title: "Toggle Line Comment",
+    category: "Edit",
+    shortcut: "Mod+/",
+    enabled: hasProject,
+    run: () => editorBridge.trigger("editor.action.commentLine"),
+  },
+  {
+    id: "view.toggleSidebar",
+    title: "Toggle Sidebar",
+    category: "View",
+    shortcut: "Mod+B",
+    run: () => {
+      const { layout, updateLayout } = useSettings.getState();
+      updateLayout({ sidebarOpen: !layout.sidebarOpen });
+      const ui = useUI.getState();
+      ui.setDrawer(ui.drawer === "sidebar" ? "none" : "sidebar");
+    },
+  },
+  {
+    id: "view.toggleBottomPanel",
+    title: "Toggle Panel",
+    category: "View",
+    shortcut: "Mod+J",
+    run: () => {
+      const { layout, updateLayout } = useSettings.getState();
+      updateLayout({ bottomOpen: !layout.bottomOpen });
+      const ui = useUI.getState();
+      ui.setDrawer(ui.drawer === "bottom" ? "none" : "bottom");
+    },
+  },
+  { id: "view.explorer", title: "Show Explorer", category: "View", shortcut: "Mod+Shift+E", run: () => showSide("explorer") },
+  { id: "view.search", title: "Search in Project", category: "View", shortcut: "Mod+Shift+F", enabled: hasProject, run: () => showSide("search") },
+  { id: "view.history", title: "Show Run History", category: "View", shortcut: "Mod+Shift+H", run: () => showSide("history") },
+  { id: "view.output", title: "Show Output", category: "View", run: () => showBottom("output") },
+  { id: "view.problems", title: "Show Problems", category: "View", shortcut: "Mod+Shift+M", run: () => showBottom("problems") },
+  { id: "view.input", title: "Show Program Input (stdin)", category: "View", run: () => showBottom("input") },
+  { id: "view.resetLayout", title: "Reset Layout", category: "View", run: () => useSettings.getState().resetLayout() },
+  {
+    id: "prefs.toggleTheme",
+    title: "Toggle Light/Dark Theme",
+    category: "Preferences",
+    run: () => {
+      const s = useSettings.getState();
+      s.update({ theme: resolveTheme(s.theme) === "dark" ? "light" : "dark" });
+    },
+  },
+  {
+    id: "prefs.fontIncrease",
+    title: "Increase Editor Font Size",
+    category: "Preferences",
+    shortcut: "Mod+=",
+    run: () => useSettings.getState().update({ fontSize: Math.min(useSettings.getState().fontSize + 1, 24) }),
+  },
+  {
+    id: "prefs.fontDecrease",
+    title: "Decrease Editor Font Size",
+    category: "Preferences",
+    shortcut: "Mod+-",
+    run: () => useSettings.getState().update({ fontSize: Math.max(useSettings.getState().fontSize - 1, 10) }),
+  },
+  {
+    id: "prefs.fontReset",
+    title: "Reset Editor Font Size",
+    category: "Preferences",
+    shortcut: "Mod+0",
+    run: () => useSettings.getState().update({ fontSize: DEFAULT_SETTINGS.fontSize }),
+  },
+  {
+    id: "prefs.wordWrap",
+    title: "Toggle Word Wrap",
+    category: "Preferences",
+    shortcut: "Alt+Z",
+    run: () => useSettings.getState().update({ wordWrap: !useSettings.getState().wordWrap }),
+  },
+  {
+    id: "prefs.minimap",
+    title: "Toggle Minimap",
+    category: "Preferences",
+    run: () => useSettings.getState().update({ minimap: !useSettings.getState().minimap }),
+  },
+  { id: "prefs.open", title: "Open Settings", category: "Preferences", shortcut: "Mod+,", run: () => useUI.getState().setSettingsOpen(true) },
+];
+
+const byId = new Map(COMMANDS.map((c) => [c.id, c]));
+
+export function getCommand(id: string): Command | undefined {
+  return byId.get(id);
+}
+
+export function isEnabled(cmd: Command): boolean {
+  return cmd.enabled ? cmd.enabled() : true;
+}
+
+export function runCommand(id: string): boolean {
+  const cmd = byId.get(id);
+  if (!cmd || !isEnabled(cmd)) return false;
+  cmd.run();
+  return true;
+}
+
+/** First binding of a command, for display in menus and tooltips. */
+export function primaryShortcut(id: string): string | undefined {
+  return byId.get(id)?.shortcut?.split(" / ")[0];
+}
