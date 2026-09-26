@@ -5,9 +5,14 @@ import { LANGUAGES } from "@cw/shared";
 import { PRISMA, REDIS } from "../infra/infra.module.js";
 import { RunnerStatusService } from "./runner-status.service.js";
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);
+}
+
 async function probe(fn: () => Promise<unknown>): Promise<"up" | "down"> {
   try {
-    await Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 1500))]);
+    // Generous enough for a cold connection pool right after startup.
+    await withTimeout(fn(), 3000);
     return "up";
   } catch {
     return "down";
@@ -25,10 +30,8 @@ export class HealthController {
   @Get("health")
   async health() {
     const [redis, database] = await Promise.all([probe(() => this.redis.ping()), probe(() => this.prisma.$queryRaw`SELECT 1`)]);
-    const runner =
-      redis === "up"
-        ? await this.runners.get()
-        : { available: false, readyLanguages: [] as string[], workers: 0, reason: "Redis is not reachable from the API." };
+    const unreachable = { available: false, readyLanguages: [] as string[], workers: 0, reason: "Redis is not reachable from the API." };
+    const runner = redis === "up" ? await withTimeout(this.runners.get(), 3000).catch(() => unreachable) : unreachable;
     const available = runner.available && database === "up";
     return {
       status: available ? "ok" : "degraded",

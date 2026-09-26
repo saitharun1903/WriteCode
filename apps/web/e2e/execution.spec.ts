@@ -25,13 +25,19 @@ async function freshProject(page: Page, button: RegExp) {
   await expect(editor(page)).toContainText("Hello World");
 }
 
-/** Replaces the whole active file through Monaco (select all + type). */
+/**
+ * Replaces the active file's content through Monaco's model API. This goes
+ * through the same change listener as typing, without auto-indent and
+ * auto-closing rewriting the code under test.
+ */
 async function replaceCode(page: Page, code: string) {
   await editor(page).click();
-  await page.keyboard.press("Control+A");
-  await page.keyboard.press("Delete");
-  // insertText avoids Monaco's auto-closing brackets and auto-indent rewriting the input.
-  await page.keyboard.insertText(code);
+  await page.evaluate((text) => {
+    const monaco = (window as unknown as { monaco: { editor: { getEditors(): { hasTextFocus(): boolean; getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    const ed = monaco.editor.getEditors().find((e) => e.hasTextFocus()) ?? monaco.editor.getEditors()[0]!;
+    ed.getModel().setValue(text);
+  }, code);
+  await expect(page.getByText("Saved locally")).toBeVisible();
 }
 
 async function run(page: Page) {

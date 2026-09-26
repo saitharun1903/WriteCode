@@ -92,15 +92,13 @@ export class Sandbox {
     await this.container.start();
   }
 
-  /** Writes project files into the workspace. Throws on failure (a system error, not a user error). */
-  async writeFiles(files: readonly SourceFile[]): Promise<void> {
-    await this.execSimple(["mkdir", "-p", "out"]);
-    for (const batch of buildWriteBatches(files)) await this.execSimple(batch.argv);
-  }
-
-  async writeStdin(stdin: string): Promise<void> {
-    const b64 = Buffer.from(stdin, "utf8").toString("base64");
-    await this.execSimple(["sh", "-c", 'printf %s "$1" | base64 -d > "$2"', "sh", b64, STDIN_PATH]);
+  /**
+   * Writes project files, the program's stdin and the compiler output directory,
+   * usually in a single exec. Throws on failure (a system error, not a user error).
+   */
+  async prepare(files: readonly SourceFile[], stdin: string): Promise<void> {
+    const entries: SourceFile[] = [...files, { path: STDIN_PATH, content: stdin }, { path: "out/.keep", content: "" }];
+    for (const batch of buildWriteBatches(entries)) await this.execSimple(batch.argv);
   }
 
   /** Runs a step, streaming decoded output, and enforces time, output and cancellation limits. */
@@ -180,12 +178,16 @@ export class Sandbox {
     return { ...outcome, durationMs };
   }
 
-  /** Peak memory of the container's cgroup when Docker reports it (cgroup v1 only). */
+  /**
+   * Peak memory of the sandbox's cgroup (cgroup v2 `memory.peak`). It covers the
+   * container's whole life, so callers only report it when no compiler ran.
+   */
   async peakMemoryBytes(): Promise<number | undefined> {
     if (!this.container || this.killed) return undefined;
     try {
-      const stats = (await this.container.stats({ stream: false })) as { memory_stats?: { max_usage?: number } };
-      return stats.memory_stats?.max_usage || undefined;
+      const out = await this.execCapture(["cat", "/sys/fs/cgroup/memory.peak"]);
+      const n = Number.parseInt(out.trim(), 10);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
     } catch {
       return undefined;
     }
@@ -226,6 +228,10 @@ export class Sandbox {
 
   /** Runs a worker-controlled command to completion; non-zero exit is a system error. */
   private async execSimple(argv: string[]): Promise<void> {
+    await this.execCapture(argv);
+  }
+
+  private async execCapture(argv: string[]): Promise<string> {
     const container = this.requireContainer();
     const exec = await container.exec({ Cmd: argv, User: NOBODY, WorkingDir: SANDBOX_WORKDIR, AttachStdout: true, AttachStderr: true, Tty: false });
     const stream = await exec.start({ hijack: false, stdin: false });
@@ -239,9 +245,9 @@ export class Sandbox {
       stream.on("error", reject);
     });
     const { ExitCode } = await exec.inspect();
-    if (ExitCode !== 0) {
-      throw new Error(`sandbox setup step failed (exit ${ExitCode}): ${Buffer.concat(chunks).toString("utf8").slice(0, 500)}`);
-    }
+    const text = Buffer.concat(chunks).toString("utf8");
+    if (ExitCode !== 0) throw new Error(`sandbox step failed (exit ${ExitCode}): ${text.slice(0, 500)}`);
+    return text;
   }
 
   private requireContainer(): Container {

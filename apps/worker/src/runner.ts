@@ -49,8 +49,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
 
   try {
     await sandbox.start();
-    await sandbox.writeFiles(request.files);
-    await sandbox.writeStdin(request.stdin ?? "");
+    await sandbox.prepare(request.files, request.stdin ?? "");
 
     let compileTime: number | undefined;
     if (lang.compiler) {
@@ -97,7 +96,8 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
       isCancelled: ctx.isCancelled,
     });
     const status = classifyRun(run);
-    const memoryUsed = await sandbox.peakMemoryBytes();
+    // The cgroup peak includes the compiler, so it is only meaningful for interpreted languages.
+    const memoryUsed = lang.compiler ? undefined : await sandbox.peakMemoryBytes();
     return finish(status, {
       exitCode: run.exitCode ?? undefined,
       executionTime: run.durationMs,
@@ -108,6 +108,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     ctx.log("sandbox failure", { error: err instanceof Error ? err.message : String(err) });
     return finish("SYSTEM_ERROR", { message: "The sandbox failed to start or crashed. This is not caused by your code; please retry." });
   } finally {
-    await sandbox.dispose();
+    // Remove in the background so the result is not delayed; the startup sweep catches failures.
+    void sandbox.dispose();
   }
 }
