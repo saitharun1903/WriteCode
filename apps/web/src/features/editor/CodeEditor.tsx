@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { findEntryPoints, getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
 import { currentLocation, useDebug } from "@/features/debug/store";
-import { stepLocation, useVisualize } from "@/features/visualize/store";
+import { previousLocation, stepLocation, useVisualize } from "@/features/visualize/store";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { resolveTheme, useSettings } from "@/features/settings/store";
@@ -46,7 +46,11 @@ export function CodeEditor() {
   const vizOpen = useSettings((s) => s.layout.bottomOpen && s.layout.bottomTab === "visualize");
   const vizFile = useVisualize((s) => stepLocation(s)?.file ?? null);
   const vizLine = useVisualize((s) => stepLocation(s)?.line ?? null);
-  const currentLine = currentFile === activeFile ? pausedLine : !pausedLine && vizOpen && vizFile === activeFile ? vizLine : null;
+  const vizRanFile = useVisualize((s) => previousLocation(s)?.file ?? null);
+  const vizRanLine = useVisualize((s) => previousLocation(s)?.line ?? null);
+  const showViz = !pausedLine && vizOpen;
+  const currentLine = currentFile === activeFile ? pausedLine : showViz && vizFile === activeFile ? vizLine : null;
+  const ranLine = showViz && vizRanFile === activeFile ? vizRanLine : null;
   const language = project?.language;
   const content = file?.content;
   // A string key keeps the decorations effect from re-running when unrelated text changes.
@@ -104,9 +108,10 @@ export function CodeEditor() {
       lines: fileBreakpoints,
       unverified,
       current: currentLine ? { line: currentLine, top: currentTop } : null,
+      ran: ranLine,
       runLines: runLinesKey ? runLinesKey.split(",").map(Number) : [],
     });
-  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, runLinesKey]);
+  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, ranLine, runLinesKey]);
 
   // Drop models for files that no longer exist (deleted, renamed, other project).
   useEffect(() => {

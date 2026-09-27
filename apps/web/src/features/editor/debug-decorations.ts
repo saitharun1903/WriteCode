@@ -16,6 +16,7 @@ interface EditorDebugState {
   breakpoints: editor.IEditorDecorationsCollection;
   hint: editor.IEditorDecorationsCollection;
   current: editor.IEditorDecorationsCollection;
+  ran: editor.IEditorDecorationsCollection;
   run: editor.IEditorDecorationsCollection;
   /** Lines carrying a run marker. */
   runLines: number[];
@@ -39,6 +40,7 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
     breakpoints: ed.createDecorationsCollection(),
     hint: ed.createDecorationsCollection(),
     current: ed.createDecorationsCollection(),
+    ran: ed.createDecorationsCollection(),
     run: ed.createDecorationsCollection(),
     runLines: [],
     renderedFile: null,
@@ -88,6 +90,8 @@ export function renderDebugDecorations(
     lines: number[];
     unverified: number[];
     current: { line: number; top: boolean } | null;
+    /** Visualizer: the line that ran to reach the current step. */
+    ran?: number | null;
     /** Entry point lines to mark with a run icon. */
     runLines: number[];
   },
@@ -138,5 +142,17 @@ export function renderDebugDecorations(
     ]);
   } else {
     state.current.clear();
+  }
+
+  const ran = input.ran;
+  if (ran && ran !== input.current?.line) {
+    state.ran.set([
+      {
+        range: new monaco.Range(ran, 1, ran, 1),
+        options: { stickiness, isWholeLine: true, className: "cw-viz-ran-line", glyphMarginClassName: "cw-viz-ran-arrow", glyphMarginHoverMessage: { value: "Just ran" } },
+      },
+    ]);
+  } else {
+    state.ran.clear();
   }
 }

@@ -256,3 +256,62 @@
 [data-theme="light"] .monaco-editor .cw-run-glyph {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 1.2v7.6L8.6 5z' fill='%23208a3c'/%3E%3C/svg%3E");
 }
+
+/*
+ * Visualizer. Value colours follow the editor's syntax colours so a number or
+ * string looks the same in the code and in the diagram.
+ */
+:root,
+[data-theme="dark"] {
+  --viz-num: #2aacb8;
+  --viz-str: #6aab73;
+  --viz-kw: #cf8e6d;
+  --viz-seq: #3574f0;
+  --viz-map: #a571e6;
+  --viz-obj: #2aacb8;
+  --viz-ran-line: rgb(95 184 101 / 0.1);
+}
+[data-theme="light"] {
+  --viz-num: #1750eb;
+  --viz-str: #067d17;
+  --viz-kw: #0033b3;
+  --viz-seq: #3574f0;
+  --viz-map: #7a3ec8;
+  --viz-obj: #00787a;
+  --viz-ran-line: rgb(32 138 60 / 0.08);
+}
+/* A value that the line just ran changed: flashes, then settles. */
+@keyframes cw-viz-flash {
+  0% {
+    background: color-mix(in srgb, var(--warning) 45%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 55%, transparent);
+  }
+  100% {
+    background: var(--warning-soft);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 30%, transparent);
+  }
+}
+.cw-viz-changed {
+  animation: cw-viz-flash 0.9s ease-out both;
+}
+@keyframes cw-viz-output {
+  from {
+    background: color-mix(in srgb, var(--success) 30%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.cw-viz-new-output {
+  animation: cw-viz-output 1.4s ease-out both;
+  border-radius: 3px;
+}
+/* The line that just ran, next to the highlighted line about to run. */
+.monaco-editor .cw-viz-ran-line {
+  background: var(--viz-ran-line);
+}
+.monaco-editor .cw-viz-ran-arrow {
+  background: var(--success);
+  clip-path: polygon(26% 28%, 58% 28%, 84% 50%, 58% 72%, 26% 72%);
+  opacity: 0.8;
+}
