@@ -38,6 +38,19 @@ if [ "${INSTALL_GVISOR:-0}" = 1 ] && ! command -v runsc >/dev/null; then
   sudo systemctl restart docker
 fi
 
+MEM_KB=$(awk '/^MemTotal/ {print $2}' /proc/meminfo)
+if [ "$MEM_KB" -lt 6000000 ] && [ -z "$(swapon --show --noheadings)" ]; then
+  # Building the images (Next.js, TypeScript) needs more memory than a 4 GB
+  # machine has spare. Sandboxes are unaffected: their memory limits include
+  # swap (Docker sets memory-swap equal to memory).
+  echo "== 2 GB swap file (machine has under 6 GB RAM)"
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile >/dev/null
+  sudo swapon /swapfile
+  grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+fi
+
 echo "== Firewall: SSH, HTTP, HTTPS only"
 if [ -f /etc/iptables/rules.v4 ] && grep -q "REJECT" /etc/iptables/rules.v4; then
   # Oracle Cloud images ship iptables rules that reject everything except SSH and

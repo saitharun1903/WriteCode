@@ -55,6 +55,11 @@ const cases = [
   ["python", "SECURITY large file", { "main.py": 'open("big", "wb").write(b"0" * (20 << 20))\n' }, {}, (r) => r.status === "RUNTIME_ERROR" && r.stderr.includes("File too large")],
   ["python", "SECURITY system file write", { "main.py": 'open("/etc/passwd", "a").write("x")\n' }, {}, (r) => r.status === "RUNTIME_ERROR" && r.stderr.includes("PermissionError")],
   ["python", "SECURITY network connection", { "main.py": 'import socket\nsocket.create_connection(("1.1.1.1", 80), timeout=3)\n' }, {}, (r) => r.status === "RUNTIME_ERROR" && /unreachable|OSError/.test(r.stderr)],
+  ["python", "SECURITY cloud metadata", { "main.py": 'import socket\nsocket.create_connection(("169.254.169.254", 80), timeout=3)\n' }, {}, (r) => r.status === "RUNTIME_ERROR" && /unreachable|OSError/.test(r.stderr)],
+  ["python", "SECURITY internal services", { "main.py": 'import socket\nfor h in ("redis", "postgres", "api"):\n    try:\n        socket.create_connection((h, 6379), timeout=3)\n        print("reached", h)\n    except OSError:\n        pass\nprint("blocked")\n' }, {}, (r) => r.stdout === "blocked\n"],
+  ["python", "SECURITY docker socket", { "main.py": 'import os\nprint(os.path.exists("/var/run/docker.sock"))\n' }, {}, (r) => r.stdout === "False\n"],
+  ["python", "SECURITY secrets in env", { "main.py": 'import os\nprint([k for k in os.environ if any(s in k.upper() for s in ("DATABASE", "REDIS", "POSTGRES", "SALT", "PASSWORD", "TOKEN", "SECRET", "CREDENTIAL", "AZURE", "OCI_", "AWS", "DOCKER"))])\n' }, {}, (r) => r.stdout === "[]\n"],
+  ["python", "SECURITY host processes", { "main.py": 'import os\nnames = {open(f"/proc/{p}/comm").read().strip() for p in os.listdir("/proc") if p.isdigit()}\nprint(sorted(names & {"dockerd", "containerd", "node", "postgres", "redis-server", "caddy", "sshd", "systemd"}))\n' }, {}, (r) => r.stdout === "[]\n"],
   ["python", "SECURITY child processes", { "main.py": 'import subprocess\nprint(subprocess.run(["id", "-u"], capture_output=True, text=True).stdout.strip())\n' }, {}, (r) => r.stdout === "65534\n"],
 ];
 
