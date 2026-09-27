@@ -315,3 +315,37 @@
   clip-path: polygon(26% 28%, 58% 28%, 84% 50%, 58% 72%, 26% 72%);
   opacity: 0.8;
 }
+
+/* Lines the AI assistant just changed: a green wash that fades out. */
+@keyframes cw-ai-applied {
+  from {
+    background: color-mix(in srgb, var(--success) 28%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+.monaco-editor .cw-ai-applied {
+  animation: cw-ai-applied 2.6s ease-out both;
+}
+.monaco-editor .cw-ai-applied-gutter {
+  background: var(--success);
+  width: 3px !important;
+  margin-left: 3px;
+}
+/* Text shimmer for "Thinking…". */
+@keyframes cw-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.cw-shimmer {
+  background: linear-gradient(90deg, var(--fg-subtle) 0%, var(--fg) 45%, var(--fg-subtle) 60%) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: cw-shimmer 2.2s linear infinite;
+}

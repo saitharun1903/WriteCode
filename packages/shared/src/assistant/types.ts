@@ -66,7 +66,13 @@ export interface AssistantRequest {
 }
 
 /** Server-sent event payloads of POST /assistant/chat. */
-export type AssistantEvent = { type: "text"; text: string } | { type: "done" } | { type: "error"; message: string };
+export type AssistantEvent =
+  /** A piece of the answer. */
+  | { type: "text"; text: string }
+  /** A summary of the model's reasoning so far, shown while it thinks. */
+  | { type: "thinking"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string };
 
 export const ASSISTANT_LIMITS = {
   maxMessages: 30,

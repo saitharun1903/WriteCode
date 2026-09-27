@@ -28,7 +28,8 @@ describe("prompt", () => {
       }),
     );
     const system = p.systemInstruction.parts.map((x) => x.text).join("\n");
-    expect(system).toContain("Correctness comes first");
+    expect(system).toContain("silently verify");
+    expect(system).toContain("<<<<<<< ORIGINAL");
     expect(system).toContain("Python 3.13");
     expect(system).toContain("256 MB");
     expect(system).toContain("File main.py (open in the editor, cursor on line 2)");

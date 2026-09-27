@@ -11,6 +11,7 @@ import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { resolveTheme, useSettings } from "@/features/settings/store";
 import { runCommand } from "@/features/commands/registry";
+import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
 import { editorBridge } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
@@ -85,6 +86,7 @@ export function CodeEditor() {
     ed.addAction({ id: "cw.ai.explainSelection", label: "Ask AI: Explain Selection", contextMenuGroupId: "0_ai", contextMenuOrder: 1, precondition: "editorHasSelection", run: () => void runCommand("assistant.explainSelection") });
     ed.addAction({ id: "cw.ai.findBugs", label: "Ask AI: Find Bugs in This File", contextMenuGroupId: "0_ai", contextMenuOrder: 2, run: () => void runCommand("assistant.findBugs") });
     installBreakpointGutter(ed, monaco);
+    installAiQuickFix(monaco);
     setMounted(true);
 
     // Subscribe here rather than via the `onChange` prop: the wrapper attaches that in an

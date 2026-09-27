@@ -52,10 +52,10 @@ async function waitForAnswer(page: Page) {
   return log;
 }
 
-test("explains a failed run from its real output and fixes the right line", async ({ page }) => {
+test("fixes a failed run from its real output by editing the right line", async ({ page }) => {
   await project(page, "Java", BUGGY);
   await page.getByRole("button", { name: "Run program" }).click();
-  await page.getByRole("button", { name: "Ask AI why" }).click();
+  await page.getByRole("button", { name: "Fix with AI" }).click();
   const panel = page.getByRole("region", { name: "AI Assistant" });
   // The panel says what it can see before anything is sent.
   await expect(panel.getByLabel("Shared with the assistant")).toContainText("last run: runtime error");
@@ -63,15 +63,24 @@ test("explains a failed run from its real output and fixes the right line", asyn
   await expect(log).toContainText("line 9");
   await expect(log).toContainText("i < marks.size()");
 
-  // Insert replaces the selected line with the suggested fix, as one undoable edit.
+  // The fix is an edit of line 9 itself (not a paste at the cursor): Apply replaces exactly that line.
   await page.evaluate(() => {
-    const m = (window as unknown as { monaco: { editor: { getEditors(): { setSelection(r: object): void }[] } } }).monaco;
-    m.editor.getEditors()[0]!.setSelection({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 200 });
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void }[] } } }).monaco;
+    m.editor.getEditors()[0]!.setPosition({ lineNumber: 3, column: 1 });
   });
-  const block = log.locator("pre").filter({ hasText: "i < marks.size()" }).first();
-  await block.locator("xpath=..").getByRole("button", { name: "Insert" }).click();
-  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("i < marks.size()");
-  await expect(page.locator(".monaco-editor .view-lines").first()).not.toContainText("i <= marks.size()");
+  const card = log.getByRole("group", { name: "Suggested change to Main.java" }).last();
+  await card.getByRole("button", { name: "Apply fix" }).click();
+  await expect(log.getByText("Applied")).toBeVisible();
+  const code = await page.evaluate(() => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { getValue(): string } }[] } } }).monaco;
+    return m.editor.getEditors()[0]!.getModel().getValue();
+  });
+  expect(code.split("\n")[8]).toContain("i < marks.size()");
+  expect(code.split("\n").length).toBe(BUGGY.split("\n").length);
+  expect(code.split("\n")[2]).toBe("public class Main {");
+  // Run again straight from the card: no more exception.
+  await log.getByRole("button", { name: "Run again" }).click();
+  await expect(page.getByRole("log", { name: "Program output" })).toContainText("Average:", { timeout: 90_000 });
 
   // Follow-ups keep the conversation.
   await panel.getByLabel("Ask the assistant").fill("Is the average printed correctly after that fix?");

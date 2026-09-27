@@ -146,7 +146,7 @@ function Epilogue({ run }: { run: RunState }) {
           onClick={() => runCommand("assistant.explainError")}
           className="ml-3 inline-flex items-center gap-1 rounded-full border border-[#8a7cf5]/60 px-2 font-sans text-xs text-fg hover:bg-[#8a7cf5]/15"
         >
-          <Sparkles className="size-3 text-[#8a7cf5]" /> Ask AI why
+          <Sparkles className="size-3 text-[#8a7cf5]" /> Fix with AI
         </button>
       )}
     </div>

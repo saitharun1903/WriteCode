@@ -67,11 +67,16 @@ const STOP_MESSAGES: Record<string, string> = {
   RECITATION: "The answer was stopped because it matched existing published text too closely. Try rephrasing the question.",
 };
 
+export interface Chunk {
+  kind: "text" | "thinking";
+  text: string;
+}
+
 /**
- * Streams the model's answer text (thought summaries excluded). Throws
+ * Streams summaries of the model's reasoning and the answer text. Throws
  * AssistantError on HTTP errors, blocked answers or a stalled stream.
  */
-export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<string> {
+export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<Chunk> {
   const stall = new AbortController();
   const signal = AbortSignal.any([opts.signal, stall.signal]);
   let timer = setTimeout(() => stall.abort(), 45_000);
@@ -90,8 +95,11 @@ export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<string>
         generationConfig: {
           // Low temperature: explanations of code should be precise, not creative.
           temperature: 0.3,
-          maxOutputTokens: 4096,
-          thinkingConfig: { thinkingLevel: "medium" },
+          // Thinking counts toward this limit, so leave ample room for the answer after it.
+          maxOutputTokens: 16_384,
+          // High: answers are checked more carefully. Summaries of the reasoning are
+          // streamed so the user sees progress while the model thinks.
+          thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
         },
       }),
       signal,
@@ -101,6 +109,7 @@ export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<string>
     const decoder = new TextDecoder();
     let buffer = "";
     let produced = false;
+    let finish = "";
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
       kick();
       buffer += decoder.decode(chunk, { stream: true });
@@ -118,17 +127,22 @@ export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<string>
         }
         const candidate = data.candidates?.[0];
         for (const part of candidate?.content?.parts ?? []) {
-          if (part.text && !part.thought) {
+          if (!part.text) continue;
+          if (part.thought) {
+            yield { kind: "thinking", text: part.text };
+          } else {
             produced = true;
-            yield part.text;
+            yield { kind: "text", text: part.text };
           }
         }
         const reason = candidate?.finishReason;
+        if (reason) finish = reason;
         if (reason && STOP_MESSAGES[reason]) throw new AssistantError(STOP_MESSAGES[reason], `finish ${reason}`, 400);
-        if (reason === "MAX_TOKENS" && produced) yield "\n\n*(The answer was cut off because it got too long. Ask me to continue.)*";
+        if (reason === "MAX_TOKENS" && produced) yield { kind: "text", text: "\n\n*(The answer was cut off because it got too long. Ask me to continue.)*" };
       }
     }
-    if (!produced) throw new AssistantError("The assistant returned an empty answer. Please try again.", "empty answer", 502);
+    // Retryable: another model usually answers.
+    if (!produced) throw new AssistantError("The assistant returned an empty answer. Please try again.", `empty answer (${finish || "no finish reason"})`, 502, true);
   } catch (e) {
     if (e instanceof AssistantError) throw e;
     if (stall.signal.aborted) throw new AssistantError("The assistant took too long to answer. Please try again.", "stream stalled", 504);

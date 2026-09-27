@@ -5,7 +5,7 @@ import { ASSISTANT_LIMITS, redisKeys, validateAssistantRequest, type AssistantEv
 import { clientHash } from "../common/request-context.js";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
-import { AssistantError, secondsUntilPacificMidnight, streamAnswer } from "./gemini.js";
+import { AssistantError, secondsUntilPacificMidnight, streamAnswer, type Chunk } from "./gemini.js";
 import { buildPrompt, type GeminiContent } from "./prompt.js";
 
 const BUSY = "The assistant is getting a lot of requests right now. Please try again in a minute.";
@@ -48,9 +48,9 @@ export class AssistantController {
     let outcome = "done";
     let model = "";
     try {
-      model = await this.answer(systemInstruction, contents, abort.signal, (text) => {
-        chars += text.length;
-        send({ type: "text", text });
+      model = await this.answer(systemInstruction, contents, abort.signal, (chunk) => {
+        if (chunk.kind === "text") chars += chunk.text.length;
+        send({ type: chunk.kind, text: chunk.text });
       });
       send({ type: "done" });
     } catch (e) {
@@ -89,7 +89,7 @@ export class AssistantController {
     systemInstruction: { parts: { text: string }[] },
     contents: GeminiContent[],
     signal: AbortSignal,
-    onText: (text: string) => void,
+    onChunk: (chunk: Chunk) => void,
   ): Promise<string> {
     let sent = false;
     let last: AssistantError | null = null;
@@ -101,9 +101,10 @@ export class AssistantController {
         continue;
       }
       try {
-        for await (const text of streamAnswer({ apiKey: config.assistant.apiKey, model, systemInstruction, contents, signal })) {
-          sent = true;
-          onText(text);
+        for await (const chunk of streamAnswer({ apiKey: config.assistant.apiKey, model, systemInstruction, contents, signal })) {
+          // Reasoning summaries may come from a model that then fails; answer text never repeats.
+          if (chunk.kind === "text") sent = true;
+          onChunk(chunk);
         }
         return model;
       } catch (e) {

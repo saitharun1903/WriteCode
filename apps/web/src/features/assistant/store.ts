@@ -8,6 +8,7 @@ import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
 import { diffSteps, preview } from "@/features/visualize/model";
+import { resolveEdit, type EditBlock, type ResolvedHunk } from "./edits";
 import { useVisualize } from "@/features/visualize/store";
 
 export interface ChatMessage {
@@ -18,6 +19,19 @@ export interface ChatMessage {
   pending?: boolean;
   /** Why the answer failed, shown instead of (or after) the text. */
   error?: string;
+  /** Summaries of the model's reasoning, streamed before the answer. */
+  thinking?: string;
+  startedAt?: number;
+  /** How long the model thought before answering, once the answer started. */
+  thoughtMs?: number;
+}
+
+/** An edit from an answer that the user applied, so it can be undone. */
+export interface AppliedEdit {
+  file: string;
+  before: string | null;
+  after: string;
+  hunks: ResolvedHunk[];
 }
 
 interface AssistantState {
@@ -33,6 +47,36 @@ interface AssistantState {
   retry: () => void;
   stop: () => void;
   clear: () => void;
+  /** Applied edits by `${messageId}:${blockIndex}`. */
+  applied: Record<string, AppliedEdit>;
+  /** Applies an edit block to the project; returns an error message, or null on success. */
+  applyEdit: (key: string, block: EditBlock) => Promise<string | null>;
+  undoEdit: (key: string) => Promise<string | null>;
+}
+
+/** The project file an edit names: exact path, else a unique file with that name. */
+export function editTarget(path: string): string | null {
+  const files = useWorkspace.getState().project?.files ?? [];
+  if (files.some((f) => f.path === path)) return path;
+  const name = path.split("/").pop();
+  const same = files.filter((f) => f.path.split("/").pop() === name);
+  return same.length === 1 ? same[0]!.path : null;
+}
+
+/** Shows `path` in the editor, waiting (briefly) for the switch to happen. */
+async function showFile(path: string): Promise<boolean> {
+  if (editorBridge.currentPath() === path) return true;
+  useWorkspace.getState().openFile(path);
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    if (editorBridge.currentPath() === path) return true;
+  }
+  return false;
+}
+
+/** Writes new content through the editor (undoable, highlighted) when possible. */
+async function writeFile(path: string, content: string) {
+  if (!(await showFile(path)) || !editorBridge.applyContent(content)) useWorkspace.getState().updateFile(path, content);
 }
 
 let controller: AbortController | null = null;
@@ -144,6 +188,7 @@ async function* events(body: ReadableStream<Uint8Array>): AsyncGenerator<Assista
 
 export const useAssistant = create<AssistantState>((set, get) => ({
   available: null,
+  applied: {},
   messages: [],
   streaming: false,
   projectId: null,
@@ -168,7 +213,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     set({
       projectId,
       streaming: true,
-      messages: [...earlier, { id: nextId(), role: "user", text }, { id: answerId, role: "assistant", text: "", pending: true }],
+      messages: [...earlier, { id: nextId(), role: "user", text }, { id: answerId, role: "assistant", text: "", pending: true, startedAt: Date.now() }],
     });
 
     // Earlier turns give follow-up questions their meaning; failed answers are left out.
@@ -199,7 +244,8 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       }
       let finished = false;
       for await (const event of events(res.body)) {
-        if (event.type === "text") update((m) => ({ text: m.text + event.text }));
+        if (event.type === "thinking") update((m) => ({ thinking: (m.thinking ?? "") + event.text }));
+        else if (event.type === "text") update((m) => ({ text: m.text + event.text, thoughtMs: m.thoughtMs ?? Date.now() - (m.startedAt ?? Date.now()) }));
         else if (event.type === "error") {
           update({ error: event.message });
           finished = true;
@@ -229,6 +275,46 @@ export const useAssistant = create<AssistantState>((set, get) => ({
 
   clear: () => {
     controller?.abort();
-    set({ messages: [], streaming: false });
+    set({ messages: [], streaming: false, applied: {} });
+  },
+
+  applyEdit: async (key, block) => {
+    const ws = useWorkspace.getState();
+    if (!ws.project) return "Open a project first.";
+    const path = editTarget(block.file);
+    const before = path ? (ws.project.files.find((f) => f.path === path)?.content ?? null) : null;
+    const result = resolveEdit(before, { ...block, file: path ?? block.file });
+    if (!result.ok) return `Can't apply: ${result.reason}.`;
+    let target = path;
+    if (result.created) {
+      const parts = block.file.split("/");
+      const name = parts.pop()!;
+      let dir = "";
+      for (const part of parts) {
+        const next = dir ? `${dir}/${part}` : part;
+        if (!ws.project.files.some((f) => f.path.startsWith(`${next}/`))) ws.createFolder(dir, part);
+        dir = next;
+      }
+      target = ws.createFile(dir, name);
+      if (!target) return `Can't create ${block.file}.`;
+    }
+    await writeFile(target!, result.content);
+    set((s) => ({ applied: { ...s.applied, [key]: { file: target!, before, after: result.content, hunks: result.hunks } } }));
+    return null;
+  },
+
+  undoEdit: async (key) => {
+    const edit = get().applied[key];
+    if (!edit) return null;
+    const current = useWorkspace.getState().project?.files.find((f) => f.path === edit.file)?.content;
+    if (current !== edit.after) return "The file has changed since; undo it in the editor with Ctrl+Z.";
+    if (edit.before === null) useWorkspace.getState().deletePath(edit.file);
+    else await writeFile(edit.file, edit.before);
+    set((s) => {
+      const applied = { ...s.applied };
+      delete applied[key];
+      return { applied };
+    });
+    return null;
   },
 }));

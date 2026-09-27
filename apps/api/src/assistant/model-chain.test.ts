@@ -33,7 +33,9 @@ function mockModels(responses: Record<string, () => Response>) {
 
 const run = (ctrl: AssistantController) => {
   let text = "";
-  const answered = (ctrl as unknown as { answer: (...a: unknown[]) => Promise<string> }).answer({ parts: [] }, [], new AbortController().signal, (t: string) => (text += t));
+  const answered = (ctrl as unknown as { answer: (...a: unknown[]) => Promise<string> }).answer({ parts: [] }, [], new AbortController().signal, (c: { kind: string; text: string }) => {
+    if (c.kind === "text") text += c.text;
+  });
   return answered.then((model) => ({ model, text }));
 };
 

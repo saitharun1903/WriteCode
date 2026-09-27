@@ -73,7 +73,11 @@ function DesktopWorkbench() {
   useEffect(() => {
     const p = assistantRef.current;
     if (!p) return;
-    if (layout.assistantOpen && p.isCollapsed()) p.expand();
+    if (layout.assistantOpen && p.isCollapsed()) {
+      p.expand();
+      // Answers with code and tables need room; open at a comfortable width.
+      if (p.getSize().inPixels < 400) p.resize("420px");
+    }
     if (!layout.assistantOpen && !p.isCollapsed()) p.collapse();
   }, [layout.assistantOpen]);
 

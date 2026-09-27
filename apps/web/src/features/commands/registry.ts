@@ -448,10 +448,10 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "assistant.explainError",
-    title: "Ask AI Why the Program Failed",
+    title: "Fix with AI",
     category: "AI",
     enabled: lastRunFailed,
-    run: () => askAssistant("My last run didn't work. What went wrong, and how do I fix it?"),
+    run: () => askAssistant("My last run didn't work. What went wrong? Fix it."),
   },
   {
     id: "assistant.explainSelection",

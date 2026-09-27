@@ -74,6 +74,58 @@ export const editorBridge = {
     if (!model || !sel || sel.isEmpty()) return null;
     return { startLine: sel.startLineNumber, endLine: sel.endLineNumber, text: model.getValueInRange(sel) };
   },
+  /** Path (within its project) of the file shown in the editor, or null. */
+  currentPath(): string | null {
+    const path = instance?.getModel()?.uri.path;
+    return path ? decodeURIComponent(path.split("/").slice(2).join("/")) : null;
+  },
+  /**
+   * Replaces the open file's text with `next`, changing only the lines that
+   * differ, as one undoable edit (Ctrl+Z reverts it). The changed lines are
+   * revealed and briefly highlighted. Returns false when no file is open.
+   */
+  applyContent(next: string): boolean {
+    const model = instance?.getModel();
+    const monaco = monacoInstance;
+    if (!instance || !model || !monaco) return false;
+    const a = model.getLinesContent();
+    const b = next.split(/\r?\n/);
+    let p = 0;
+    while (p < a.length && p < b.length && a[p] === b[p]) p++;
+    let s = 0;
+    while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+    if (p === a.length && p === b.length) return true;
+    const eol = model.getEOL();
+    const slice = b.slice(p, b.length - s);
+    const endExclusive = a.length - s;
+    let range;
+    let text;
+    if (endExclusive < a.length) {
+      // Replace whole lines up to the start of the first unchanged line after them.
+      range = new monaco.Range(p + 1, 1, endExclusive + 1, 1);
+      text = slice.map((l) => l + eol).join("");
+    } else if (p > 0) {
+      // The change runs to the end of the file: anchor on the end of the line before it.
+      range = new monaco.Range(p, model.getLineMaxColumn(p), a.length, model.getLineMaxColumn(a.length));
+      text = slice.map((l) => eol + l).join("");
+    } else {
+      range = model.getFullModelRange();
+      text = slice.join(eol);
+    }
+    instance.pushUndoStop();
+    instance.executeEdits("assistant", [{ range, text, forceMoveMarkers: true }]);
+    instance.pushUndoStop();
+    if (slice.length > 0) {
+      const first = p + 1;
+      const last = p + slice.length;
+      instance.revealLinesInCenterIfOutsideViewport(first, last);
+      const flash = instance.createDecorationsCollection([
+        { range: new monaco.Range(first, 1, last, 1), options: { isWholeLine: true, className: "cw-ai-applied", linesDecorationsClassName: "cw-ai-applied-gutter" } },
+      ]);
+      setTimeout(() => flash.clear(), 2600);
+    }
+    return true;
+  },
   /** Replaces the selection (or inserts at the cursor) as one undoable edit. */
   insert(text: string): boolean {
     const sel = instance?.getSelection();

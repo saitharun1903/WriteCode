@@ -9,16 +9,21 @@ function mockFetch(status: number, body: string) {
   return fn;
 }
 
+const thinking: string[] = [];
 const run = async () => {
+  thinking.length = 0;
   let text = "";
-  for await (const t of streamAnswer({ apiKey: "test-key", model: "m", systemInstruction: { parts: [] }, contents: [], signal: new AbortController().signal })) text += t;
+  for await (const c of streamAnswer({ apiKey: "test-key", model: "m", systemInstruction: { parts: [] }, contents: [], signal: new AbortController().signal })) {
+    if (c.kind === "text") text += c.text;
+    else thinking.push(c.text);
+  }
   return text;
 };
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("streamAnswer", () => {
-  it("streams answer text, skips thought summaries, and sends the key only as a header", async () => {
+  it("streams answer text and reasoning summaries separately, and sends the key only as a header", async () => {
     const fetchFn = mockFetch(
       200,
       sse(
@@ -28,6 +33,7 @@ describe("streamAnswer", () => {
       ),
     );
     expect(await run()).toBe("Change `<=` to `<`.");
+    expect(thinking).toEqual(["thinking…"]);
     const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).not.toContain("test-key");
     expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("test-key");
@@ -54,7 +60,7 @@ describe("streamAnswer", () => {
     mockFetch(200, sse({ candidates: [{ finishReason: "SAFETY" }] }));
     await expect(run()).rejects.toBeInstanceOf(AssistantError);
     mockFetch(200, sse({ candidates: [{ content: { parts: [] }, finishReason: "STOP" }] }));
-    await expect(run()).rejects.toMatchObject({ detail: "empty answer" });
+    await expect(run()).rejects.toMatchObject({ detail: "empty answer (STOP)", retryable: true });
   });
 
   it("says so when an answer is cut off by the length limit", async () => {
