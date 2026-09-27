@@ -85,6 +85,10 @@ test("breakpoints, variables, watches, stepping and continue", async ({ page }) 
   const vars = panel.getByRole("tree", { name: "Variables" });
   await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
   await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  // Small collections preview their contents, in the tree and next to the code.
+  await expect(vars.getByRole("treeitem", { name: "nums = int[3]" })).toContainText("[3, 1, 2]");
+  await expect(page.locator(".monaco-editor .cw-inline-value").filter({ hasText: "total = 0" })).toHaveCount(1);
+  await expect(page.locator(".monaco-editor .cw-inline-value").filter({ hasText: "nums = [3, 1, 2]" })).toHaveCount(1);
   await vars.getByRole("treeitem", { name: "nums = int[3]" }).click();
   await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
   await vars.getByRole("treeitem", { name: /^names = ArrayList/ }).click();
@@ -96,15 +100,19 @@ test("breakpoints, variables, watches, stepping and continue", async ({ page }) 
 
   await page.keyboard.press("F11");
   await expect(panel.getByText("Paused after step")).toBeVisible();
-  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("square:3, Main");
+  await expect(panel.getByRole("list", { name: "Call stack" }).getByRole("button", { name: "square:3, Main" })).toBeVisible();
   await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
 
   await page.keyboard.press("Shift+F11");
-  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("square:");
+  await expect(panel.getByRole("list", { name: "Call stack" }).getByRole("button", { name: /^square:/ })).toHaveCount(0);
 
   await page.keyboard.press("F5");
   await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
   await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+  // What the program changed since the previous pause, in the panel and in the editor.
+  await expect(panel.getByLabel("Changed since the last pause")).toContainText("total 0 → 9");
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toContainText("was 0");
+  await expect(page.locator(".monaco-editor .cw-inline-value-changed").filter({ hasText: "total = 9" })).toHaveCount(1);
 
   // Removing the breakpoint mid-session lets the program run to completion.
   await panel.getByRole("button", { name: "View Breakpoints" }).click();
@@ -188,7 +196,7 @@ test("Python: breakpoints, variables, watches, stepping and continue", async ({ 
   const panel = debugPanel(page);
   await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
   await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("17:1");
-  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("main:17, main.py");
+  await expect(panel.getByRole("list", { name: "Call stack" }).getByRole("button", { name: "main:17, main.py" })).toBeVisible();
 
   const vars = panel.getByRole("tree", { name: "Variables" });
   await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
@@ -204,11 +212,11 @@ test("Python: breakpoints, variables, watches, stepping and continue", async ({ 
 
   await page.keyboard.press("F11");
   await expect(panel.getByText("Paused after step")).toBeVisible();
-  await expect(panel.getByRole("list", { name: "Call stack" })).toContainText("square:8, main.py");
+  await expect(panel.getByRole("list", { name: "Call stack" }).getByRole("button", { name: "square:8, main.py" })).toBeVisible();
   await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
 
   await page.keyboard.press("Shift+F11");
-  await expect(panel.getByRole("list", { name: "Call stack" })).not.toContainText("square:");
+  await expect(panel.getByRole("list", { name: "Call stack" }).getByRole("button", { name: /^square:/ })).toHaveCount(0);
 
   await page.keyboard.press("F5");
   await expect(panel.getByText("Paused on breakpoint")).toBeVisible();

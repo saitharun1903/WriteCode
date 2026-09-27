@@ -31,6 +31,12 @@ interface DebugState {
   watchResults: Record<string, WatchState>;
   /** Per file: lines the adapter could not place a breakpoint on. */
   unverified: Record<string, number[]>;
+  /**
+   * Values of the paused frame's variables at the previous pause, so the UI can
+   * show what the program changed since. `frame` identifies the frame (method
+   * and stack depth); values are only compared within the same frame.
+   */
+  previous: { frame: string; values: Record<string, string> } | null;
 
   onStarted: (executionId: string) => void;
   onEvent: (event: DebugEvent) => void;
@@ -82,10 +88,11 @@ export const useDebug = create<DebugState>((set, get) => ({
   watches: [],
   watchResults: {},
   unverified: {},
+  previous: null,
 
   onStarted(executionId) {
     pending.clear();
-    set({ executionId, phase: "starting", stop: null, selectedFrame: 0, variables: {}, watchResults: {}, unverified: {} });
+    set({ executionId, phase: "starting", stop: null, selectedFrame: 0, variables: {}, watchResults: {}, unverified: {}, previous: null });
   },
 
   onEvent(event) {
@@ -104,9 +111,17 @@ export const useDebug = create<DebugState>((set, get) => ({
         get().refreshWatches();
         break;
       }
-      case "continued":
-        set({ phase: "running", stop: null, variables: {} });
+      case "continued": {
+        const { stop, selectedFrame, variables } = get();
+        const frame = stop?.frames[selectedFrame];
+        const locals = frame ? variables[frame.localsRef] : undefined;
+        const previous =
+          frame && stop && locals?.status === "ready"
+            ? { frame: frameKey(stop.frames, selectedFrame), values: Object.fromEntries(locals.variables.map((v) => [v.name, v.value])) }
+            : get().previous;
+        set({ phase: "running", stop: null, variables: {}, previous });
         break;
+      }
       case "breakpoints":
         set((s) => ({
           unverified: { ...s.unverified, [event.file]: event.breakpoints.filter((b) => !b.verified).map((b) => b.line) },
@@ -216,6 +231,11 @@ export const useDebug = create<DebugState>((set, get) => ({
     }
   },
 }));
+
+/** Identifies a frame across pauses: its method and how deep it is in the stack. */
+export function frameKey(frames: DebugFrame[], index: number): string {
+  return `${frames[index]?.name ?? ""}#${frames.length - index}`;
+}
 
 /** Location the program is paused at (selected frame), if any. */
 export function currentLocation(s: Pick<DebugState, "stop" | "selectedFrame">): { file: string; line: number; top: boolean } | null {

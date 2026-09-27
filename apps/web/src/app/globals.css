@@ -349,3 +349,14 @@
   color: transparent;
   animation: cw-shimmer 2.2s linear infinite;
 }
+
+/* Debugger: variable values shown at the end of lines while paused. */
+.monaco-editor .cw-inline-value {
+  color: var(--fg-subtle);
+  font-style: italic;
+  opacity: 0.85;
+}
+.monaco-editor .cw-inline-value-changed {
+  color: var(--warning);
+  opacity: 1;
+}

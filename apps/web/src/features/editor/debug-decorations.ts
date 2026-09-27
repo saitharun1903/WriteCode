@@ -17,6 +17,7 @@ interface EditorDebugState {
   hint: editor.IEditorDecorationsCollection;
   current: editor.IEditorDecorationsCollection;
   ran: editor.IEditorDecorationsCollection;
+  inline: editor.IEditorDecorationsCollection;
   run: editor.IEditorDecorationsCollection;
   /** Lines carrying a run marker. */
   runLines: number[];
@@ -41,6 +42,7 @@ export function installBreakpointGutter(ed: editor.IStandaloneCodeEditor, monaco
     hint: ed.createDecorationsCollection(),
     current: ed.createDecorationsCollection(),
     ran: ed.createDecorationsCollection(),
+    inline: ed.createDecorationsCollection(),
     run: ed.createDecorationsCollection(),
     runLines: [],
     renderedFile: null,
@@ -92,6 +94,8 @@ export function renderDebugDecorations(
     current: { line: number; top: boolean } | null;
     /** Visualizer: the line that ran to reach the current step. */
     ran?: number | null;
+    /** Paused debugger: values to show at the end of lines. */
+    inline?: Map<number, { name: string; value: string; changed: boolean }[]>;
     /** Entry point lines to mark with a run icon. */
     runLines: number[];
   },
@@ -143,6 +147,25 @@ export function renderDebugDecorations(
   } else {
     state.current.clear();
   }
+
+  const model = ed.getModel();
+  state.inline.set(
+    [...(input.inline ?? new Map<number, { name: string; value: string; changed: boolean }[]>())].flatMap(([line, vars]) => {
+      if (!model || line > model.getLineCount()) return [];
+      const col = model.getLineMaxColumn(line);
+      return vars.map((v, i) => ({
+        range: new monaco.Range(line, col, line, col),
+        options: {
+          // Empty ranges are only drawn when asked to.
+          showIfCollapsed: true,
+          after: {
+            content: `${i === 0 ? "   " : ", "}${v.name} = ${v.value}`,
+            inlineClassName: v.changed ? "cw-inline-value cw-inline-value-changed" : "cw-inline-value",
+          },
+        },
+      }));
+    }),
+  );
 
   const ran = input.ran;
   if (ran && ran !== input.current?.line) {

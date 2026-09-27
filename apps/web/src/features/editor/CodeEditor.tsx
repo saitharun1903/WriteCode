@@ -5,7 +5,8 @@ import type { editor } from "monaco-editor";
 import { useEffect, useRef, useState } from "react";
 import { findEntryPoints, getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
-import { currentLocation, useDebug } from "@/features/debug/store";
+import { currentLocation, frameKey, useDebug } from "@/features/debug/store";
+import { inlineValues, previewOf, shortValue } from "@/features/debug/inline-values";
 import { previousLocation, stepLocation, useVisualize } from "@/features/visualize/store";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -51,6 +52,20 @@ export function CodeEditor() {
   const vizRanLine = useVisualize((s) => previousLocation(s)?.line ?? null);
   const showViz = !pausedLine && vizOpen;
   const currentLine = currentFile === activeFile ? pausedLine : showViz && vizFile === activeFile ? vizLine : null;
+  // Variables of the paused frame, as a string so the selector stays stable between renders.
+  const inlineKey = useDebug((s) => {
+    const frame = s.stop?.frames[s.selectedFrame];
+    const locals = frame ? s.variables[frame.localsRef] : undefined;
+    if (!frame?.file || frame.file !== activeFile || locals?.status !== "ready") return "";
+    const previous = s.previous?.frame === frameKey(s.stop!.frames, s.selectedFrame) ? s.previous.values : null;
+    return JSON.stringify(
+      locals.variables.map((v) => {
+        const children = v.ref ? s.variables[v.ref] : undefined;
+        const value = (children?.status === "ready" ? previewOf(children.variables, 6) : null) ?? v.value;
+        return { name: v.name, value: shortValue(value), changed: !!previous && previous[v.name] !== undefined && previous[v.name] !== v.value };
+      }),
+    );
+  });
   const ranLine = showViz && vizRanFile === activeFile ? vizRanLine : null;
   const language = project?.language;
   const content = file?.content;
@@ -114,9 +129,10 @@ export function CodeEditor() {
       unverified,
       current: currentLine ? { line: currentLine, top: currentTop } : null,
       ran: ranLine,
+      inline: inlineKey && pausedLine && content !== undefined ? inlineValues(content.split("\n"), pausedLine, JSON.parse(inlineKey)) : undefined,
       runLines: runLinesKey ? runLinesKey.split(",").map(Number) : [],
     });
-  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, ranLine, runLinesKey]);
+  }, [mounted, activeFile, fileBreakpoints, unverified, currentLine, currentTop, ranLine, runLinesKey, inlineKey, pausedLine, content]);
 
   // Drop models for files that no longer exist (deleted, renamed, other project).
   useEffect(() => {

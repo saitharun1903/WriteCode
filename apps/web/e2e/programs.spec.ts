@@ -105,8 +105,8 @@ test("required program: runs, then the JVM pauses in calculate() with real value
   await expect(variables(page).getByRole("treeitem", { name: "y = 20" })).toBeVisible();
   // sum is not in scope before its declaration runs, so the debugger does not list it.
   await expect(variables(page).getByRole("treeitem", { name: /^sum = / })).toHaveCount(0);
-  await expect(callStack(page)).toContainText("calculate:12, Main");
-  await expect(callStack(page)).toContainText("main:6, Main");
+  await expect(callStack(page).getByRole("button", { name: "calculate:12, Main" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "main:6, Main" })).toBeVisible();
 
   await page.keyboard.press("F10");
   await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
@@ -191,8 +191,8 @@ test("multi-file Java: run, then step between Main, Calculator and Student", asy
   // Constructor breakpoint in Student.java, called from Main.java.
   await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
   await activeTab(page, "Student.java");
-  await expect(callStack(page)).toContainText("<init>:6, Student");
-  await expect(callStack(page)).toContainText("main:3, Main");
+  await expect(callStack(page).getByRole("button", { name: "<init>:6, Student" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "main:3, Main" })).toBeVisible();
   await expect(variables(page).getByRole("treeitem", { name: 'name = "Ada"' })).toBeVisible();
 
   // Continue to Main.java:5, then step into Calculator.total.
@@ -202,7 +202,7 @@ test("multi-file Java: run, then step between Main, Calculator and Student", asy
   await page.keyboard.press("F11");
   await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
   await activeTab(page, "Calculator.java");
-  await expect(callStack(page)).toContainText("total:3, Calculator");
+  await expect(callStack(page).getByRole("button", { name: "total:3, Calculator" })).toBeVisible();
 
   // Over the first line, then into Student.getMarks from the loop header.
   await page.keyboard.press("F10");
@@ -210,16 +210,16 @@ test("multi-file Java: run, then step between Main, Calculator and Student", asy
   await expect(variables(page).getByRole("treeitem", { name: "sum = 0" })).toBeVisible();
   await page.keyboard.press("F11");
   await activeTab(page, "Student.java");
-  await expect(callStack(page)).toContainText("getMarks:15, Student");
-  await expect(callStack(page)).toContainText("total:4, Calculator");
-  await expect(callStack(page)).toContainText("main:5, Main");
+  await expect(callStack(page).getByRole("button", { name: "getMarks:15, Student" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "total:4, Calculator" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "main:5, Main" })).toBeVisible();
   await variables(page).getByRole("treeitem", { name: /^this = Student/ }).click();
   await expect(variables(page).getByRole("treeitem", { name: "marks = int[3]" })).toBeVisible();
 
   // Out of Student, back in Calculator.
   await page.keyboard.press("Shift+F11");
   await activeTab(page, "Calculator.java");
-  await expect(callStack(page)).not.toContainText("getMarks");
+  await expect(callStack(page).getByRole("button", { name: /^getMarks/ })).toHaveCount(0);
 
   await page.keyboard.press("F5");
   await expect(output(page)).toContainText("Ada total=252 avg=84.0", { timeout: 30_000 });
