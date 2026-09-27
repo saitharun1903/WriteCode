@@ -13,7 +13,7 @@ const thinking: string[] = [];
 const run = async () => {
   thinking.length = 0;
   let text = "";
-  for await (const c of streamAnswer({ apiKey: "test-key", model: "m", systemInstruction: { parts: [] }, contents: [], signal: new AbortController().signal })) {
+  for await (const c of streamAnswer({ apiKey: "test-key", model: "m", thinking: "low", systemInstruction: { parts: [] }, contents: [], signal: new AbortController().signal })) {
     if (c.kind === "text") text += c.text;
     else thinking.push(c.text);
   }

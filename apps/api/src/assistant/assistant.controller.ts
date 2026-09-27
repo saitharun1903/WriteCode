@@ -5,14 +5,19 @@ import { ASSISTANT_LIMITS, redisKeys, validateAssistantRequest, type AssistantEv
 import { clientHash } from "../common/request-context.js";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
-import { AssistantError, secondsUntilPacificMidnight, streamAnswer, type Chunk } from "./gemini.js";
-import { buildPrompt, type GeminiContent } from "./prompt.js";
+import { AssistantError } from "./gemini.js";
+import { buildPrompt } from "./prompt.js";
+import { AnswerRouter } from "./router.js";
 
 const BUSY = "The assistant is getting a lot of requests right now. Please try again in a minute.";
 
 @Controller()
 export class AssistantController {
-  constructor(@Inject(REDIS) private readonly redis: Redis) {}
+  private readonly router: AnswerRouter;
+
+  constructor(@Inject(REDIS) private readonly redis: Redis) {
+    this.router = new AnswerRouter(redis);
+  }
 
   /** Whether the assistant is configured on this server. Never reveals the key or model account. */
   @Get("assistant/status")
@@ -48,9 +53,16 @@ export class AssistantController {
     let outcome = "done";
     let model = "";
     try {
-      model = await this.answer(systemInstruction, contents, abort.signal, (chunk) => {
-        if (chunk.kind === "text") chars += chunk.text.length;
-        send({ type: chunk.kind, text: chunk.text });
+      const question = parsed.value.messages[parsed.value.messages.length - 1]!.text;
+      model = await this.router.answer({
+        question,
+        systemInstruction,
+        contents,
+        signal: abort.signal,
+        onChunk: (chunk) => {
+          if (chunk.kind === "text") chars += chunk.text.length;
+          send({ type: chunk.kind, text: chunk.text });
+        },
       });
       send({ type: "done" });
     } catch (e) {
@@ -78,52 +90,6 @@ export class AssistantController {
       );
       res.end();
     }
-  }
-
-  /**
-   * Streams the answer from the first model in the chain that still has quota.
-   * Nothing is retried once text has been sent, so answers never repeat.
-   * Returns the model that answered.
-   */
-  private async answer(
-    systemInstruction: { parts: { text: string }[] },
-    contents: GeminiContent[],
-    signal: AbortSignal,
-    onChunk: (chunk: Chunk) => void,
-  ): Promise<string> {
-    let sent = false;
-    let last: AssistantError | null = null;
-    let dailyOut = 0;
-    for (const model of config.assistant.models) {
-      const resting = await this.redis.get(`ai:exhausted:${model}`);
-      if (resting) {
-        if (resting === "day") dailyOut++;
-        continue;
-      }
-      try {
-        for await (const chunk of streamAnswer({ apiKey: config.assistant.apiKey, model, systemInstruction, contents, signal })) {
-          // Reasoning summaries may come from a model that then fails; answer text never repeats.
-          if (chunk.kind === "text") sent = true;
-          onChunk(chunk);
-        }
-        return model;
-      } catch (e) {
-        if (!(e instanceof AssistantError) || sent || signal.aborted) throw e;
-        if (e.quota) {
-          // Skip this model until its quota resets: Google's daily quotas reset at midnight Pacific time.
-          const ttl = e.quota.daily ? secondsUntilPacificMidnight() : Math.max(20, e.quota.retryAfterSeconds);
-          await this.redis.set(`ai:exhausted:${model}`, e.quota.daily ? "day" : "minute", "EX", ttl);
-          if (e.quota.daily) dailyOut++;
-        } else if (!e.retryable) {
-          throw e;
-        }
-        last = e;
-      }
-    }
-    if (dailyOut === config.assistant.models.length) {
-      throw new AssistantError("The assistant has used up today's free answers. It will be back tomorrow.", "all models out of daily quota", 429);
-    }
-    throw last ?? new AssistantError(BUSY, "all models resting", 429);
   }
 
   /** Per-client minute and day windows, plus a global per-minute cap that protects the key's quota. */

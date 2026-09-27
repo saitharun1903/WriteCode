@@ -9,7 +9,11 @@ for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(),
 const production = process.env.NODE_ENV === "production";
 
 /** Best first. Verified to give correct answers with the assistant's prompt. */
-const DEFAULT_MODELS = "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview,gemini-3.5-flash-lite,gemini-3.1-flash-lite";
+const DEFAULT_MODELS = "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview";
+/** Fast models for everyday questions: about 1.5-2.5 s to the first word in measurements. */
+const DEFAULT_FAST_MODELS = "gemini-3.5-flash-lite,gemini-3.1-flash-lite";
+
+const list = (value: string | undefined, fallback: string) => [...new Set((value || fallback).split(",").map((m) => m.trim()).filter(Boolean))];
 
 /**
  * A setting with a local-development default. In production the variable must
@@ -58,11 +62,11 @@ export const config = {
      * requests a day each for the larger ones), so when one is used up or
      * overloaded the next answers. GEMINI_MODEL, if set, goes first.
      */
-    models: [
-      ...new Set(
-        [process.env.GEMINI_MODEL, ...(process.env.GEMINI_MODELS || DEFAULT_MODELS).split(",")].map((m) => m?.trim() ?? "").filter(Boolean),
-      ),
-    ],
+    models: list([process.env.GEMINI_MODEL, process.env.GEMINI_MODELS || DEFAULT_MODELS].filter(Boolean).join(","), DEFAULT_MODELS),
+    /** Fast models: answer everyday questions first (see assistant/router.ts). */
+    fastModels: list(process.env.GEMINI_FAST_MODELS, DEFAULT_FAST_MODELS),
+    /** Milliseconds without answer text before a second model is started in parallel. */
+    hedgeMs: int("ASSISTANT_HEDGE_MS", 1800),
     /** Requests to the model per minute across all users, to stay inside the key's quota. */
     globalPerMinute: int("ASSISTANT_GLOBAL_PER_MINUTE", 10),
   },

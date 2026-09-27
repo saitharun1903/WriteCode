@@ -30,6 +30,8 @@ export interface StreamOptions {
   systemInstruction: { parts: { text: string }[] };
   contents: GeminiContent[];
   signal: AbortSignal;
+  /** How much the model reasons before answering: more is slower but more careful. */
+  thinking: "low" | "medium" | "high";
 }
 
 interface GoogleError {
@@ -97,9 +99,8 @@ export async function* streamAnswer(opts: StreamOptions): AsyncGenerator<Chunk> 
           temperature: 0.3,
           // Thinking counts toward this limit, so leave ample room for the answer after it.
           maxOutputTokens: 16_384,
-          // High: answers are checked more carefully. Summaries of the reasoning are
-          // streamed so the user sees progress while the model thinks.
-          thinkingConfig: { thinkingLevel: "high", includeThoughts: true },
+          // Summaries of the reasoning are streamed so the user sees progress while the model thinks.
+          thinkingConfig: { thinkingLevel: opts.thinking, includeThoughts: true },
         },
       }),
       signal,

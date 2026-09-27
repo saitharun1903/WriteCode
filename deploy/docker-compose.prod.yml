@@ -64,6 +64,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GEMINI_MODELS: ${GEMINI_MODELS:-}
+      GEMINI_FAST_MODELS: ${GEMINI_FAST_MODELS:-}
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
