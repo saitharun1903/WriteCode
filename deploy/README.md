@@ -81,6 +81,20 @@ restart window (typically under a minute); running programs are cut off.
 To roll back by hand: `IMAGE_TAG=<older-tag> docker compose --env-file
 deploy/.env.production -f deploy/docker-compose.prod.yml up -d`.
 
+## AI assistant (optional)
+
+The IDE's AI assistant calls Google Gemini from the API container, so the key
+never reaches browsers. Add the key to `deploy/.env.production` on the server
+(`GEMINI_API_KEY=...`, file mode 600, git-ignored) and run `deploy/deploy.sh`.
+Without a key the assistant shows as unavailable and everything else works.
+Several Gemini models are tried in order, best first (`GEMINI_MODELS`); each has
+its own quota, and a model whose daily quota is used up is skipped until Google
+resets it at midnight Pacific time. On the free tier the larger models allow
+about 20 answers a day each, so a busy site needs a paid Gemini tier.
+Limits per client: 8 questions a minute and 200 a day; across all users at most
+`ASSISTANT_GLOBAL_PER_MINUTE` (default 10) requests a minute reach Gemini, to
+stay inside the key's quota. Questions, code and answers are not logged.
+
 ## Health checks
 
 | URL | Meaning |

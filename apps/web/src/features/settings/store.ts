@@ -21,6 +21,7 @@ export interface Settings {
     bottomOpen: boolean;
     sideView: SideView;
     bottomTab: BottomTab;
+    assistantOpen: boolean;
   };
 }
 
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
     bottomOpen: true,
     sideView: "explorer",
     bottomTab: "run",
+    assistantOpen: false,
   },
 };
 

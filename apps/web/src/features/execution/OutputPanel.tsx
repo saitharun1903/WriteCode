@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, RotateCw, Search, Square, Trash2, WrapText, X } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -136,7 +136,21 @@ function Epilogue({ run }: { run: RunState }) {
     default:
       line = <span className="text-warning">{r.message ?? STATUS_META[r.status].hint}</span>;
   }
-  return <div className="mt-[20px]">{line}</div>;
+  const failed = r.status !== "SUCCESS" && r.status !== "CANCELLED";
+  return (
+    <div className="mt-[20px]">
+      {line}
+      {failed && (
+        <button
+          type="button"
+          onClick={() => runCommand("assistant.explainError")}
+          className="ml-3 inline-flex items-center gap-1 rounded-full border border-[#8a7cf5]/60 px-2 font-sans text-xs text-fg hover:bg-[#8a7cf5]/15"
+        >
+          <Sparkles className="size-3 text-[#8a7cf5]" /> Ask AI why
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Scrollable console output of the current run or debug session. */

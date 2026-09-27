@@ -60,6 +60,10 @@ services:
       WEB_ORIGIN: https://${PUBLIC_HOST},https://www.${PUBLIC_HOST}
       CLIENT_HASH_SALT: ${CLIENT_HASH_SALT:?set CLIENT_HASH_SALT}
       TRUST_PROXY: "1"
+      # Optional AI assistant. Only the API holds the key; the browser never sees it.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]

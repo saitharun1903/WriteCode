@@ -11,6 +11,7 @@ import {
   Equal,
   Pause,
   Play,
+  Sparkles,
   SquareFunction,
   Terminal,
   TriangleAlert,
@@ -636,8 +637,15 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
         )}
         {hidden > 0 && <span className="shrink-0 text-xs text-fg-subtle">+{hidden} more</span>}
       </motion.div>
+      <button
+        type="button"
+        onClick={() => runCommand("assistant.explainStep")}
+        className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-[#8a7cf5]/60 px-2 py-0.5 text-[11.5px] text-fg hover:bg-[#8a7cf5]/15"
+      >
+        <Sparkles className="size-3 text-[#8a7cf5]" /> Explain this step
+      </button>
       {top?.file && (
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle">
           {step.event === "line" ? "Next" : "At"}
           <span className="font-mono text-fg-muted">{`${top.file}:${top.line}`}</span>
         </span>

@@ -8,6 +8,9 @@ for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(),
 
 const production = process.env.NODE_ENV === "production";
 
+/** Best first. Verified to give correct answers with the assistant's prompt. */
+const DEFAULT_MODELS = "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3-flash-preview,gemini-3.5-flash-lite,gemini-3.1-flash-lite";
+
 /**
  * A setting with a local-development default. In production the variable must
  * be set, so a missing value fails at startup instead of quietly pointing at
@@ -44,6 +47,25 @@ export const config = {
   },
   /** WebSocket subscriptions allowed per connection. */
   maxSubscriptionsPerSocket: 8,
+  /**
+   * AI assistant (Google Gemini). Optional: without a key the assistant reports
+   * itself unavailable and everything else works. The key stays on the server.
+   */
+  assistant: {
+    apiKey: process.env.GEMINI_API_KEY?.trim() ?? "",
+    /**
+     * Models tried in order. Each has its own quota (on the free tier about 20
+     * requests a day each for the larger ones), so when one is used up or
+     * overloaded the next answers. GEMINI_MODEL, if set, goes first.
+     */
+    models: [
+      ...new Set(
+        [process.env.GEMINI_MODEL, ...(process.env.GEMINI_MODELS || DEFAULT_MODELS).split(",")].map((m) => m?.trim() ?? "").filter(Boolean),
+      ),
+    ],
+    /** Requests to the model per minute across all users, to stay inside the key's quota. */
+    globalPerMinute: int("ASSISTANT_GLOBAL_PER_MINUTE", 10),
+  },
 };
 
 if (production) {

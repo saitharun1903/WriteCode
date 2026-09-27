@@ -2,6 +2,7 @@
 
 import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
+import { useAssistant } from "@/features/assistant/store";
 import { useDebug } from "@/features/debug/store";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -13,7 +14,7 @@ import { useUI } from "@/features/workspace/ui-store";
 export interface Command {
   id: string;
   title: string;
-  category: "Run" | "Debug" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
+  category: "Run" | "Debug" | "AI" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
   /** Display + binding, e.g. "Mod+Shift+P". Multiple bindings separated by " / ". */
   shortcut?: string;
   /** Returns false when the command cannot run in the current state. */
@@ -67,6 +68,24 @@ export function canVisualize(): boolean {
 export function showBottom(tab: BottomTab) {
   useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: tab });
   useUI.getState().setDrawer("bottom");
+}
+
+export function openAssistant() {
+  useSettings.getState().updateLayout({ assistantOpen: true });
+  useUI.getState().setDrawer("assistant");
+}
+
+/** Opens the assistant and asks `prompt` about the current project. */
+export function askAssistant(prompt: string) {
+  openAssistant();
+  void useAssistant.getState().ask(prompt);
+}
+
+/** The project's last run finished with a problem (compile error, exception, limit...). */
+export function lastRunFailed(): boolean {
+  const run = useExecution.getState().run;
+  const status = run && run.projectId === useWorkspace.getState().project?.id && !isRunning(run) ? run.result?.status : undefined;
+  return !!status && status !== "SUCCESS" && status !== "CANCELLED";
 }
 
 export const COMMANDS: Command[] = [
@@ -414,6 +433,55 @@ export const COMMANDS: Command[] = [
     title: "Toggle Minimap",
     category: "Preferences",
     run: () => useSettings.getState().update({ minimap: !useSettings.getState().minimap }),
+  },
+  {
+    id: "assistant.toggle",
+    title: "Toggle AI Assistant",
+    category: "AI",
+    shortcut: "Mod+Shift+A",
+    run: () => {
+      const { layout, updateLayout } = useSettings.getState();
+      updateLayout({ assistantOpen: !layout.assistantOpen });
+      const ui = useUI.getState();
+      ui.setDrawer(ui.drawer === "assistant" ? "none" : "assistant");
+    },
+  },
+  {
+    id: "assistant.explainError",
+    title: "Ask AI Why the Program Failed",
+    category: "AI",
+    enabled: lastRunFailed,
+    run: () => askAssistant("My last run didn't work. What went wrong, and how do I fix it?"),
+  },
+  {
+    id: "assistant.explainSelection",
+    title: "Ask AI to Explain the Selected Code",
+    category: "AI",
+    enabled: hasProject,
+    run: () => {
+      const sel = editorBridge.selection();
+      if (!sel?.text.trim()) return toast.info("Select some code first", "Then ask again, or type your question in the assistant.");
+      const range = sel.startLine === sel.endLine ? `line ${sel.startLine}` : `lines ${sel.startLine}-${sel.endLine}`;
+      askAssistant(`Explain the code I selected (${range} of ${useWorkspace.getState().activeFile}) in simple words.`);
+    },
+  },
+  {
+    id: "assistant.findBugs",
+    title: "Ask AI to Find Bugs in This File",
+    category: "AI",
+    enabled: () => !!useWorkspace.getState().activeFile,
+    run: () =>
+      askAssistant(`Check ${useWorkspace.getState().activeFile} for bugs or edge cases that would crash or give wrong results. Only mention real problems.`),
+  },
+  {
+    id: "assistant.explainStep",
+    title: "Ask AI to Explain This Visualizer Step",
+    category: "AI",
+    enabled: canVisualize,
+    run: () => {
+      showBottom("visualize");
+      askAssistant("Explain what the line that just ran did in the visualizer, using the values shown, and what happens next.");
+    },
   },
   { id: "prefs.open", title: "Open Settings", category: "Preferences", shortcut: "Mod+,", run: () => useUI.getState().setSettingsOpen(true) },
 ];

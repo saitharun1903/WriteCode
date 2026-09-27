@@ -67,6 +67,23 @@ export const editorBridge = {
   focus() {
     instance?.focus();
   },
+  /** The editor's selected text and its 1-based line range, or null when nothing is selected. */
+  selection(): { startLine: number; endLine: number; text: string } | null {
+    const model = instance?.getModel();
+    const sel = instance?.getSelection();
+    if (!model || !sel || sel.isEmpty()) return null;
+    return { startLine: sel.startLineNumber, endLine: sel.endLineNumber, text: model.getValueInRange(sel) };
+  },
+  /** Replaces the selection (or inserts at the cursor) as one undoable edit. */
+  insert(text: string): boolean {
+    const sel = instance?.getSelection();
+    if (!instance || !sel) return false;
+    instance.pushUndoStop();
+    instance.executeEdits("assistant", [{ range: sel, text, forceMoveMarkers: true }]);
+    instance.pushUndoStop();
+    instance.focus();
+    return true;
+  },
   get monaco() {
     return monacoInstance;
   },

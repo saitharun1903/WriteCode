@@ -33,6 +33,9 @@ export const redisKeys = {
   activeByClient: (clientHash: string) => `client:${clientHash}:active`,
   /** Fixed-window rate limit counter. */
   rateWindow: (clientHash: string, window: number) => `client:${clientHash}:rate:${window}`,
+  /** Assistant request counters: per-minute window and per-day window. */
+  assistantMinute: (clientHash: string, window: number) => `client:${clientHash}:ai:m:${window}`,
+  assistantDay: (clientHash: string, day: number) => `client:${clientHash}:ai:d:${day}`,
 } as const;
 
 /** Field name used for the JSON payload in stream entries. */

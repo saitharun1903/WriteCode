@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Square, Sun, Workflow } from "lucide-react";
+import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
 import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -35,6 +35,26 @@ const MENUS: { label: string; items: (string | "-")[] }[] = [
   },
   { label: "Settings", items: ["prefs.open", "-", "prefs.toggleTheme", "prefs.wordWrap", "prefs.minimap", "-", "prefs.fontIncrease", "prefs.fontDecrease", "prefs.fontReset"] },
 ];
+
+function AssistantButton() {
+  const open = useSettings((s) => s.layout.assistantOpen);
+  return (
+    <button
+      type="button"
+      aria-label="AI Assistant"
+      aria-pressed={open}
+      title="AI Assistant (Ctrl+Shift+A)"
+      onClick={() => runCommand("assistant.toggle")}
+      className={cn(
+        "mr-1 flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors",
+        open ? "border-[#8a7cf5] bg-[#8a7cf5]/15 text-fg" : "border-line-strong text-fg-muted hover:border-[#8a7cf5] hover:text-fg",
+      )}
+    >
+      <Sparkles className="size-3.5 text-[#8a7cf5]" />
+      Ask AI
+    </button>
+  );
+}
 
 function ThemeToggle() {
   const theme = useSettings((s) => s.theme);
@@ -199,6 +219,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
       <div className="relative ml-auto flex items-center gap-1">
         {project && <RunControls />}
         {project && <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />}
+        {project && !compact && <AssistantButton />}
         {compact && (
           <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand("workbench.commandPalette")}>
             <Search />

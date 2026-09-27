@@ -81,6 +81,9 @@ export function CodeEditor() {
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyB, () => runCommand("view.toggleSidebar"));
 
     ed.onDidChangeCursorPosition((e) => editorBridge.setCursor(e.position.lineNumber, e.position.column));
+    // Right-click menu: ask the assistant about the code under the cursor.
+    ed.addAction({ id: "cw.ai.explainSelection", label: "Ask AI: Explain Selection", contextMenuGroupId: "0_ai", contextMenuOrder: 1, precondition: "editorHasSelection", run: () => void runCommand("assistant.explainSelection") });
+    ed.addAction({ id: "cw.ai.findBugs", label: "Ask AI: Find Bugs in This File", contextMenuGroupId: "0_ai", contextMenuOrder: 2, run: () => void runCommand("assistant.findBugs") });
     installBreakpointGutter(ed, monaco);
     setMounted(true);
 

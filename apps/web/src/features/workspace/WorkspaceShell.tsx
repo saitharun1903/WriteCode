@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { Toaster } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/primitives";
 import { CommandPalette } from "@/features/commands/CommandPalette";
@@ -49,8 +50,9 @@ function DesktopWorkbench() {
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
+  const assistantRef = useRef<PanelImperativeHandle | null>(null);
 
-  const outer = useDefaultLayout({ id: "cw-outer", panelIds: ["side", "main"] });
+  const outer = useDefaultLayout({ id: "cw-outer", panelIds: ["side", "main", "assistant"] });
   const inner = useDefaultLayout({ id: "cw-inner", panelIds: ["editor", "bottom"] });
 
   // Keep imperative panel state in sync with persisted layout flags.
@@ -67,6 +69,13 @@ function DesktopWorkbench() {
     if (layout.bottomOpen && p.isCollapsed()) p.expand();
     if (!layout.bottomOpen && !p.isCollapsed()) p.collapse();
   }, [layout.bottomOpen]);
+
+  useEffect(() => {
+    const p = assistantRef.current;
+    if (!p) return;
+    if (layout.assistantOpen && p.isCollapsed()) p.expand();
+    if (!layout.assistantOpen && !p.isCollapsed()) p.collapse();
+  }, [layout.assistantOpen]);
 
   // The visualizer draws frames and objects side by side; give it room when it opens.
   useEffect(() => {
@@ -116,6 +125,22 @@ function DesktopWorkbench() {
               <BottomPanel onClose={() => updateLayout({ bottomOpen: false })} />
             </Panel>
           </Group>
+        </Panel>
+        <Separator className={cn(separatorClass, "w-px")} />
+        <Panel
+          id="assistant"
+          panelRef={assistantRef}
+          defaultSize={layout.assistantOpen ? "420px" : "0px"}
+          minSize="300px"
+          maxSize="50%"
+          collapsible
+          collapsedSize={0}
+          onResize={(size) => {
+            const open = size.inPixels > 0;
+            if (open !== useSettings.getState().layout.assistantOpen) updateLayout({ assistantOpen: open });
+          }}
+        >
+          {layout.assistantOpen && <AssistantPanel onClose={() => updateLayout({ assistantOpen: false })} />}
         </Panel>
       </Group>
     </div>
@@ -171,6 +196,9 @@ function CompactWorkbench() {
             {label}
           </button>
         ))}
+        <button onClick={() => setDrawer(drawer === "assistant" ? "none" : "assistant")} className={cn("flex-1 text-fg-subtle", drawer === "assistant" && "text-fg")}>
+          AI
+        </button>
       </nav>
 
       {drawer !== "none" && (
@@ -184,6 +212,11 @@ function CompactWorkbench() {
       {drawer === "bottom" && (
         <div className="absolute inset-x-0 bottom-10 z-30 h-[65%] border-t border-line shadow-float animate-slide-up">
           <BottomPanel onClose={() => setDrawer("none")} />
+        </div>
+      )}
+      {drawer === "assistant" && (
+        <div className="absolute inset-x-0 bottom-10 top-0 z-30 border-t border-line shadow-float animate-slide-up">
+          <AssistantPanel onClose={() => setDrawer("none")} />
         </div>
       )}
     </div>
