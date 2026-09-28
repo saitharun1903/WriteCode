@@ -27,6 +27,8 @@ export interface Project {
   breakpoints?: Record<string, number[]>;
   /** Test cases, run together from the Tests tool window. Optional for projects saved before tests existed. */
   tests?: TestCase[];
+  /** Set when the project was started from a built-in example (its id). */
+  example?: string;
   createdAt: number;
   updatedAt: number;
   /** When the project was last run or debugged. Unset until its first run. */

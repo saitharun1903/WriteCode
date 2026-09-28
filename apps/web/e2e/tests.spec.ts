@@ -225,3 +225,32 @@ test("stopping right after Run all stops the run, even before the server has acc
   await panel(page).getByRole("button", { name: "Run all" }).click();
   await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 60_000 });
 });
+
+test("every example opens with its input and tests, and all its tests pass", async ({ page }) => {
+  test.setTimeout(400_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  for (const title of ["Binary search", "Bubble sort", "Reverse a linked list", "Fibonacci with memory"]) {
+    for (const language of ["Java", "Python"]) {
+      await page.getByRole("button", { name: "Home" }).click();
+      await page.getByRole("button", { name: `Open ${title} in ${language}` }).click();
+      await expect(page.getByRole("button", { name: `Project: ${title}` })).toBeVisible();
+      // The Tests button toggles the tool window; it stays open from the previous example.
+      if (!(await list(page).isVisible())) await page.getByRole("button", { name: "Tests", exact: true }).click();
+      await expect(list(page).getByRole("option")).toHaveCount(3);
+      await expect(panel(page).getByRole("note", { name: "Program ignores input" })).toHaveCount(0);
+      await panel(page).getByRole("button", { name: "Run all" }).click();
+      await expect(panel(page).getByText("3 / 3 passed"), `${title} in ${language}`).toBeVisible({ timeout: 60_000 });
+    }
+  }
+  if (shots) await page.screenshot({ path: `${shots}/example-tests.png` });
+
+  // An example that was only opened is not kept as recent work.
+  await page.getByRole("button", { name: "Home" }).click();
+  await page.getByRole("button", { name: "Open Bubble sort in Java" }).click();
+  await expect(page.getByRole("button", { name: "Project: Bubble sort" })).toBeVisible();
+  await page.getByRole("button", { name: "Home" }).click();
+  if (shots) await page.screenshot({ path: `${shots}/start-examples.png`, fullPage: true });
+  // The Java and Python versions that ran are kept; the third copy, only opened, is not.
+  await expect(page.getByRole("list", { name: "Recent projects" }).getByText("Bubble sort")).toHaveCount(2);
+});

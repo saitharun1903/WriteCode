@@ -5,6 +5,7 @@ import { getLanguage, isWithin, rebase, type Project, type ProjectSummary, type 
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
+import { EXAMPLES } from "./examples";
 import * as ops from "./operations";
 
 type SaveState = "saved" | "pending" | "saving" | "error";
@@ -20,6 +21,8 @@ interface WorkspaceState {
 
   init: () => Promise<void>;
   createProject: (languageId: string, name?: string) => Promise<void>;
+  /** Starts a project from a built-in example, with its input and tests filled in. */
+  createExample: (exampleId: string, languageId: string) => Promise<void>;
   openProject: (id: string) => Promise<void>;
   closeProject: () => void;
   renameProject: (id: string, name: string) => Promise<void>;
@@ -130,6 +133,19 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     writeJSON(LAST_PROJECT_KEY, project.id);
   };
 
+  /** Saves a newly created project, lists it and opens it in place of the current one. */
+  const startProject = async (project: Project) => {
+    try {
+      await projectRepo.put(project);
+    } catch (e) {
+      return void toast.error("Could not create project", errorMessage(e));
+    }
+    const previous = get().project;
+    set((s) => ({ projects: [ops.summarize(project), ...s.projects] }));
+    loadProject(project);
+    await discardIfUntouched(previous);
+  };
+
   return {
     status: "loading",
     projects: [],
@@ -176,15 +192,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       await get().flush();
       openToken++;
       const project = ops.createProject(createId(), name ?? `${lang.name} project`, languageId);
-      try {
-        await projectRepo.put(project);
-      } catch (e) {
-        return void toast.error("Could not create project", errorMessage(e));
-      }
-      const previous = get().project;
-      set((s) => ({ projects: [ops.summarize(project), ...s.projects] }));
-      loadProject(project);
-      await discardIfUntouched(previous);
+      await startProject(project);
+    },
+
+    async createExample(exampleId, languageId) {
+      const example = EXAMPLES.find((e) => e.id === exampleId);
+      const version = example?.versions.find((v) => v.language === languageId);
+      if (!example || !version) return void toast.error("Example not found");
+      await get().flush();
+      openToken++;
+      const base = ops.createProject(createId(), example.title, languageId);
+      await startProject({
+        ...base,
+        files: version.files.map((f) => ({ ...f })),
+        entryFile: version.files[0]!.path,
+        stdin: example.tests[0]?.input ?? "",
+        tests: example.tests.map((t) => ({ id: createId(), input: t.input, expected: t.expected })),
+        example: example.id,
+      });
     },
 
     async openProject(id) {
