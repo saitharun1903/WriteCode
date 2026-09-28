@@ -475,3 +475,18 @@ test("assistant effort: faster to smarter, remembered across reloads", async ({ 
   await page.reload();
   await expect(page.getByRole("button", { name: /^Effort:/ })).toHaveAccessibleName("Effort: High", { timeout: 30_000 });
 });
+
+test("stack trace and compiler locations in the console open the editor at that line", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, "public class Main {\n    public static void main(String[] args) {\n        int[] a = new int[2];\n        System.out.println(Helper.third(a));\n    }\n}\n");
+  await addFile(page, "Helper.java", "public class Helper {\n    static int third(int[] a) {\n        return a[2];\n    }\n}\n");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("ArrayIndexOutOfBoundsException", { timeout: 90_000 });
+
+  await output(page).getByRole("button", { name: "Helper.java:3" }).click();
+  await activeTab(page, "Helper.java");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^3:/);
+  await output(page).getByRole("button", { name: "Main.java:4" }).click();
+  await activeTab(page, "Main.java");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^4:/);
+});

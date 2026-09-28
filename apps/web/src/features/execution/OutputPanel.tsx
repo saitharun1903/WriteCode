@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { runCommand, showBottom } from "@/features/commands/registry";
@@ -9,6 +9,8 @@ import { useWorkspace } from "@/features/projects/store";
 import { useLastRunAsTest, useTests } from "@/features/tests/store";
 import { TEST_LIMITS } from "@cw/shared";
 import { cn } from "@/lib/cn";
+import { goToLocation } from "@/features/editor/navigate";
+import { linkSources } from "./source-links";
 import { STATUS_META } from "./status";
 import { isRunning, useExecution, type LogChunk, type RunState } from "./store";
 
@@ -139,6 +141,30 @@ function SaveAsTest() {
   );
 }
 
+const NO_FILES: string[] = [];
+
+/** Error output with every project-file location (Main.java:5, main.py line 3...) opening the editor there. */
+function LinkedText({ text, query }: { text: string; query: string }) {
+  const files = useWorkspace((s) => s.project?.files);
+  const paths = useMemo(() => files?.map((f) => f.path) ?? NO_FILES, [files]);
+  const segments = useMemo(() => linkSources(text, paths), [text, paths]);
+  return segments.map((seg, i) =>
+    "file" in seg ? (
+      <button
+        key={i}
+        type="button"
+        title={`Open ${seg.file} at line ${seg.line}`}
+        onClick={() => goToLocation(seg.file, seg.line, seg.column)}
+        className="cursor-pointer underline decoration-current/40 underline-offset-2 hover:text-accent hover:decoration-accent"
+      >
+        {highlight(seg.text, query)}
+      </button>
+    ) : (
+      <Fragment key={i}>{highlight(seg.text, query)}</Fragment>
+    ),
+  );
+}
+
 /** Closing line printed after the program ends, in the style of an IDE run console. */
 function Epilogue({ run }: { run: RunState }) {
   const r = run.result;
@@ -229,7 +255,7 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
         >
           {run.log.map((chunk, i) => (
             <span key={i} className={streamClass[chunk.stream]}>
-              {chunk.stream === "system" ? chunk.text : highlight(chunk.text, query)}
+              {chunk.stream === "system" ? chunk.text : chunk.stream === "stderr" || chunk.stream === "compile" ? <LinkedText text={chunk.text} query={query} /> : highlight(chunk.text, query)}
             </span>
           ))}
           {run.error && (
