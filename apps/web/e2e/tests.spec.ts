@@ -205,3 +205,23 @@ test("a program that ignores its input is called out; once it reads input, each 
   await expect(panel(page).getByText("Output matches")).toBeVisible();
   await expect(panel(page).locator("pre").last()).toHaveText("4");
 });
+
+test("stopping right after Run all stops the run, even before the server has accepted it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(page, MAX.replace("int max = 0;", "int max = Integer.MIN_VALUE;"));
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await panel(page).getByRole("button", { name: /Add a test/ }).click();
+  await fillTest(page, "2\n1 2", "2");
+  await waitSaved(page);
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await panel(page).getByRole("button", { name: "Stop" }).click();
+  await expect(panel(page).getByRole("button", { name: "Run all" })).toBeVisible();
+  // Nothing from the abandoned run shows up later.
+  await page.waitForTimeout(6000);
+  await expect(list(page).getByRole("option", { name: /Test 1/ })).not.toContainText("Passed");
+
+  // The next run works normally.
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 60_000 });
+});
