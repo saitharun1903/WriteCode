@@ -156,3 +156,52 @@ test("a successful run can be saved as a test in one click", async ({ page }) =>
   await expect(panel(page).getByRole("textbox", { name: /^Input/ })).toHaveValue("4\n3 8 -1 6");
   await expect(panel(page).getByRole("textbox", { name: /^Expected output/ })).toHaveValue("8\n");
 });
+
+// The user's binary search: the value to find is fixed in the code, so every test prints -1.
+const SEARCH = (body: string, imports = "") => `${imports}public class Main {
+    public static int search(int[] arr, int s) {
+        int low = 0, high = arr.length - 1;
+        while (low <= high) {
+            int mid = low + (high - low) / 2;
+            if (s == arr[mid]) return mid;
+            else if (s < arr[mid]) high = mid - 1;
+            else low = mid + 1;
+        }
+        return -1;
+    }
+    public static void main(String[] args) {
+${body}
+    }
+}
+`;
+
+test("a program that ignores its input is called out; once it reads input, each test gets its own answer", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(page, SEARCH("        int arr[] = {3,4,6,7,9,12,16,17};\n        int n = 5;\n        System.out.println(search(arr, n));"));
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await panel(page).getByRole("button", { name: /Add a test/ }).click();
+  await fillTest(page, "8\n3 4 6 7 9 12 16 17\n9", "4");
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  await fillTest(page, "8\n3 4 6 7 9 12 16 17\n5", "-1");
+  const note = panel(page).getByRole("note", { name: "Program ignores input" });
+  await expect(note).toContainText("Main.java never reads its input");
+  await note.getByRole("button", { name: "Show how" }).click();
+  await expect(note).toContainText("new Scanner(System.in)");
+  if (shots) await page.screenshot({ path: `${shots}/tests-ignores-input.png` });
+
+  await page.getByRole("tab", { name: /Main\.java/ }).click();
+  await setCode(
+    page,
+    SEARCH(
+      "        Scanner in = new Scanner(System.in);\n        int n = in.nextInt();\n        int[] arr = new int[n];\n        for (int i = 0; i < n; i++) arr[i] = in.nextInt();\n        System.out.println(search(arr, in.nextInt()));",
+      "import java.util.Scanner;\n\n",
+    ),
+  );
+  await expect(note).toHaveCount(0);
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("2 / 2 passed")).toBeVisible({ timeout: 60_000 });
+  await list(page).getByRole("option", { name: /Test 1/ }).click();
+  await expect(panel(page).getByText("Output matches")).toBeVisible();
+  await expect(panel(page).locator("pre").last()).toHaveText("4");
+});

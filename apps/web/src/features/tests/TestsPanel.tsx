@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Circle, CircleCheck, CircleDashed, CircleDot, CircleX, Copy, FlaskConical, Loader2, OctagonAlert, Play, Plus, Square, Timer, Trash2, Wand2 } from "lucide-react";
-import { TEST_LIMITS, type TestCase } from "@cw/shared";
+import { Check, Circle, CircleCheck, CircleDashed, CircleDot, CircleX, Copy, FlaskConical, Loader2, OctagonAlert, Play, Plus, Square, Timer, Trash2, Wand2 } from "lucide-react";
+import { READ_INPUT_EXAMPLE, TEST_LIMITS, basename, readsInput, type TestCase } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { primaryShortcut } from "@/features/commands/registry";
@@ -219,6 +219,49 @@ function Field({ label, value, onChange, placeholder, rows = 4 }: { label: strin
   );
 }
 
+/**
+ * A program that never reads stdin prints the same thing for every test, so
+ * the inputs cannot matter. Say so plainly, with the lines that would read them.
+ */
+function IgnoresInputNotice() {
+  const project = useWorkspace((s) => s.project);
+  const ignores = useMemo(() => !!project && !readsInput(project.language, project.files), [project]);
+  const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(false);
+  if (!project || !ignores) return null;
+  const example = READ_INPUT_EXAMPLE[project.language];
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(example ?? "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  };
+  return (
+    <div role="note" aria-label="Program ignores input" className="mx-3 mt-3 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2">
+      <div className="flex items-center gap-2">
+        <p className="min-w-0 flex-1 text-[13px] text-fg">
+          <span className="font-medium">{basename(project.entryFile)} never reads its input</span>
+          <span className="text-fg-muted">, so every test prints the same output.</span>
+        </p>
+        {example && (
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-fg-muted hover:bg-hover hover:text-fg">
+            {open ? "Hide" : "Show how"}
+          </button>
+        )}
+      </div>
+      {example && open && (
+        <div className="relative mt-2">
+          <pre className="cw-console overflow-x-auto rounded-md bg-surface-2 px-3 py-2 pr-10 font-mono text-[12.5px] leading-[19px] text-fg">{example}</pre>
+          <IconButton label={copied ? "Copied" : "Copy code"} size="sm" onClick={() => void copy()} className="absolute right-1.5 top-1.5">
+            {copied ? <Check className="text-success" /> : <Copy />}
+          </IconButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TestDetail({ test, number }: { test: TestCase; number: number }) {
   const outcome = useTests((s) => s.outcomes[test.id]);
   const phase = useTests((s) => s.phase);
@@ -257,6 +300,7 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
         </div>
       </div>
 
+      <IgnoresInputNotice />
       {/* Side by side when there is room: what goes in, what should come out, what came out. */}
       <div className="@container p-3">
         <div className="grid grid-cols-2 items-start gap-3 @[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
