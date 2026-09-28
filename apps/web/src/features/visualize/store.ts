@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { Trace } from "@cw/shared";
-import { ranLine } from "./model";
+import { ranLine, withSourceTypeNames } from "./model";
 
 export const SPEEDS = [0.5, 1, 2, 4] as const;
 export type Speed = (typeof SPEEDS)[number];
@@ -38,7 +38,7 @@ export const useVisualize = create<VisualizeState>((set, get) => ({
   playing: false,
   speed: 1,
   showCallables: false,
-  setTrace: (executionId, trace) => set({ executionId, trace, step: 0, playing: false }),
+  setTrace: (executionId, trace) => set({ executionId, trace: withSourceTypeNames(trace), step: 0, playing: false }),
   clear: () => set({ executionId: null, trace: null, step: 0, playing: false }),
   go: (step) => {
     const n = get().trace?.steps.length ?? 0;

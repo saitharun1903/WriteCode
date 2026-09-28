@@ -155,7 +155,6 @@ function DesktopWorkbench() {
   );
 }
 
-/** Tablet/phone: editor fills the screen; sidebar and panel open as drawers. */
 /** Phone and tablet tab bar: the tool windows people reach for most, with Search in the title bar. */
 const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: SideView } | { kind: "bottom"; id: BottomTab } | { kind: "ai"; id: "ai" }))[] = [
   { kind: "side", id: "explorer", label: "Files", icon: <FolderClosed /> },
@@ -167,6 +166,7 @@ const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: Sid
   { kind: "ai", id: "ai", label: "AI", icon: <Sparkles /> },
 ];
 
+/** Tablet/phone: editor fills the screen; sidebar and panel open as drawers. */
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const setDrawer = useUI((s) => s.setDrawer);

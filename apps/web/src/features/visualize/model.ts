@@ -363,3 +363,26 @@ export function timeline(trace: Trace): { depth: number[]; printed: number[]; ex
   });
   return { depth, printed, exceptions, maxDepth: Math.max(1, ...depth) };
 }
+
+/**
+ * Java nested classes reach the tracer by their binary names (`Main$Node`).
+ * Show the name written in the source (`Node`); anonymous classes (`Main$1`)
+ * keep their full name, which is the only one they have.
+ */
+export function sourceTypeName(type: string): string {
+  const last = type.slice(type.lastIndexOf("$") + 1);
+  return last && !/^\d/.test(last) ? last : type;
+}
+
+/** The trace with nested Java class names as written in the source. */
+export function withSourceTypeNames(trace: Trace): Trace {
+  if (!trace.steps.some((s) => Object.values(s.heap).some((o) => o.type.includes("$")))) return trace;
+  return {
+    ...trace,
+    steps: trace.steps.map((step) => ({
+      ...step,
+      heap: Object.fromEntries(Object.entries(step.heap).map(([id, o]) => [id, o.type.includes("$") ? { ...o, type: sourceTypeName(o.type) } : o])),
+    })),
+  };
+}
+

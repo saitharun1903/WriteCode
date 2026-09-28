@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HeapObject, Trace, TraceFrame, TraceStep, TraceValue } from "@cw/shared";
-import { diffSteps, frameIds, indexPointers, layoutHeap, nameOf, preview, timeline } from "./model";
+import { diffSteps, frameIds, indexPointers, layoutHeap, nameOf, preview, sourceTypeName, timeline } from "./model";
 
 const int = (n: number): TraceValue => ({ kind: "value", text: String(n), type: "int" });
 const ref = (id: string): TraceValue => ({ kind: "ref", id });
@@ -141,5 +141,14 @@ describe("timeline", () => {
       step([frame("a", 1, [])], {}, { event: "exception", stdoutLength: 2 }),
     ]);
     expect(timeline(t)).toEqual({ depth: [1, 2, 1], printed: [1], exceptions: [2], maxDepth: 2 });
+  });
+});
+
+describe("source type names", () => {
+  it("shows Java nested classes by the name in the source, and keeps anonymous ones", () => {
+    expect(sourceTypeName("Main$Node")).toBe("Node");
+    expect(sourceTypeName("Outer$Inner$Leaf")).toBe("Leaf");
+    expect(sourceTypeName("Main$1")).toBe("Main$1");
+    expect(sourceTypeName("ArrayList")).toBe("ArrayList");
   });
 });
