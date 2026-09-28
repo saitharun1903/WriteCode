@@ -127,3 +127,32 @@ test("a project that is only opened is not kept as recent work; an edited one is
   await expect(recent).toContainText("Python project");
   await expect(recent).toContainText("Edited just now");
 });
+
+/** The whole text of the open file, straight from Monaco's model. */
+const modelText = (page: Page) =>
+  page.evaluate(() => (window as unknown as { monaco: { editor: { getModels(): { getValue(): string }[] } } }).monaco.editor.getModels()[0]!.getValue());
+
+test("familiar snippets: sout and fori expand as in IntelliJ, with Tab stops", async ({ page }) => {
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(editorText(page)).toContainText("Hello World");
+  await page.evaluate(() => {
+    const ed = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco.editor.getEditors()[0]!;
+    ed.setPosition({ lineNumber: 3, column: 100 });
+    ed.focus();
+  });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("fori");
+  await expect(page.locator(".suggest-widget")).toContainText("for (int i = 0; i < n; i++)");
+  await page.keyboard.press("Enter");
+  // First Tab stop is the loop variable, then the bound.
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("5");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("sout");
+  await expect(page.locator(".suggest-widget")).toContainText("System.out.println()");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("i");
+  await expect.poll(() => modelText(page)).toContain("for (int i = 0; i < 5; i++) {");
+  await expect.poll(() => modelText(page)).toMatch(/for \(int i = 0; i < 5; i\+\+\) \{\n\s+System\.out\.println\(i\);\n\s+\}/);
+});
