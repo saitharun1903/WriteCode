@@ -96,10 +96,11 @@ describe("project operations", () => {
 });
 
 describe("recent-work tracking", () => {
-  it("treats a project as untouched only until it is run or changed", () => {
+  it("treats a project as untouched until it is changed, even after running it", () => {
     const fresh = ops.createProject("p1", "Java project", "java");
     expect(ops.summarize(fresh).untouched).toBe(true);
-    expect(ops.summarize({ ...fresh, lastRunAt: Date.now() }).untouched).toBe(false);
+    expect(ops.summarize({ ...fresh, lastRunAt: Date.now() }).untouched).toBe(true);
+    expect(ops.summarize({ ...fresh, stdin: "5" }).untouched).toBe(false);
     const edited = ops.updateFileContent(fresh, "Main.java", fresh.files[0]!.content + "// note\n");
     expect(ops.summarize(edited).untouched).toBe(false);
     expect(ops.summarize({ ...fresh, folders: ["src"] }).untouched).toBe(false);

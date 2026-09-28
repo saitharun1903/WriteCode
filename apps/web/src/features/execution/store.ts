@@ -19,7 +19,7 @@ import { useSettings } from "@/features/settings/store";
 import { createId } from "@/lib/id";
 import { useDebug } from "@/features/debug/store";
 import { useVisualize } from "@/features/visualize/store";
-import { ApiError, api, streamExecution, type ExecutionStream } from "./api";
+import { ApiError, api, streamExecution, waitForResult, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
 export type LogStream = "stdout" | "stderr" | "compile" | "stdin" | "system";
@@ -200,6 +200,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
         return;
       }
 
+      useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: mode === "debug" ? "debug" : mode === "visualize" ? "visualize" : "run" });
       // With no prepared input, the program reads what the user types while it runs.
       const interactive = !project.stdin;
       set({
@@ -273,10 +274,12 @@ export const useExecution = create<ExecutionState>((set, get) => {
         onDebugError: (requestId, message) => useDebug.getState().onCommandError(requestId, message),
         onInputError: (message) => set((s) => ({ run: s.run && s.run.id === id ? { ...s.run, inputError: message } : s.run })),
         onError: async (message) => {
-          // The stream dropped; the execution may still have finished. Ask once before reporting failure.
-          try {
-            const result = await api.getExecution(id);
-            if (isTerminalStatus(result.status)) {
+          // The stream dropped; the program keeps running on the server. Wait for its result.
+          // Debug sessions need the live connection for their commands, so they cannot be recovered this way.
+          const recoverable = get().run?.mode !== "debug";
+          {
+            const result = recoverable ? await waitForResult(id, () => get().run?.id === id) : null;
+            if (result) {
               set((s) => ({
                 run: s.run
                   ? {
@@ -292,8 +295,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
               }));
               return void finish(result, project);
             }
-          } catch {}
-          fail("Execution stream interrupted", message);
+          }
+          if (get().run?.id === id) fail("Lost connection to the program", recoverable ? `${message} It did not finish within a minute; run it again.` : message);
         },
       });
     },
@@ -334,3 +337,16 @@ export const useExecution = create<ExecutionState>((set, get) => {
 export function isRunning(run: RunState | null): boolean {
   return !!run && !run.error && (run.status === "SUBMITTING" || !isTerminalStatus(run.status));
 }
+
+// Errors describe the code as it was when it ran. Once a file is edited, its marks no longer
+// line up with the text (a deleted line would keep its red squiggle), so they are cleared.
+useWorkspace.subscribe((s, prev) => {
+  if (!s.project || !prev.project || s.project.id !== prev.project.id || s.project.files === prev.project.files) return;
+  const { diagnostics } = useExecution.getState();
+  if (!diagnostics.length) return;
+  const before = new Map(prev.project.files.map((f) => [f.path, f.content]));
+  const edited = new Set(s.project.files.filter((f) => before.get(f.path) !== f.content).map((f) => f.path));
+  if (!edited.size) return;
+  const kept = diagnostics.filter((d) => !edited.has(d.file));
+  if (kept.length !== diagnostics.length) useExecution.setState({ diagnostics: kept });
+});

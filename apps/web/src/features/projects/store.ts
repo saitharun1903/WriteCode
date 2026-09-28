@@ -6,6 +6,7 @@ import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
 import { applyImport, type PlannedFile } from "./import";
+import { useSettings } from "@/features/settings/store";
 import * as ops from "./operations";
 
 type SaveState = "saved" | "pending" | "saving" | "error";
@@ -122,7 +123,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     set((s) => ({ projects: s.projects.filter((p) => p.id !== project.id) }));
   };
 
-  const loadProject = (project: Project) => {
+  /** `opened`: the user opened or created it now (not restored after a reload). */
+  const loadProject = (project: Project, opened = true) => {
     const saved = readJSON<{ openTabs: string[]; activeFile: string | null }>(tabsKey(project.id));
     const exists = (p: string) => project.files.some((f) => f.path === p);
     let openTabs = saved?.openTabs.filter(exists) ?? [];
@@ -131,6 +133,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     activeFile ??= openTabs[0] ?? null;
     set({ project, openTabs, activeFile, saveState: "saved" });
     writeJSON(LAST_PROJECT_KEY, project.id);
+    // A project the user opens starts on its code; Run, Debug, Visualize and Tests open the bottom
+    // panel when used. Restoring the last project after a reload keeps the layout as it was.
+    if (opened) useSettings.getState().updateLayout({ bottomOpen: false });
   };
 
   /** Saves a newly created project, lists it and opens it in place of the current one. */
@@ -176,7 +181,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
           projects = projects.filter((p) => !p.untouched || p.id === last);
           if (last && projects.some((p) => p.id === last)) {
             const project = await projectRepo.get(last);
-            if (project) loadProject(project);
+            if (project) loadProject(project, false);
           }
           set({ projects, status: "ready" });
         } catch (e) {

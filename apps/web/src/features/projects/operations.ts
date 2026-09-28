@@ -48,7 +48,8 @@ export function summarize(p: Project): ProjectSummary {
     fileCount: p.files.length,
     updatedAt: p.updatedAt,
     lastRunAt: p.lastRunAt,
-    untouched: !p.lastRunAt && !p.tests?.length && matchesTemplate(p),
+    // Running the untouched starter program is not work worth keeping; changing it is.
+    untouched: !p.tests?.length && !p.stdin.trim() && matchesTemplate(p),
   };
 }
 

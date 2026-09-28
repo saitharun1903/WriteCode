@@ -71,7 +71,11 @@ function DesktopWorkbench() {
   useEffect(() => {
     const p = bottomRef.current;
     if (!p) return;
-    if (layout.bottomOpen && p.isCollapsed()) p.expand();
+    if (layout.bottomOpen && p.isCollapsed()) {
+      p.expand();
+      // A panel that starts closed has no size to return to and would reopen at its minimum.
+      if (p.getSize().asPercentage < 20) p.resize("32%");
+    }
     if (!layout.bottomOpen && !p.isCollapsed()) p.collapse();
   }, [layout.bottomOpen]);
 

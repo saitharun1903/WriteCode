@@ -4,7 +4,6 @@ import { create } from "zustand";
 import {
   anyFileIsRunnable,
   findEntryPoints,
-  isTerminalStatus,
   parseDiagnostics,
   TEST_LIMITS,
   type ExecutionResult,
@@ -12,7 +11,7 @@ import {
   type TestCase,
   type TestRunResult,
 } from "@cw/shared";
-import { ApiError, api, streamExecution, type ExecutionStream } from "@/features/execution/api";
+import { ApiError, api, streamExecution, waitForResult, type ExecutionStream } from "@/features/execution/api";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { createId } from "@/lib/id";
@@ -201,13 +200,11 @@ export const useTests = create<TestsState>((set, get) => {
               break;
           }
         },
-        onError: async (message) => {
-          // The connection dropped; the tests may still have finished on the server. Ask once.
-          try {
-            const r = await api.getExecution(created.id);
-            if (executionId === created.id && isTerminalStatus(r.status)) return finish(r);
-          } catch {}
-          if (executionId === created.id) end({ error: message });
+        onError: async () => {
+          // The connection dropped; the tests keep running on the server. Wait for their result.
+          const r = await waitForResult(created.id, () => executionId === created.id);
+          if (r && executionId === created.id) return finish(r);
+          if (executionId === created.id) end({ error: "Lost the connection and the tests did not finish within a minute. Run them again." });
         },
       });
     },
@@ -232,9 +229,12 @@ export const useTests = create<TestsState>((set, get) => {
   };
 });
 
-// Results belong to the project they ran for.
+// Results belong to the project they ran for; a compiler error belongs to the code it was about.
 useWorkspace.subscribe((s, prev) => {
-  if (s.project?.id !== prev.project?.id) useTests.getState().reset();
+  if (s.project?.id !== prev.project?.id) return useTests.getState().reset();
+  if (s.project && prev.project && s.project.files !== prev.project.files && useTests.getState().compileError) {
+    useTests.setState({ compileError: undefined });
+  }
 });
 
 /** The last finished run of this project as a test: its input (prepared or typed) and what it printed. */

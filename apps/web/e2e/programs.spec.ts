@@ -308,14 +308,74 @@ test("several main classes: asks which to run and remembers the choice", async (
   await expect(page.getByRole("button", { name: "Run configuration" })).toContainText("Tool.java");
 });
 
-test("recent projects: a project counts once it has been run", async ({ page }) => {
+test("recent projects: running the untouched starter does not count; changing the code does", async ({ page }) => {
   await freshProject(page, "Python");
   await page.getByRole("button", { name: "Run program" }).click();
   await expect(output(page)).toContainText("Hello World", { timeout: 120_000 });
   await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "New Python project" }).click();
+  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello");
+  await setCode(page, `print('mine')
+`);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("mine", { timeout: 120_000 });
+  await page.getByRole("button", { name: "Home" }).click();
   const recent = page.getByRole("list", { name: "Recent projects" });
   await expect(recent.getByRole("listitem")).toHaveCount(1);
   await expect(recent).toContainText("Ran just now");
+});
+
+test("the bottom panel stays closed when a project opens, and Run opens it", async ({ page }) => {
+  await freshProject(page, "Java");
+  await expect(page.getByRole("region", { name: "Run" })).toBeHidden();
+  await setCode(page, CALCULATE.replace("calculate(a, b)", "calculate(a, b) + 0"));
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Process finished", { timeout: 120_000 });
+  // Reopening from the start screen starts on the code again.
+  await page.getByRole("button", { name: "Home" }).click();
+  await page.getByRole("list", { name: "Recent projects" }).getByRole("listitem").first().click();
+  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("calculate");
+  await expect(page.getByRole("region", { name: "Run" })).toBeHidden();
+});
+
+test("editing code clears the old error marks; they do not stay on a line that changed", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, `public class Main {
+    public static void main(String[] args) {
+        int n = 1;
+        int n = 2;
+    }
+}
+`);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("already defined", { timeout: 120_000 });
+  await expect(page.locator(".monaco-editor .squiggly-error")).not.toHaveCount(0);
+  await setCode(page, `public class Main {
+    public static void main(String[] args) {
+        int n = 1;
+
+    }
+}
+`);
+  await expect(page.locator(".monaco-editor .squiggly-error")).toHaveCount(0);
+});
+
+test("a dropped connection does not lose the result: the run finishes and shows its output", async ({ page }) => {
+  // Cut the live event stream right after it connects; the program keeps running on the server.
+  await page.routeWebSocket(/\/ws/, (ws) => {
+    ws.connectToServer();
+    setTimeout(() => void ws.close({ code: 1011, reason: "test drop" }), 150);
+  });
+  await freshProject(page, "Python");
+  await setCode(page, `import time
+time.sleep(1)
+print('still here')
+`);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("still here", { timeout: 60_000 });
+  await expect(output(page)).toContainText("Process finished with exit code 0");
 });
 
 test("debugging a program that reads input: Java stops at a breakpoint after the typed value", async ({ page }) => {

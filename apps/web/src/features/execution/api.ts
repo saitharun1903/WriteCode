@@ -1,4 +1,4 @@
-import type { DebugCommand, ExecutionRequest, ExecutionResult, ExecutionStreamEvent, LanguageDefinition } from "@cw/shared";
+import { isTerminalStatus, type DebugCommand, type ExecutionRequest, type ExecutionResult, type ExecutionStreamEvent, type LanguageDefinition } from "@cw/shared";
 
 /**
  * Public base URL of the API. Not a secret. Production builds default to the
@@ -60,6 +60,26 @@ export const api = {
   cancelExecution: (id: string) =>
     request<{ ok: true }>(`/api/v1/executions/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
 };
+
+/**
+ * After the live stream drops (a network blip, the server restarting), the
+ * program keeps running on the server. Asks for its result every second until
+ * it has finished, for up to `timeoutMs`; null if it is still running then or
+ * the server stays unreachable. `stillWanted` stops the wait early.
+ */
+export async function waitForResult(id: string, stillWanted: () => boolean, timeoutMs = 60_000): Promise<ExecutionResult | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && stillWanted()) {
+    try {
+      const result = await api.getExecution(id);
+      if (isTerminalStatus(result.status)) return result;
+    } catch {
+      // Unreachable for now; keep trying until the deadline.
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return null;
+}
 
 export interface ExecutionStream {
   close: () => void;
