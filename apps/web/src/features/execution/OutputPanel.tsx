@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, Lightbulb, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -190,6 +190,13 @@ function Epilogue({ run }: { run: RunState }) {
   const failed = r.status !== "SUCCESS" && r.status !== "CANCELLED";
   return (
     <div className="mt-[20px]">
+      {/* What the crash means, in plain words, worked out from the exception itself. */}
+      {r.status === "RUNTIME_ERROR" && r.message && (
+        <p className="mb-2 flex max-w-3xl items-start gap-2 whitespace-normal rounded-md border-l-2 border-warning bg-warning-soft px-3 py-1.5 font-sans text-[13px] leading-5 text-fg">
+          <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          {r.message}
+        </p>
+      )}
       {line}
       <SaveAsTest />
       {failed && (

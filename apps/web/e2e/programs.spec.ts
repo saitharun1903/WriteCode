@@ -482,6 +482,8 @@ test("stack trace and compiler locations in the console open the editor at that 
   await addFile(page, "Helper.java", "public class Helper {\n    static int third(int[] a) {\n        return a[2];\n    }\n}\n");
   await page.getByRole("button", { name: "Run program" }).click();
   await expect(output(page)).toContainText("ArrayIndexOutOfBoundsException", { timeout: 90_000 });
+  // A plain explanation from the exception's own message.
+  await expect(output(page)).toContainText("Index 2 is outside the array. Its length is 2, so valid indexes are 0 to 1.");
 
   await output(page).getByRole("button", { name: "Helper.java:3" }).click();
   await activeTab(page, "Helper.java");

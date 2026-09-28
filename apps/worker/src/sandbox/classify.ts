@@ -89,13 +89,97 @@ export function explainRuntimeError(exitCode: number | null | undefined, stderr:
     parts.push(`Terminated by signal ${sig}${SIGNALS[sig] ? `: ${SIGNALS[sig]}` : ""}.`);
   }
   const tail = stderr.slice(-8000);
-  for (const { pattern, hint } of POLICY_HINTS) {
-    if (pattern.test(tail)) {
-      parts.push(hint);
-      break;
-    }
+  const policy = POLICY_HINTS.find(({ pattern }) => pattern.test(tail));
+  if (policy) parts.push(policy.hint);
+  else {
+    const plain = explainException(tail);
+    if (plain) parts.push(plain);
   }
   return parts.length ? parts.join(" ") : undefined;
+}
+
+const NULL_ACTIONS: [RegExp, (what: string) => string][] = [
+  [/^invoke "(?:[\w.$]+\.)?([\w$]+)\(/, (m) => `so ${m}() can't be called on it`],
+  [/^read field "([\w$]+)"/, (f) => `so its field ${f} can't be read`],
+  [/^assign field "([\w$]+)"/, (f) => `so its field ${f} can't be set`],
+  [/^(?:load from|store to) [\w$]+ array/, () => "so it has no elements to use"],
+  [/^read the array length/, () => "so it has no length"],
+];
+
+/** The variable named in a Java "helpful NullPointerException" message, when it is a real name. */
+function nullName(message: string): string | null {
+  const name = /because "([^"]+)" is null/.exec(message)?.[1];
+  return name && !name.startsWith("<") ? name.replace(/^this\./, "") : null;
+}
+
+/**
+ * Plain-language explanations of the uncaught exceptions beginners meet most,
+ * worked out from the exception's own message. Returns undefined for anything
+ * it does not recognise, rather than guessing.
+ */
+const EXCEPTIONS: [RegExp, (m: RegExpExecArray) => string][] = [
+  // Java
+  [
+    /ArrayIndexOutOfBoundsException: Index (-?\d+) out of bounds for length (\d+)/,
+    (m) => `Index ${m[1]} is outside the array. Its length is ${m[2]}, so valid indexes are ${Number(m[2]) > 0 ? `0 to ${Number(m[2]) - 1}` : "none (it is empty)"}.`,
+  ],
+  [
+    /StringIndexOutOfBoundsException: (?:Index|index|begin|end) (-?\d+).*?length (\d+)/,
+    (m) => `Position ${m[1]} is outside the string. Its length is ${m[2]}, so valid positions are ${Number(m[2]) > 0 ? `0 to ${Number(m[2]) - 1}` : "none (it is empty)"}.`,
+  ],
+  [
+    /IndexOutOfBoundsException: Index (-?\d+) out of bounds for length (\d+)/,
+    (m) => `Index ${m[1]} is outside the list. Its size is ${m[2]}, so valid indexes are ${Number(m[2]) > 0 ? `0 to ${Number(m[2]) - 1}` : "none (it is empty)"}.`,
+  ],
+  [
+    /NullPointerException(?:: Cannot (.+))?/,
+    (m) => {
+      const name = m[1] ? nullName(m[1]) : null;
+      if (!name) return "Something used here is null: a variable or field was never given an object.";
+      const action = NULL_ACTIONS.map(([re, say]) => {
+        const x = re.exec(m[1]!);
+        return x ? say(x[1] ?? "") : null;
+      }).find(Boolean);
+      return `${name} is null at this point${action ? `, ${action}` : ""}.`;
+    },
+  ],
+  [/ArithmeticException: \/ by zero/, () => "Integer division by zero."],
+  [/NumberFormatException: For input string: "([^"]*)"/, (m) => `"${m[1]}" is not a number, so it can't be converted.`],
+  [/InputMismatchException/, () => "The input didn't match what the program tried to read, for example a word where nextInt() expected a number."],
+  [/NoSuchElementException(?:: No line found)?/, () => "The program tried to read more input than it was given. Add it in Program Input, or type it while the program runs."],
+  [/StackOverflowError/, () => "The recursion never stopped: check that every recursive call gets closer to the base case."],
+  [/ClassCastException: class ([\w.$]+) cannot be cast to class ([\w.$]+)/, (m) => `A ${short(m[1]!)} can't be used as a ${short(m[2]!)}.`],
+  [/ConcurrentModificationException/, () => "The collection was changed while a for-each loop was going through it. Use an Iterator's remove(), or loop over a copy."],
+  // Python
+  [/IndexError: (list|string|tuple) index out of range/, (m) => `An index is past the end of the ${m[1] === "string" ? "string" : m[1]}. Valid indexes go from 0 to its length minus 1.`],
+  [/ZeroDivisionError/, () => "Division by zero."],
+  [/ValueError: invalid literal for int\(\) with base 10: '([^']*)'/, (m) => `'${m[1]}' is not a whole number, so int() can't convert it.`],
+  [/ValueError: could not convert string to float: '([^']*)'/, (m) => `'${m[1]}' is not a number, so float() can't convert it.`],
+  [/EOFError: EOF when reading a line/, () => "input() was called but there was no more input. Add it in Program Input, or type it while the program runs."],
+  [/RecursionError/, () => "The recursion never stopped: check that every recursive call gets closer to the base case."],
+  [/NameError: name '([^']+)' is not defined/, (m) => `${m[1]} is used before it is defined. Check the spelling, or define it first.`],
+  [/KeyError: (.+)$/m, (m) => `The key ${m[1]!.trim()} is not in the dictionary. Use in to check first, or .get().`],
+  [/TypeError: 'NoneType' object is not (subscriptable|iterable|callable)/, () => "A value here is None: often a function that returns nothing, or a variable that was never set."],
+  [/AttributeError: 'NoneType' object has no attribute '([^']+)'/, (m) => `A value here is None, so it has no .${m[1]}: often a function that returns nothing, or a variable that was never set.`],
+  [/UnboundLocalError: (?:cannot access )?local variable '([^']+)'/, (m) => `${m[1]} is assigned inside the function, so Python treats it as local there, but it is used before that assignment.`],
+];
+
+function short(type: string): string {
+  const name = type.slice(type.lastIndexOf(".") + 1);
+  return name.slice(name.lastIndexOf("$") + 1) || name;
+}
+
+/** Plain explanation of the uncaught exception at the end of `stderr`, if it is a common one. */
+export function explainException(stderr: string): string | undefined {
+  // Java prints the uncaught exception first ("Exception in thread ..."); Python prints it last.
+  const lines = stderr.trimEnd().split("\n");
+  const javaHeader = lines.find((l) => /^Exception in thread /.test(l));
+  const header = javaHeader ?? [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception)\b/.test(l)) ?? "";
+  for (const [pattern, explain] of EXCEPTIONS) {
+    const m = pattern.exec(header);
+    if (m) return explain(m);
+  }
+  return undefined;
 }
 
 /** Message for a run stopped by a time limit, by which limit fired. */
