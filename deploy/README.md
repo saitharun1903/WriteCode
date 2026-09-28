@@ -32,7 +32,7 @@ Internet ──▶ :443/:80  web (Caddy: automatic HTTPS, static IDE, /api + /ws
   time; 4 vCPU and 8 GB is comfortable. Each sandbox gets 1 CPU and 256 MB
   (debug sessions and the Java visualizer 512 MB). 1 GB machines are too small.
   60 GB disk: the language images are about 3 GB and are pulled on the first start.
-- Provider guides: `ORACLE.md` (Always Free Arm), `AZURE.md` (temporary, x86-64).
+- Provider guides: `HOSTINGER.md` (KVM 2 VPS, the chosen host), `ORACLE.md` (Always Free Arm), `AZURE.md` (temporary, x86-64).
 - Inbound TCP 22, 80, 443 (and UDP 443 for HTTP/3). Nothing else.
 
 ## DNS (GoDaddy)
