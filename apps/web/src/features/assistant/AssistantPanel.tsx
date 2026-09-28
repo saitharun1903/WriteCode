@@ -38,6 +38,7 @@ import { useVisualize } from "@/features/visualize/store";
 import { cn } from "@/lib/cn";
 import type { AssistantEffort } from "@cw/shared";
 import { parseEditBlock, resolveEdit, type ResolvedHunk } from "./edits";
+import { plainMath } from "./plain-math";
 import { editTarget, useAssistant, type ChatMessage } from "./store";
 
 const LANG_ALIASES: Record<string, string> = { py: "python", js: "javascript", ts: "typescript", "c++": "cpp", cc: "cpp", h: "c", sh: "shell", bash: "shell" };
@@ -311,7 +312,7 @@ const components: Components = {
 const Answer = memo(function Answer({ text }: { text: string }) {
   return (
     <Markdown remarkPlugins={[remarkGfm]} components={components}>
-      {text}
+      {plainMath(text)}
     </Markdown>
   );
 });
@@ -396,11 +397,12 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-md bg-[color-mix(in_srgb,#8a7cf5_16%,var(--surface-2))] px-3.5 py-2 text-[13.5px] leading-relaxed text-fg">{message.text}</div>
+        <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-md bg-[color-mix(in_srgb,#8a7cf5_16%,var(--surface-2))] px-3.5 py-2 text-[13.5px] leading-relaxed text-fg">{message.display ?? message.text}</div>
       </div>
     );
   }
-  const done = !message.pending && !!message.text;
+  // Actions appear once the answer is complete and fully revealed on screen.
+  const done = !message.pending && !!message.text && text.length >= message.text.length;
   return (
     <div className="group flex gap-3" aria-busy={message.pending}>
       <div className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-[0_4px_12px_-4px_#8a7cf5]", AI_GRADIENT)}>

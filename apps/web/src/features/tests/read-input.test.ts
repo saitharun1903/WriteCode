@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { javaReadInput, pythonReadInput } from "./read-input";
+import { describeReads, javaReadInput, pythonReadInput } from "./read-input";
 
 const CANDIES = `public class Candies {
     public static int search(int[] arr, int s) {
@@ -94,5 +94,29 @@ print(search(arr, n), name)
     const inMain = 'def main():\n    x = 2.5\n    print(x)\n\n\nif __name__ == "__main__":\n    main()\n';
     expect(pythonReadInput(inMain)).toEqual({ code: 'def main():\n    x = float(input())\n    print(x)\n\n\nif __name__ == "__main__":\n    main()\n', input: "2.5\n", names: ["x"] });
     expect(pythonReadInput("print('hi')\n")).toBeNull();
+  });
+});
+
+describe("what a program reads", () => {
+  it("lists the reads of the rewritten Candies program in order", () => {
+    const { code } = javaReadInput(CANDIES)!;
+    expect(describeReads("java", code)).toEqual(["arr: how many, then the values", "n"]);
+  });
+
+  it("recognises common Java and Python reading patterns", () => {
+    const java = `import java.util.Scanner;
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        int n = sc.nextInt();
+        int[] a = new int[n];
+        for (int i = 0; i < n; i++) a[i] = sc.nextInt();
+        String name = sc.next();
+        System.out.println(sc.nextInt());
+    }
+}`;
+    expect(describeReads("java", java)).toEqual(["n", "a: n values", "name (a word)", "a value"]);
+    const py = "n = int(input())\nnums = list(map(int, input().split()))\na, b = map(int, input().split())\nname = input()\n";
+    expect(describeReads("python", py)).toEqual(["n", "nums: values on one line", "a b on one line", "name (a line of text)"]);
   });
 });

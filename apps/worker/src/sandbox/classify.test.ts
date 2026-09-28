@@ -47,3 +47,48 @@ describe("plain explanations of common crashes", () => {
     expect(explainRuntimeError(139, "")).toContain("SIGSEGV");
   });
 });
+
+describe("naming the line that ran out of input", () => {
+  const CANDIES = [
+    "public class Candies {",
+    "    public static void main(String[] args) {",
+    "        Scanner in = new Scanner(System.in);",
+    "        int[] arr = new int[in.nextInt()];",
+    "        for (int i = 0; i < arr.length; i++) arr[i] = in.nextInt();",
+    "        int n = in.nextInt();",
+    "    }",
+    "}",
+  ].join("\n");
+  const files = [{ path: "Candies.java", content: CANDIES }];
+
+  it("points at the user's line, not Scanner's, for the user's real stack trace", () => {
+    const trace = `Exception in thread "main" java.util.NoSuchElementException
+\tat java.base/java.util.Scanner.throwFor(Scanner.java:945)
+\tat java.base/java.util.Scanner.next(Scanner.java:1602)
+\tat java.base/java.util.Scanner.nextInt(Scanner.java:2267)
+\tat java.base/java.util.Scanner.nextInt(Scanner.java:2221)
+\tat Candies.main(Candies.java:6)
+`;
+    expect(explainRuntimeError(1, trace, files)).toBe(
+      "Line 6 (int n = in.nextInt();) needed another value, but the input had no more. Check that the input gives every value the program reads, in the same order.",
+    );
+    // Without the project's files, the general explanation.
+    expect(explainRuntimeError(1, trace)).toContain("more input than it was given");
+  });
+
+  it("names the line for Python too, using the innermost traceback entry in the project", () => {
+    const py = [{ path: "main.py", content: "def read():\n    return int(input())\n\nn = read()\nm = read()\n" }];
+    const trace = `Traceback (most recent call last):
+  File "/workspace/main.py", line 5, in <module>
+    m = read()
+  File "/workspace/main.py", line 2, in read
+    return int(input())
+EOFError: EOF when reading a line
+`;
+    expect(explainRuntimeError(1, trace, py)).toBe(
+      "Line 2 (return int(input())) needed another value, but the input had no more. Check that the input gives every value the program reads, in the same order.",
+    );
+    const bad = trace.replace("EOFError: EOF when reading a line", "ValueError: invalid literal for int() with base 10: 'abc'");
+    expect(explainRuntimeError(1, bad, py)).toBe("Line 2 (return int(input())) expected a whole number but read 'abc'. Check the order of the values in the input.");
+  });
+});

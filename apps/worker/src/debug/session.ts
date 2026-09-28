@@ -364,6 +364,6 @@ async function drive(
     compileTime,
     exitCode: exitCode ?? undefined,
     executionTime: runSpent + (runningSince !== null ? Date.now() - runningSince : 0),
-    message: final.message ?? (final.status === "RUNTIME_ERROR" ? explainRuntimeError(exitCode, out.stderr()) : undefined),
+    message: final.message ?? (final.status === "RUNTIME_ERROR" ? explainRuntimeError(exitCode, out.stderr(), ctx.request.files) : undefined),
   });
 }

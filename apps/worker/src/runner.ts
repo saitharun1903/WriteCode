@@ -164,7 +164,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
       (status === "TIME_LIMIT"
         ? timeLimitMessage(run.limit, limits, interactive ? INTERACTIVE_LIMITS : undefined)
         : status === "RUNTIME_ERROR"
-          ? explainRuntimeError(run.exitCode, stderr)
+          ? explainRuntimeError(run.exitCode, stderr, ctx.request.files)
           : undefined);
     return finish(status, {
       exitCode: run.exitCode ?? undefined,
@@ -220,7 +220,7 @@ async function runTests(ctx: RunContext, sandbox: Sandbox, inputs: string[], lim
       status === "TIME_LIMIT"
         ? `Stopped after ${limits.timeoutMs / 1000}s.`
         : status === "RUNTIME_ERROR"
-          ? explainRuntimeError(run.exitCode, stderr)
+          ? explainRuntimeError(run.exitCode, stderr, ctx.request.files)
           : run.outputLimited
             ? `Output after the first ${TEST_LIMITS.maxOutputBytesPerTest / 1024} KB was not kept.`
             : messageFor(status, limits);

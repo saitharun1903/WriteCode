@@ -230,3 +230,44 @@ test("stopping right after Run all stops the run, even before the server has acc
   await panel(page).getByRole("button", { name: "Run all" }).click();
   await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 60_000 });
 });
+
+test("a test whose input is missing a value: the failing line is named, the input format is shown, and it passes once fixed", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(page, SEARCH("        int arr[] = {3,4,6,7,9,12,16,17};\n        int n = 5;\n\n        System.out.println(search(arr,n));"));
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await panel(page).getByRole("button", { name: /Add a test/ }).click();
+  // Written for the old program: the array, but no value to search for.
+  await fillTest(page, "5\n1 2 3 4 5", "3");
+  await panel(page).getByRole("note", { name: "Program ignores input" }).getByRole("button", { name: "Read from input" }).click();
+  await expect(panel(page).getByRole("note", { name: "Program ignores input" })).toHaveCount(0);
+  await waitSaved(page);
+
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(list(page).getByRole("option", { name: /Test 1.*Runtime error/ })).toBeVisible({ timeout: 60_000 });
+  await expect(panel(page).getByText(/^Line \d+ \(int n = in\.nextInt\(\);\) needed another value, but the input had no more\./)).toBeVisible();
+  await expect(panel(page).getByText("arr: how many, then the values, then n")).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: "Ask AI why this test fails" })).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/tests-missing-input.png` });
+
+  if (process.env.E2E_ASSISTANT) {
+    // The assistant gets the test's input, outputs and error, and answers about the input.
+    await panel(page).getByRole("button", { name: "Ask AI why this test fails" }).click();
+    const ai = page.getByRole("region", { name: "AI Assistant" });
+    await expect(ai.getByRole("log", { name: "Conversation" })).toContainText("Why does Test 1 fail?");
+    await expect(ai.getByRole("button", { name: "Regenerate" })).toBeVisible({ timeout: 90_000 });
+    if (shots) await page.screenshot({ path: `${shots}/tests-ask-ai.png` });
+    await page.getByRole("button", { name: "AI Assistant" }).click();
+  }
+
+  // The empty input box of a new test shows the format too.
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  await expect(panel(page).getByRole("textbox", { name: /^Input/ })).toHaveAttribute("placeholder", "Reads arr: how many, then the values, then n");
+  await panel(page).getByRole("button", { name: "Delete test" }).click();
+
+  // Adding the missing value makes it pass.
+  await list(page).getByRole("option", { name: /Test 1/ }).click();
+  await fillTest(page, "5\n1 2 3 4 5\n4", "3");
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 60_000 });
+});

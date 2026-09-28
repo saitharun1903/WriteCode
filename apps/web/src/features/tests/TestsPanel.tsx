@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { Check, Circle, CircleCheck, CircleDashed, CircleDot, CircleX, Copy, FlaskConical, Loader2, OctagonAlert, Play, Plus, Square, Timer, Trash2, Wand2 } from "lucide-react";
+import { Check, Circle, CircleCheck, CircleDashed, CircleDot, CircleX, Copy, FlaskConical, Loader2, OctagonAlert, Play, Plus, Sparkles, Square, Timer, Trash2, Wand2 } from "lucide-react";
 import { READ_INPUT_EXAMPLE, TEST_LIMITS, basename, readsInput, type TestCase } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -12,7 +12,8 @@ import { cn } from "@/lib/cn";
 import { diffRows, firstCharDiff, judge, type Verdict } from "./compare";
 import { toast } from "@/components/ui/toast";
 import { writeFile } from "@/features/editor/write-file";
-import { readInputFor } from "./read-input";
+import { askAssistant } from "@/features/commands/registry";
+import { describeReads, readInputFor } from "./read-input";
 import { entryOf, useLastRunAsTest, useTests, type TestOutcome } from "./store";
 
 const EMPTY: TestCase[] = [];
@@ -245,8 +246,8 @@ function IgnoresInputNotice() {
     const filled = !ws.project?.stdin.trim();
     if (filled) ws.setStdin(rewrite.input);
     toast.success(
-      `${basename(entry)} now reads ${rewrite.names.join(", ")} from input`,
-      filled ? "Your values are in Program Input, so it prints the same as before. Ctrl+Z undoes the change." : "Ctrl+Z undoes the change.",
+      `${basename(entry)} now reads its input`,
+      `It reads ${describeReads(project.language, rewrite.code).join(", then ")}. Update test inputs to match. Ctrl+Z undoes it.`,
     );
   };
   const copy = async () => {
@@ -291,6 +292,15 @@ function IgnoresInputNotice() {
   );
 }
 
+/** What the entry file reads from input, in order, from its current code. */
+function useReads(): string[] {
+  const project = useWorkspace((s) => s.project);
+  const entry = project ? entryOf(project) : "";
+  const source = project?.files.find((f) => f.path === entry)?.content ?? "";
+  const language = project?.language ?? "";
+  return useMemo(() => describeReads(language, source), [language, source]);
+}
+
 function TestDetail({ test, number }: { test: TestCase; number: number }) {
   const outcome = useTests((s) => s.outcomes[test.id]);
   const phase = useTests((s) => s.phase);
@@ -299,6 +309,7 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
   const tests = useWorkspace((s) => s.project?.tests ?? EMPTY);
   const shown = shownState(test, outcome);
   const look = LOOK[shown];
+  const reads = useReads();
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
@@ -333,7 +344,7 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
       {/* Side by side when there is room: what goes in, what should come out, what came out. */}
       <div className="@container p-3">
         <div className="grid grid-cols-2 items-start gap-3 @[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
-          <Field label="Input" value={test.input} onChange={(input) => update(test.id, { input })} placeholder="What the program reads" />
+          <Field label="Input" value={test.input} onChange={(input) => update(test.id, { input })} placeholder={reads.length ? `Reads ${reads.join(", then ")}` : "What the program reads"} />
           <Field
             label="Expected output"
             value={test.expected}
@@ -346,7 +357,7 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
                 {compileError}
               </Block>
             ) : outcome?.state === "done" && outcome.result ? (
-              <Result test={test} outcome={outcome} shown={shown} />
+              <Result test={test} number={number} outcome={outcome} shown={shown} reads={reads} />
             ) : (
               <div className="hidden h-[118px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong/70 text-xs text-fg-subtle @[900px]:mt-[22px] @[900px]:flex">
                 {outcome ? (
@@ -377,8 +388,26 @@ function Block({ title, tone, children, action }: { title: string; tone?: "dange
   );
 }
 
-function Result({ test, outcome, shown }: { test: TestCase; outcome: TestOutcome; shown: Shown }) {
+const clip = (text: string, max = 1500) => (text.length > max ? `${text.slice(0, max)}\n…` : text);
+
+function Result({ test, number, outcome, shown, reads }: { test: TestCase; number: number; outcome: TestOutcome; shown: Shown; reads: string[] }) {
   const r = outcome.result!;
+  const inputProblem = !!r.message && /needed another value|wrong kind|expected a whole number|more input than/.test(r.message);
+  const failing = shown === "failed" || shown === "crashed" || shown === "time-limit" || shown === "error";
+  const askAi = () => {
+    const parts = [
+      `Test ${number} of my program fails (${LOOK[shown].label.toLowerCase()}).`,
+      `Input:\n\`\`\`\n${clip(test.input) || "(empty)"}\n\`\`\``,
+      test.expected.trim() ? `Expected output:\n\`\`\`\n${clip(test.expected)}\n\`\`\`` : "",
+      `Actual output:\n\`\`\`\n${clip(r.stdout) || "(nothing)"}\n\`\`\``,
+      r.stderr ? `Error output:\n\`\`\`\n${clip(r.stderr)}\n\`\`\`` : "",
+      reads.length ? `The program reads, in order: ${reads.join(", then ")}.` : "",
+      test.expected.trim()
+        ? "What is wrong, and how do I fix it? If the test's input is what's wrong, give the corrected input, and trace the program on it step by step to confirm it prints exactly the expected output before you answer."
+        : "What is wrong, and how do I fix it? If the test's input is what's wrong, give the corrected input.",
+    ];
+    askAssistant(parts.filter(Boolean).join("\n\n"), `Why does Test ${number} fail?`);
+  };
   const update = useTests((s) => s.update);
   const rows = useMemo(() => diffRows(test.expected, r.stdout), [test.expected, r.stdout]);
   const useOutput = (
@@ -404,6 +433,21 @@ function Result({ test, outcome, shown }: { test: TestCase; outcome: TestOutcome
       )}
 
       {r.message && shown !== "passed" && <p className={cn("text-xs", shown === "time-limit" ? "text-warning" : "text-fg-subtle")}>{r.message}</p>}
+      {inputProblem && reads.length > 0 && (
+        <p className="rounded-md bg-hover px-3 py-2 text-xs text-fg">
+          <span className="text-fg-subtle">This program reads </span>
+          {reads.join(", then ")}
+        </p>
+      )}
+      {failing && (
+        <button
+          type="button"
+          onClick={askAi}
+          className="flex w-fit items-center gap-1.5 rounded-full border border-[#8a7cf5]/60 px-2.5 py-1 text-xs text-fg transition-colors hover:bg-[#8a7cf5]/15"
+        >
+          <Sparkles className="size-3.5 text-[#8a7cf5]" /> Ask AI why this test fails
+        </button>
+      )}
       {r.stderr && (
         <Block title={shown === "crashed" ? `Error output · exit code ${r.exitCode ?? "unknown"}` : "Error output"} tone={shown === "crashed" ? "danger" : undefined}>
           {r.stderr}

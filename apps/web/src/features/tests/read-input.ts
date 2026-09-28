@@ -192,3 +192,57 @@ export function readInputFor(language: string, code: string): ReadInputResult | 
   if (language === "python") return pythonReadInput(code);
   return null;
 }
+
+/**
+ * What a program reads from its input, in order, worked out from its code so
+ * a test's input can be written to match: e.g. ["arr: how many, then the
+ * values", "n"]. Java looks at main; Python at the whole file. Reads it cannot
+ * name (inside expressions) are listed as "a value".
+ */
+export function describeReads(language: string, code: string): string[] {
+  const out: string[] = [];
+  if (language === "java") {
+    const body = javaMainBody(code);
+    if (!body) return out;
+    const inner = blankJava(code.slice(body.start, body.end));
+    const sized = new Map<string, string>(); // array -> its size variable
+    const counted = new Set<string>(); // arrays whose size was read from input
+    const kind = (m: string) => (m === "nextLine" ? " (a line of text)" : m === "next" ? " (a word)" : "");
+    for (const line of inner.split("\n")) {
+      const withCount = /(\w+)\s*=\s*new\s+\w+\s*\[\s*\w+\.next\w*\(\)\s*\]/.exec(line);
+      if (withCount) {
+        counted.add(withCount[1]!);
+        out.push(`${withCount[1]}: how many, then the values`);
+        continue;
+      }
+      const sizedBy = /(\w+)\s*=\s*new\s+\w+\s*\[\s*(\w+)\s*\]/.exec(line);
+      if (sizedBy) sized.set(sizedBy[1]!, sizedBy[2]!);
+      const element = /(\w+)\s*\[[^\]]+\]\s*=\s*\w+\.next\w*\(\)/.exec(line);
+      if (element) {
+        if (!counted.has(element[1]!)) out.push(`${element[1]}: ${sized.get(element[1]!) ?? "several"} values`);
+        continue;
+      }
+      for (const m of line.matchAll(/(?:(\w+)\s*=\s*)?\b\w+\.(nextInt|nextLong|nextDouble|nextFloat|nextShort|nextByte|nextBoolean|nextLine|next)\(\)/g)) {
+        out.push(m[1] ? `${m[1]}${kind(m[2]!)}` : "a value");
+      }
+    }
+    return out;
+  }
+  if (language === "python") {
+    for (const raw of code.split("\n")) {
+      const line = raw.replace(/#.*$/, "");
+      const many = /^\s*([\w\s,]+?)\s*=\s*map\(\w+,\s*input\(\)\.split\(\)\)/.exec(line);
+      if (many) {
+        out.push(`${many[1]!.split(",").map((s) => s.trim()).join(" ")} on one line`);
+        continue;
+      }
+      const list = /^\s*(\w+)\s*=\s*(?:list\(map\(\w+,\s*input\(\)\.split\(\)\)\)|input\(\)\.split\(\))/.exec(line);
+      if (list) {
+        out.push(`${list[1]}: values on one line`);
+        continue;
+      }
+      for (const m of line.matchAll(/(?:(\w+)\s*=\s*)?(?:(int|float)\()?input\(\)/g)) out.push(m[1] ? `${m[1]}${m[2] ? "" : " (a line of text)"}` : "a value");
+    }
+  }
+  return out;
+}

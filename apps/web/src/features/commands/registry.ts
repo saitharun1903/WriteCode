@@ -78,9 +78,9 @@ export function openAssistant() {
 }
 
 /** Opens the assistant and asks `prompt` about the current project. */
-export function askAssistant(prompt: string) {
+export function askAssistant(prompt: string, display?: string) {
   openAssistant();
-  void useAssistant.getState().ask(prompt);
+  void useAssistant.getState().ask(prompt, display);
 }
 
 /** The project's last run finished with a problem (compile error, exception, limit...). */

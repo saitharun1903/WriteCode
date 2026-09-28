@@ -82,7 +82,7 @@ const POLICY_HINTS: { pattern: RegExp; hint: string }[] = [
  * Explains a failed run from its exit status and real stderr: which signal
  * ended it, or which sandbox policy it ran into. Never replaces the output.
  */
-export function explainRuntimeError(exitCode: number | null | undefined, stderr: string): string | undefined {
+export function explainRuntimeError(exitCode: number | null | undefined, stderr: string, files: readonly ProjectSource[] = []): string | undefined {
   const parts: string[] = [];
   if (exitCode !== null && exitCode !== undefined && exitCode > 128 && exitCode !== 137) {
     const sig = exitCode - 128;
@@ -92,7 +92,7 @@ export function explainRuntimeError(exitCode: number | null | undefined, stderr:
   const policy = POLICY_HINTS.find(({ pattern }) => pattern.test(tail));
   if (policy) parts.push(policy.hint);
   else {
-    const plain = explainException(tail);
+    const plain = explainException(tail, files);
     if (plain) parts.push(plain);
   }
   return parts.length ? parts.join(" ") : undefined;
@@ -169,12 +169,63 @@ function short(type: string): string {
   return name.slice(name.lastIndexOf("$") + 1) || name;
 }
 
+export interface ProjectSource {
+  path: string;
+  content: string;
+}
+
+/**
+ * Where in the user's own files the program crashed: the innermost Java stack
+ * frame or Python traceback entry that points at a project file, with the
+ * source line. Library frames (Scanner.java, Integer.java...) are skipped.
+ */
+export function crashLocation(stderr: string, files: readonly ProjectSource[]): { file: string; line: number; text: string } | null {
+  if (!files.length) return null;
+  const find = (printed: string) => {
+    const path = printed.replace(/^\/?workspace\//, "");
+    const exact = files.find((f) => f.path === path);
+    if (exact) return exact;
+    const named = files.filter((f) => f.path.split("/").pop() === path.split("/").pop());
+    return named.length === 1 ? named[0] : undefined;
+  };
+  const at = (printed: string, line: number) => {
+    const file = find(printed);
+    const text = file?.content.split("\n")[line - 1]?.trim();
+    return file && text ? { file: file.path, line, text } : null;
+  };
+  // Java: innermost frame first.
+  for (const m of stderr.matchAll(/^\s*at [\w$.<>/]+\(([\w$-]+\.java):(\d+)\)/gm)) {
+    const hit = at(m[1]!, Number(m[2]));
+    if (hit) return hit;
+  }
+  // Python: innermost entry last.
+  const py = [...stderr.matchAll(/File "([^"]+)", line (\d+)/g)].reverse();
+  for (const m of py) {
+    const hit = at(m[1]!, Number(m[2]));
+    if (hit) return hit;
+  }
+  return null;
+}
+
 /** Plain explanation of the uncaught exception at the end of `stderr`, if it is a common one. */
-export function explainException(stderr: string): string | undefined {
+export function explainException(stderr: string, files: readonly ProjectSource[] = []): string | undefined {
   // Java prints the uncaught exception first ("Exception in thread ..."); Python prints it last.
   const lines = stderr.trimEnd().split("\n");
   const javaHeader = lines.find((l) => /^Exception in thread /.test(l));
   const header = javaHeader ?? [...lines].reverse().find((l) => /^[A-Za-z_][\w.]*(Error|Exception)\b/.test(l)) ?? "";
+  // Running out of input, or reading the wrong kind of value, is about one line of the user's code: name it.
+  const at = crashLocation(stderr, files);
+  if (at) {
+    const where = `Line ${at.line} (${at.text})`;
+    if (/NoSuchElementException|EOFError: EOF when reading a line/.test(header)) {
+      return `${where} needed another value, but the input had no more. Check that the input gives every value the program reads, in the same order.`;
+    }
+    if (/InputMismatchException/.test(header)) {
+      return `${where} read a value of the wrong kind, for example a word where a number was expected. Check the order of the values in the input.`;
+    }
+    const bad = /ValueError: invalid literal for int\(\) with base 10: '([^']*)'/.exec(header);
+    if (bad) return `${where} expected a whole number but read '${bad[1]}'. Check the order of the values in the input.`;
+  }
   for (const [pattern, explain] of EXCEPTIONS) {
     const m = pattern.exec(header);
     if (m) return explain(m);

@@ -16,6 +16,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** User questions: a short version shown in the chat when the full question carries long details. */
+  display?: string;
   /** Assistant message still streaming. */
   pending?: boolean;
   /** Why the answer failed, shown instead of (or after) the text. */
@@ -48,7 +50,8 @@ interface AssistantState {
   effort: AssistantEffort;
   setEffort: (effort: AssistantEffort) => void;
   checkAvailability: () => Promise<void>;
-  ask: (text: string) => Promise<void>;
+  /** `display` is what the chat shows for the question when `text` carries long details (code, logs). */
+  ask: (text: string, display?: string) => Promise<void>;
   /** Asks the previous question again after a failure. */
   retry: () => void;
   stop: () => void;
@@ -211,7 +214,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     }
   },
 
-  ask: async (question) => {
+  ask: async (question, display) => {
     const text = question.trim();
     const context = buildContext();
     if (!text || !context || get().streaming) return;
@@ -221,7 +224,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     set({
       projectId,
       streaming: true,
-      messages: [...earlier, { id: nextId(), role: "user", text }, { id: answerId, role: "assistant", text: "", pending: true, startedAt: Date.now(), effort: get().effort }],
+      messages: [...earlier, { id: nextId(), role: "user", text, ...(display ? { display } : {}) }, { id: answerId, role: "assistant", text: "", pending: true, startedAt: Date.now(), effort: get().effort }],
     });
 
     // Earlier turns give follow-up questions their meaning; failed answers are left out.
@@ -276,7 +279,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     if (!lastUser || get().streaming) return;
     // Drop the failed exchange and ask again.
     set({ messages: msgs.slice(0, msgs.lastIndexOf(lastUser)) });
-    void get().ask(lastUser.text);
+    void get().ask(lastUser.text, lastUser.display);
   },
 
   stop: () => controller?.abort(),
