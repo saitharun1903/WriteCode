@@ -24,7 +24,7 @@ function fromCommands(ids: (string | "-")[]): MenuEntry[] {
 }
 
 const MENUS: { label: string; items: (string | "-")[] }[] = [
-  { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
+  { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "file.import", "file.importFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
   { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format", "edit.goToLine"] },
   { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.visualize", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
   { label: "Run", items: ["run.execute", "run.currentFile", "debug.startOrContinue", "run.visualize", "run.cancel", "-", "run.clearOutput", "view.input"] },

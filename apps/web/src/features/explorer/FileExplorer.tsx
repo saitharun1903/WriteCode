@@ -5,10 +5,12 @@ import {
   Copy,
   FilePlus2,
   FolderPlus,
+  FolderUp,
   ListCollapse,
   Pencil,
   Play,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { basename, buildTree, isWithin, parentOf, validateName, type TreeNode } from "@cw/shared";
@@ -17,6 +19,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ContextMenu, type MenuEntry } from "@/components/ui/menu";
 import { EmptyState, PanelHeader } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/toast";
+import { importFromDrop, importPicker } from "@/features/projects/ImportDialog";
 import { useWorkspace } from "@/features/projects/store";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
@@ -57,6 +60,7 @@ export function FileExplorer() {
   // Inline creation lives in the UI store so menus and the command palette can start it too.
   const creating = useUI((s) => s.pendingCreate);
 
+  const [importing, setImporting] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [focused, setFocused] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -183,6 +187,8 @@ export function FileExplorer() {
     const entries: MenuEntry[] = [
       { label: "New File", icon: <FilePlus2 />, onSelect: () => startCreate(dir, "file") },
       { label: "New Folder", icon: <FolderPlus />, onSelect: () => startCreate(dir, "folder") },
+      { label: "Import Files…", icon: <Upload />, onSelect: () => importPicker.files?.() },
+      { label: "Import Folder…", icon: <FolderUp />, onSelect: () => importPicker.folder?.() },
     ];
     if (!node) return entries;
     entries.push({ kind: "separator" });
@@ -228,8 +234,36 @@ export function FileExplorer() {
     if (targetDir) toggle(targetDir, true);
   };
 
+  // Files dragged in from the desktop (not a move inside the tree) are imported.
+  const fromDesktop = (e: React.DragEvent) => e.dataTransfer.types.includes("Files") && !e.dataTransfer.types.includes("application/x-cw-path");
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      onDragOverCapture={(e) => {
+        if (!fromDesktop(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
+        setImporting(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImporting(false);
+      }}
+      onDropCapture={(e) => {
+        if (!fromDesktop(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setImporting(false);
+        importFromDrop(e.dataTransfer);
+      }}
+    >
+      {importing && (
+        <div className="pointer-events-none absolute inset-1.5 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-accent bg-accent-soft/40 text-sm text-fg">
+          <Upload className="size-5 text-accent" />
+          Drop to import into the project
+        </div>
+      )}
       <PanelHeader
         title="Project"
         actions={
@@ -239,6 +273,9 @@ export function FileExplorer() {
             </IconButton>
             <IconButton label="New Folder" size="sm" onClick={() => startCreate("", "folder")}>
               <FolderPlus />
+            </IconButton>
+            <IconButton label="Import Files" size="sm" onClick={() => importPicker.files?.()}>
+              <Upload />
             </IconButton>
             <IconButton label="Collapse Folders" size="sm" onClick={() => setExpanded(new Set())}>
               <ListCollapse />

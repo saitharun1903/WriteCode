@@ -176,3 +176,44 @@ test("automatic imports: using Scanner adds its import, and Ctrl+Z takes back ju
   await expect.poll(() => modelText(page)).not.toContain("import java.util.Scanner;");
   expect(await modelText(page)).toContain("Scanner in = new Scanner(System.in);");
 });
+
+test("import files: review what is added, replaced and skipped, then they are in the project", async ({ page }) => {
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(editorText(page)).toContainText("Hello World");
+
+  await page.getByLabel("Choose files to import").setInputFiles([
+    { name: "Helper.java", mimeType: "text/x-java", buffer: Buffer.from("public class Helper {\n    static int twice(int x) {\n        return 2 * x;\n    }\n}\n") },
+    { name: "Main.java", mimeType: "text/x-java", buffer: Buffer.from('public class Main {\n    public static void main(String[] args) {\n        System.out.println(Helper.twice(21));\n    }\n}\n') },
+    { name: "logo.png", mimeType: "image/png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0]) },
+  ]);
+  const dialog = page.getByRole("dialog", { name: "Import 2 files" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("list", { name: "Files to import" })).toContainText("Helper.java");
+  await expect(dialog.getByRole("list", { name: "Files to import" }).getByRole("listitem").filter({ hasText: "Main.java" })).toContainText("replaces");
+  await expect(dialog.getByRole("list", { name: "Skipped files" })).toContainText("logo.png");
+  await dialog.getByRole("button", { name: "Import" }).click();
+
+  await expect(page.getByRole("treeitem", { name: /Helper\.java/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Helper\.java/ })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("treeitem", { name: /Main\.java/ }).click();
+  await expect(editorText(page)).toContainText("Helper.twice(21)");
+});
+
+test("dropping files from the desktop onto the Project panel imports them", async ({ page }) => {
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Python project/ }).click();
+  await expect(editorText(page)).toContainText("Hello");
+  const data = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["def add(a, b):\n    return a + b\n"], "utils.py", { type: "text/x-python" }));
+    return dt;
+  });
+  const tree = page.getByRole("tree", { name: "Project files" });
+  await tree.dispatchEvent("dragover", { dataTransfer: data });
+  await expect(page.getByText("Drop to import into the project")).toBeVisible();
+  await tree.dispatchEvent("drop", { dataTransfer: data });
+  const dialog = page.getByRole("dialog", { name: "Import 1 file" });
+  await dialog.getByRole("button", { name: "Import" }).click();
+  await expect(page.getByRole("treeitem", { name: /utils\.py/ })).toBeVisible();
+});

@@ -9,6 +9,7 @@ import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSnapshots } from "@/features/history/snapshot-store";
 import { useTests } from "@/features/tests/store";
+import { importPicker } from "@/features/projects/ImportDialog";
 import { DEFAULT_SETTINGS, resolveTheme, useSettings, type BottomTab, type SideView } from "@/features/settings/store";
 import { useUI } from "@/features/workspace/ui-store";
 
@@ -334,6 +335,20 @@ export const COMMANDS: Command[] = [
       const { activeFile, closeTab } = useWorkspace.getState();
       if (activeFile) closeTab(activeFile);
     },
+  },
+  {
+    id: "file.import",
+    title: "Import Files…",
+    category: "File",
+    enabled: hasProject,
+    run: () => importPicker.files?.(),
+  },
+  {
+    id: "file.importFolder",
+    title: "Import Folder…",
+    category: "File",
+    enabled: hasProject,
+    run: () => importPicker.folder?.(),
   },
   {
     id: "file.setEntry",

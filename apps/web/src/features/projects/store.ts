@@ -5,6 +5,7 @@ import { getLanguage, isWithin, rebase, type Project, type ProjectSummary, type 
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
+import { applyImport, type PlannedFile } from "./import";
 import * as ops from "./operations";
 
 type SaveState = "saved" | "pending" | "saving" | "error";
@@ -44,6 +45,8 @@ interface WorkspaceState {
   clearBreakpoints: () => void;
   setStdin: (stdin: string) => void;
   setTests: (tests: TestCase[]) => void;
+  /** Adds imported files, replacing same-named ones, and opens the first new source file. */
+  importFiles: (files: PlannedFile[]) => void;
   /** Records that the open project was run or debugged, which makes it recent work. */
   markRun: () => void;
   flush: () => Promise<void>;
@@ -393,6 +396,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (project && project.breakpoints && Object.keys(project.breakpoints).length) {
         commit({ ...project, breakpoints: {}, updatedAt: Date.now() });
       }
+    },
+
+    importFiles(files) {
+      const project = get().project;
+      if (!project || !files.length) return;
+      commit(applyImport(project, files));
+      const lang = getLanguage(project.language);
+      const first = files.find((f) => lang?.extensions.some((e) => f.path.toLowerCase().endsWith(e))) ?? files[0]!;
+      get().openFile(first.path);
     },
 
     setTests(tests) {
