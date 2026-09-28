@@ -217,3 +217,43 @@ test("dropping files from the desktop onto the Project panel imports them", asyn
   await dialog.getByRole("button", { name: "Import" }).click();
   await expect(page.getByRole("treeitem", { name: /utils\.py/ })).toBeVisible();
 });
+
+test("settings: sections, live font preview, and turning automatic imports off is respected", async ({ page }) => {
+  const shots = process.env.E2E_SHOTS;
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(editorText(page)).toContainText("Hello World");
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog.getByRole("radiogroup", { name: "Theme" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Larger" }).click();
+  await expect(dialog.getByText("15px")).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/settings-appearance.png` });
+  await dialog.getByRole("button", { name: "Coding help" }).click();
+  if (shots) await page.screenshot({ path: `${shots}/settings-help.png` });
+  const auto = dialog.getByRole("switch", { name: "Add imports automatically" });
+  await expect(auto).toHaveAttribute("aria-checked", "true");
+  await auto.click();
+  await expect(auto).toHaveAttribute("aria-checked", "false");
+  await dialog.getByRole("button", { name: "Shortcuts" }).click();
+  await dialog.getByRole("textbox", { name: "Search shortcuts" }).fill("run");
+  await expect(dialog.getByRole("list", { name: "Keyboard shortcuts" })).toContainText("Run All Tests");
+  if (shots) await page.screenshot({ path: `${shots}/settings-shortcuts.png` });
+  await dialog.getByRole("button", { name: "Done" }).click();
+
+  await page.evaluate(() => {
+    const ed = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco.editor.getEditors()[0]!;
+    ed.setPosition({ lineNumber: 3, column: 100 });
+    ed.focus();
+  });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Scanner in = new Scanner(System.in);", { delay: 20 });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(1500);
+  expect(await modelText(page)).not.toContain("import java.util.Scanner;");
+  // The choice is remembered.
+  await page.reload();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Coding help" }).click();
+  await expect(page.getByRole("switch", { name: "Add imports automatically" })).toHaveAttribute("aria-checked", "false");
+});
