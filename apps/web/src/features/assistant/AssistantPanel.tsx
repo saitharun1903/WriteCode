@@ -1,10 +1,13 @@
 "use client";
 
 import {
+  ArrowRight,
   ArrowUp,
   BookOpen,
   Bug,
   Check,
+  CircleAlert,
+  CircleCheck,
   ChevronRight,
   Copy,
   FileCode2,
@@ -23,8 +26,10 @@ import {
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { motion } from "motion/react";
 import { IconButton } from "@/components/ui/button";
 import { runCommand } from "@/features/commands/registry";
+import { FileIcon } from "@/features/explorer/file-icon";
 import { editorBridge } from "@/features/editor/bridge";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -391,7 +396,7 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-accent-soft px-3.5 py-2 text-[13px] leading-relaxed text-fg">{message.text}</div>
+        <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-md bg-[color-mix(in_srgb,#8a7cf5_16%,var(--surface-2))] px-3.5 py-2 text-[13.5px] leading-relaxed text-fg">{message.text}</div>
       </div>
     );
   }
@@ -437,6 +442,8 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
 
 interface Suggestion {
   icon: ReactNode;
+  /** Icon tile colour. */
+  tint: string;
   label: string;
   hint: string;
   prompt: string;
@@ -453,71 +460,115 @@ function useSuggestions(): Suggestion[] {
   const out: Suggestion[] = [];
   const status = run && run.projectId === projectId && !isRunning(run) ? run.result?.status : undefined;
   if (status && status !== "SUCCESS" && status !== "CANCELLED") {
-    out.push({ icon: <Wrench />, label: "Fix my program", hint: "Find what went wrong in the last run and fix it", prompt: "My last run didn't work. What went wrong? Fix it.", primary: true });
+    out.push({ icon: <Wrench />, tint: "", label: "Fix my program", hint: "Find what went wrong in the last run and fix it", prompt: "My last run didn't work. What went wrong? Fix it.", primary: true });
   }
   if (vizOpen && hasTrace) {
-    out.push({ icon: <Workflow />, label: "Explain this step", hint: "What the line that just ran did", prompt: "Explain what the line that just ran did in the visualizer, using the values shown, and what happens next.", primary: !out.length });
+    out.push({ icon: <Workflow />, tint: "", label: "Explain this step", hint: "What the line that just ran did", prompt: "Explain what the line that just ran did in the visualizer, using the values shown, and what happens next.", primary: !out.length });
   }
   const file = activeFile ?? "this code";
-  out.push({ icon: <BookOpen />, label: `Explain ${file}`, hint: "Step by step, with real values", prompt: `Explain what ${file} does, step by step, in simple words.` });
-  out.push({ icon: <Bug />, label: "Find bugs", hint: "Only real problems, with fixes", prompt: `Check ${file} for bugs or edge cases that would crash or give wrong results. Only mention real problems.` });
-  out.push({ icon: <Lightbulb />, label: "Improve it", hint: "Clearer or faster, same behaviour", prompt: "How could I make this code clearer or more efficient without changing what it does?" });
+  out.push({ icon: <BookOpen />, tint: "bg-[#5b8def]/12 text-[#5b8def]", label: `Explain ${file}`, hint: "Step by step, with real values", prompt: `Explain what ${file} does, step by step, in simple words.` });
+  out.push({ icon: <Bug />, tint: "bg-[#e5576d]/12 text-[#e5576d]", label: "Find bugs", hint: "Only real problems, with fixes", prompt: `Check ${file} for bugs or edge cases that would crash or give wrong results. Only mention real problems.` });
+  out.push({ icon: <Lightbulb />, tint: "bg-[#e0a526]/14 text-[#d09514]", label: "Improve it", hint: "Clearer or faster, same behaviour", prompt: "How could I make this code clearer or more efficient without changing what it does?" });
   return out;
 }
 
+/** Enters once, a few pixels up, one item after another. */
+const rise = (i: number) => ({
+  initial: { opacity: 0, y: 6 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.28, delay: 0.04 * i, ease: [0.2, 0.8, 0.2, 1] as const },
+});
+
 function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
   const suggestions = useSuggestions();
+  const primary = suggestions.filter((s) => s.primary);
+  const rest = suggestions.filter((s) => !s.primary);
   return (
-    <div className="flex flex-1 flex-col justify-end gap-5 px-4 pb-4 pt-8">
-      <div>
-        <div className={cn("mb-3.5 flex size-11 items-center justify-center rounded-2xl text-white shadow-[0_10px_28px_-10px_#8a7cf5]", AI_GRADIENT)}>
-          <Sparkles className="size-5" />
+    <div className="relative flex flex-1 flex-col justify-end overflow-hidden px-4 pb-5 pt-10">
+      {/* A soft glow behind the mark gives the empty panel some depth without moving. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-16 bottom-40 size-80 rounded-full opacity-60 blur-3xl [background:radial-gradient(circle,color-mix(in_srgb,#8a7cf5_28%,transparent),transparent_65%)]"
+      />
+      <motion.div {...rise(0)} className="relative">
+        <div className={cn("relative mb-4 flex size-12 items-center justify-center rounded-[15px] text-white shadow-[0_12px_32px_-12px_#8a7cf5]", AI_GRADIENT)}>
+          <span aria-hidden className="absolute inset-0 rounded-[15px] ring-1 ring-inset ring-white/25" />
+          <span aria-hidden className="absolute inset-x-2 top-1 h-1/3 rounded-full bg-white/20 blur-[6px]" />
+          <Sparkles className="relative size-[22px]" />
         </div>
-        <p className="text-[16px] font-semibold tracking-tight text-fg">How can I help with your code?</p>
-      </div>
-      <div className="flex flex-col gap-2">
-        {suggestions.map((s) => (
-          <button
+        <h3 className="text-[19px] font-semibold tracking-[-0.01em] text-fg">
+          How can I <span className="bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea] bg-clip-text text-transparent">help</span> with your code?
+        </h3>
+      </motion.div>
+
+      <div className="relative mt-5 flex flex-col gap-2.5">
+        {primary.map((s, i) => (
+          <motion.button
+            {...rise(i + 1)}
             key={s.label}
             type="button"
             onClick={() => onPick(s.prompt)}
-            className={cn(
-              "group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all hover:-translate-y-px hover:shadow-sm",
-              s.primary ? "border-[#8a7cf5]/60 bg-[#8a7cf5]/10 hover:bg-[#8a7cf5]/15" : "border-line-strong hover:border-fg-faint hover:bg-hover",
-            )}
+            className="group relative rounded-2xl bg-gradient-to-r from-[#6d8cff]/70 via-[#8a7cf5]/70 to-[#c26cea]/70 p-px text-left shadow-[0_10px_30px_-18px_#8a7cf5]"
           >
-            <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg [&_svg]:size-3.5", s.primary ? "bg-[#8a7cf5] text-white" : "bg-hover text-fg-muted")}>{s.icon}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-[13px] font-medium text-fg">{s.label}</span>
-              {/* Only the suggestions tied to what just happened need a second line. */}
-              {s.primary && <span className="block truncate text-[11.5px] text-fg-subtle">{s.hint}</span>}
+            <span className="flex items-center gap-3 rounded-[15px] bg-surface-2 px-3.5 py-3 transition-colors group-hover:bg-[color-mix(in_srgb,var(--surface-2)_90%,#8a7cf5)]">
+              <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-[10px] text-white [&_svg]:size-4", AI_GRADIENT)}>{s.icon}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13.5px] font-medium text-fg">{s.label}</span>
+                <span className="block truncate text-[12px] text-fg-subtle">{s.hint}</span>
+              </span>
+              <ArrowRight className="size-4 shrink-0 text-[#8a7cf5] transition-transform group-hover:translate-x-0.5" />
             </span>
-          </button>
+          </motion.button>
         ))}
+        <motion.div {...rise(primary.length + 1)} className="overflow-hidden rounded-2xl border border-line-strong/70 bg-surface-2/70 backdrop-blur-sm">
+          {rest.map((s, i) => (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => onPick(s.prompt)}
+              className={cn("group flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-hover/70", i > 0 && "border-t border-line-strong/50")}
+            >
+              <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-[10px] [&_svg]:size-4", s.tint)}>{s.icon}</span>
+              <span className="min-w-0 flex-1 truncate text-[13.5px] text-fg">{s.label}</span>
+              <ArrowRight className="size-4 shrink-0 -translate-x-1 text-fg-faint opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100" />
+            </button>
+          ))}
+        </motion.div>
       </div>
     </div>
   );
 }
 
-/** What will be shared with the next question, so nothing is sent silently. */
-function ContextLine() {
+/** What will be shared with the next question, so nothing is sent silently. Shown as chips inside the composer. */
+function ContextChips() {
   const activeFile = useWorkspace((s) => s.activeFile);
   const fileCount = useWorkspace((s) => s.project?.files.length ?? 0);
   const projectId = useWorkspace((s) => s.project?.id);
   const run = useExecution((s) => s.run);
   const vizOpen = useSettings((s) => s.layout.bottomOpen && s.layout.bottomTab === "visualize");
   const vizStep = useVisualize((s) => (s.trace ? s.step + 1 : null));
-  const chips: string[] = [activeFile ? `${activeFile}${fileCount > 1 ? ` +${fileCount - 1}` : ""}` : `${fileCount} files`];
-  if (run && run.projectId === projectId && run.status !== "SUBMITTING") chips.push(`last run: ${(run.result?.status ?? run.status).toLowerCase().replace(/_/g, " ")}`);
-  if (vizOpen && vizStep) chips.push(`visualizer step ${vizStep}`);
+  const status = run && run.projectId === projectId && run.status !== "SUBMITTING" ? (run.result?.status ?? run.status) : null;
+  const failed = !!status && status !== "SUCCESS" && status !== "CANCELLED" && !isRunning(run);
+  const chip = "flex h-6 max-w-full items-center gap-1.5 rounded-lg bg-hover/80 px-2 text-[11.5px] text-fg-muted";
   return (
-    <div className="flex flex-wrap items-center gap-1 px-3.5 pb-1.5 text-[11px] text-fg-subtle" aria-label="Shared with the assistant">
-      <span>Sees</span>
-      {chips.map((c, i) => (
-        <span key={i} className="rounded-md bg-hover px-1.5 py-px font-mono text-fg-muted">
-          {c}
+    <div className="flex flex-wrap items-center gap-1.5 px-2.5 pt-2.5" aria-label="Shared with the assistant">
+      <span className={chip}>
+        {activeFile ? <FileIcon name={activeFile} /> : <FileCode2 className="size-3.5" />}
+        <span className="truncate">{activeFile ?? `${fileCount} files`}</span>
+        {activeFile && fileCount > 1 && <span className="text-fg-subtle">+{fileCount - 1}</span>}
+      </span>
+      {status && (
+        <span className={chip}>
+          {failed ? <CircleAlert className="size-3.5 text-danger" /> : <CircleCheck className="size-3.5 text-success" />}
+          <span>last run: {status.toLowerCase().replace(/_/g, " ")}</span>
         </span>
-      ))}
+      )}
+      {vizOpen && vizStep && (
+        <span className={chip}>
+          <Workflow className="size-3.5 text-[#8a7cf5]" />
+          visualizer step {vizStep}
+        </span>
+      )}
     </div>
   );
 }
@@ -718,15 +769,17 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
-          <div className="shrink-0 border-t border-line pt-2">
-            <ContextLine />
+          <div className="shrink-0 px-3 pb-3 pt-1">
+            {/* A hairline border that turns into the assistant's gradient while typing. */}
+            <div className="rounded-[18px] bg-line-strong/80 p-px shadow-[0_8px_24px_-16px_rgb(0_0_0/0.35)] focus-within:bg-gradient-to-r focus-within:from-[#6d8cff] focus-within:via-[#8a7cf5] focus-within:to-[#c26cea]">
             <form
-              className="mx-3 mb-1.5 flex flex-col rounded-2xl border border-line-strong bg-surface-2 shadow-sm transition-colors focus-within:border-[#8a7cf5]/70 focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,#8a7cf5_18%,transparent)]"
+              className="flex flex-col rounded-[17px] bg-surface-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 send(draft);
               }}
             >
+              <ContextChips />
               <textarea
                 ref={input}
                 rows={1}
@@ -741,12 +794,12 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                     send(draft);
                   }
                 }}
-                className="max-h-40 min-h-9 resize-none bg-transparent px-3.5 pb-1 pt-2.5 text-[13px] leading-5 text-fg outline-none placeholder:text-fg-faint"
+                className="max-h-40 min-h-10 resize-none bg-transparent px-3.5 pb-1 pt-2 text-[13.5px] leading-5 text-fg outline-none placeholder:text-fg-faint"
               />
               <div className="flex items-center justify-between gap-2 px-2 pb-2">
                 <EffortControl />
                 {streaming ? (
-                  <button type="button" aria-label="Stop" onClick={stop} className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fg text-canvas transition-transform hover:scale-105">
+                  <button type="button" aria-label="Stop" onClick={stop} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-fg text-canvas transition-transform hover:scale-105 active:scale-95">
                     <Square className="size-2.5 fill-current" />
                   </button>
                 ) : (
@@ -754,13 +807,17 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                     type="submit"
                     aria-label="Send question"
                     disabled={!draft.trim()}
-                    className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-white transition-all hover:scale-105 disabled:scale-100 disabled:opacity-30", AI_GRADIENT)}
+                    className={cn(
+                      "flex size-8 shrink-0 items-center justify-center rounded-full transition-all active:scale-95",
+                      draft.trim() ? cn("text-white shadow-[0_6px_16px_-6px_#8a7cf5] hover:brightness-110", AI_GRADIENT) : "bg-hover text-fg-faint",
+                    )}
                   >
                     <ArrowUp className="size-4" />
                   </button>
                 )}
               </div>
             </form>
+            </div>
           </div>
         </>
       )}

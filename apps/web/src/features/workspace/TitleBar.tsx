@@ -39,20 +39,30 @@ const MENUS: { label: string; items: (string | "-")[] }[] = [
 function AssistantButton() {
   const open = useSettings((s) => s.layout.assistantOpen);
   return (
-    <button
-      type="button"
-      aria-label="AI Assistant"
-      aria-pressed={open}
-      title="AI Assistant (Ctrl+Shift+A)"
-      onClick={() => runCommand("assistant.toggle")}
-      className={cn(
-        "mr-1 flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12.5px] font-medium transition-colors",
-        open ? "border-[#8a7cf5] bg-[#8a7cf5]/15 text-fg" : "border-line-strong text-fg-muted hover:border-[#8a7cf5] hover:text-fg",
-      )}
-    >
-      <Sparkles className="size-3.5 text-[#8a7cf5]" />
-      Ask AI
-    </button>
+    <Tooltip content="AI Assistant" shortcut="Mod+Shift+A">
+      <button
+        type="button"
+        aria-label="AI Assistant"
+        aria-pressed={open}
+        onClick={() => runCommand("assistant.toggle")}
+        className={cn(
+          "group rounded-full p-px transition-shadow",
+          open
+            ? "bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea] shadow-[0_6px_18px_-8px_#8a7cf5]"
+            : "bg-gradient-to-r from-[#6d8cff]/55 via-[#8a7cf5]/55 to-[#c26cea]/55 hover:from-[#6d8cff] hover:via-[#8a7cf5] hover:to-[#c26cea]",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors",
+            open ? "bg-[color-mix(in_srgb,var(--canvas)_82%,#8a7cf5)] text-fg" : "bg-canvas text-fg-muted group-hover:text-fg",
+          )}
+        >
+          <Sparkles className="size-3.5 text-[#8a7cf5]" />
+          Ask AI
+        </span>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -80,7 +90,7 @@ function RunControls() {
       : findEntryPoints(lang.id, project.files).map((e) => ({ file: e.file, label: e.mainClass ? `${e.label}  (${e.file})` : e.file }));
 
   return (
-    <div className="flex h-8 items-center rounded-[7px] border border-line-strong bg-surface-2 p-0.5">
+    <div className="flex h-[34px] items-center gap-0.5 rounded-[10px] border border-line-strong/80 bg-surface-2 p-[3px] shadow-[0_1px_2px_rgb(0_0_0/0.06)]">
       <DropdownMenu
         align="end"
         entries={[
@@ -98,7 +108,7 @@ function RunControls() {
         trigger={
           <button
             aria-label="Run configuration"
-            className="flex h-full max-w-48 items-center gap-1.5 rounded-[5px] px-2 text-sm text-fg hover:bg-hover data-[state=open]:bg-active"
+            className="flex h-full max-w-48 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-fg transition-colors hover:bg-hover data-[state=open]:bg-active"
           >
             <FileIcon name={project.entryFile || "file"} />
             <span className="truncate">{project.entryFile ? project.entryFile.split("/").pop() : "No entry file"}</span>
@@ -106,37 +116,32 @@ function RunControls() {
           </button>
         }
       />
-      <span aria-hidden className="mx-0.5 h-4 w-px bg-line-strong" />
       <Tooltip content="Run" shortcut="Mod+Enter">
         <button
           aria-label="Run program"
           disabled={running}
           onClick={() => runCommand("run.execute")}
-          className="flex h-full items-center gap-1.5 rounded-[5px] bg-[#1f8f4e] px-2.5 text-sm font-medium text-white transition-[filter] hover:brightness-110 active:brightness-95 disabled:opacity-45"
+          className="flex h-full items-center gap-1.5 rounded-[7px] bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-3 text-[13px] font-medium text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_2px_6px_-2px_rgb(31_143_78/0.6)] transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-45"
         >
           <Play className="size-3.5 fill-current" />
           Run
         </button>
       </Tooltip>
       {canDebug() && (
-        <IconButton label="Debug program" shortcut="F5" disabled={running} onClick={() => runCommand("debug.startOrContinue")} className="ml-0.5 size-7 text-success">
+        <IconButton label="Debug program" shortcut="F5" disabled={running} onClick={() => runCommand("debug.startOrContinue")} className="size-7 rounded-[7px] text-success">
           <Bug />
         </IconButton>
       )}
       {canVisualize() && (
-        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 text-accent">
+        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 rounded-[7px] text-accent">
           <Workflow />
         </IconButton>
       )}
-      <IconButton
-        label="Stop program"
-        shortcut="Shift+F5"
-        disabled={!running}
-        onClick={() => runCommand("run.cancel")}
-        className={cn("size-7", running && "text-danger")}
-      >
-        <Square className={cn(running && "fill-current")} />
-      </IconButton>
+      {running && (
+        <IconButton label="Stop program" shortcut="Shift+F5" onClick={() => runCommand("run.cancel")} className="size-7 rounded-[7px] text-danger animate-fade">
+          <Square className="fill-current" />
+        </IconButton>
+      )}
     </div>
   );
 }
@@ -148,7 +153,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
   useSettings((s) => s.layout);
 
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5 shadow-[0_1px_0_rgb(0_0_0/0.04)]">
+    <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5">
       <button
         onClick={() => useWorkspace.getState().closeProject()}
         className="flex h-8 items-center gap-2 rounded-[6px] pl-1 pr-2 hover:bg-hover"
@@ -193,7 +198,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
               { label: "Close project", onSelect: () => runCommand("project.close") },
             ]}
             trigger={
-              <button className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[6px] px-1.5 text-sm font-semibold text-fg hover:bg-hover data-[state=open]:bg-active">
+              <button className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active">
                 <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
                 <span className="truncate">{project.name}</span>
                 <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
@@ -207,9 +212,9 @@ export function TitleBar({ compact }: { compact: boolean }) {
         <div className="pointer-events-none absolute inset-x-0 flex justify-center">
           <button
             onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}
-            className="pointer-events-auto flex h-8 w-[min(420px,32vw)] items-center gap-2 rounded-[7px] border border-line-strong bg-surface-2 px-2.5 text-sm text-fg-subtle transition-colors hover:border-fg-faint hover:text-fg-muted"
+            className="pointer-events-auto flex h-[34px] w-[min(440px,32vw)] items-center gap-2.5 rounded-[10px] border border-line-strong/70 bg-surface-2 px-3 text-[13px] text-fg-subtle shadow-[inset_0_1px_2px_rgb(0_0_0/0.05)] transition-colors hover:border-accent/50 hover:text-fg-muted"
           >
-            <Search className="size-4" />
+            <Search className="size-4 text-fg-faint" />
             <span className="truncate">{project ? "Search files and actions" : "Search actions"}</span>
             <Kbd shortcut={project ? "Mod+P" : "Mod+Shift+P"} className="ml-auto" />
           </button>
@@ -218,8 +223,11 @@ export function TitleBar({ compact }: { compact: boolean }) {
 
       <div className="relative ml-auto flex items-center gap-1">
         {project && <RunControls />}
-        {project && <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />}
-        {project && !compact && <AssistantButton />}
+        {project && !compact && (
+          <span className="ml-2 mr-1">
+            <AssistantButton />
+          </span>
+        )}
         {compact && (
           <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand("workbench.commandPalette")}>
             <Search />
