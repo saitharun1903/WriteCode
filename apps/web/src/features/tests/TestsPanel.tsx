@@ -10,7 +10,10 @@ import { primaryShortcut } from "@/features/commands/registry";
 import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
 import { diffRows, firstCharDiff, judge, type Verdict } from "./compare";
-import { useLastRunAsTest, useTests, type TestOutcome } from "./store";
+import { toast } from "@/components/ui/toast";
+import { writeFile } from "@/features/editor/write-file";
+import { readInputFor } from "./read-input";
+import { entryOf, useLastRunAsTest, useTests, type TestOutcome } from "./store";
 
 const EMPTY: TestCase[] = [];
 
@@ -228,8 +231,24 @@ function IgnoresInputNotice() {
   const ignores = useMemo(() => !!project && !readsInput(project.language, project.files), [project]);
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
+  const entry = project ? entryOf(project) : "";
+  const source = project?.files.find((f) => f.path === entry)?.content ?? "";
+  const rewrite = useMemo(() => (project && ignores ? readInputFor(project.language, source) : null), [project, ignores, source]);
   if (!project || !ignores) return null;
   const example = READ_INPUT_EXAMPLE[project.language];
+
+  const apply = async () => {
+    if (!rewrite) return;
+    await writeFile(entry, rewrite.code);
+    const ws = useWorkspace.getState();
+    // The program ignored its input until now, so empty input is the only kind worth keeping.
+    const filled = !ws.project?.stdin.trim();
+    if (filled) ws.setStdin(rewrite.input);
+    toast.success(
+      `${basename(entry)} now reads ${rewrite.names.join(", ")} from input`,
+      filled ? "Your values are in Program Input, so it prints the same as before. Ctrl+Z undoes the change." : "Ctrl+Z undoes the change.",
+    );
+  };
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(example ?? "");
@@ -244,7 +263,17 @@ function IgnoresInputNotice() {
           <span className="font-medium">{basename(project.entryFile)} never reads its input</span>
           <span className="text-fg-muted">, so every test prints the same output.</span>
         </p>
-        {example && (
+        {rewrite && (
+          <button
+            type="button"
+            onClick={() => void apply()}
+            title={`Read ${rewrite.names.join(", ")} from input instead of fixed values`}
+            className="shrink-0 rounded-md bg-fg px-2.5 py-1 text-xs font-medium text-canvas transition-opacity hover:opacity-90"
+          >
+            Read from input
+          </button>
+        )}
+        {example && !rewrite && (
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-fg-muted hover:bg-hover hover:text-fg">
             {open ? "Hide" : "Show how"}
           </button>

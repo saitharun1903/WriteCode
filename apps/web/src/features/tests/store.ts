@@ -55,7 +55,7 @@ let generation = 0;
 const tests = (): TestCase[] => useWorkspace.getState().project?.tests ?? [];
 
 /** The file with the main function when the entry file has none (same rule as Run). */
-function entryOf(project: Project): string {
+export function entryOf(project: Project): string {
   if (anyFileIsRunnable(project.language)) return project.entryFile;
   const files = [...new Set(findEntryPoints(project.language, project.files).map((e) => e.file))];
   return files.length && !files.includes(project.entryFile) ? files[0]! : project.entryFile;

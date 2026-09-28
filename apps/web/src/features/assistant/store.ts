@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { AssistantContext, AssistantEffort, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep } from "@cw/shared";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
+import { writeFile } from "@/features/editor/write-file";
 import { API_URL } from "@/features/execution/api";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -69,21 +70,6 @@ export function editTarget(path: string): string | null {
 }
 
 /** Shows `path` in the editor, waiting (briefly) for the switch to happen. */
-async function showFile(path: string): Promise<boolean> {
-  if (editorBridge.currentPath() === path) return true;
-  useWorkspace.getState().openFile(path);
-  for (let i = 0; i < 60; i++) {
-    await new Promise((r) => requestAnimationFrame(r));
-    if (editorBridge.currentPath() === path) return true;
-  }
-  return false;
-}
-
-/** Writes new content through the editor (undoable, highlighted) when possible. */
-async function writeFile(path: string, content: string) {
-  if (!(await showFile(path)) || !editorBridge.applyContent(content)) useWorkspace.getState().updateFile(path, content);
-}
-
 let controller: AbortController | null = null;
 let counter = 0;
 const nextId = () => `m${Date.now().toString(36)}${counter++}`;

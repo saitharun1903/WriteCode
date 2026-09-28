@@ -16,6 +16,14 @@ export interface Settings {
   minimap: boolean;
   /** Save an execution history entry for every run. */
   recordHistory: boolean;
+  /** Add missing imports for well-known classes and modules while typing. */
+  autoImport: boolean;
+  /** Close brackets and quotes as they are typed. */
+  autoClose: boolean;
+  /** Show completion suggestions while typing (Ctrl+Space always works). */
+  suggestions: boolean;
+  /** Colour matching bracket pairs. */
+  bracketColors: boolean;
   layout: {
     sidebarOpen: boolean;
     bottomOpen: boolean;
@@ -32,6 +40,10 @@ export const DEFAULT_SETTINGS: Settings = {
   wordWrap: false,
   minimap: false,
   recordHistory: true,
+  autoImport: true,
+  autoClose: true,
+  suggestions: true,
+  bracketColors: false,
   layout: {
     sidebarOpen: true,
     bottomOpen: true,
@@ -67,10 +79,13 @@ interface SettingsState extends Settings {
   resetLayout: () => void;
 }
 
+/** Every setting except the layout, which has its own reset. */
+export const PREFERENCE_KEYS = ["theme", "fontSize", "tabSize", "wordWrap", "minimap", "recordHistory", "autoImport", "autoClose", "suggestions", "bracketColors"] as const;
+
 function persist(s: Settings) {
-  const { theme, fontSize, tabSize, wordWrap, minimap, recordHistory, layout } = s;
+  const saved = Object.fromEntries([...PREFERENCE_KEYS, "layout" as const].map((k) => [k, s[k]]));
   try {
-    localStorage.setItem(KEY, JSON.stringify({ theme, fontSize, tabSize, wordWrap, minimap, recordHistory, layout }));
+    localStorage.setItem(KEY, JSON.stringify(saved));
   } catch {}
 }
 

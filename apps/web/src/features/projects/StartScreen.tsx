@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownUp, ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Repeat2, Search, Trash2, Undo2 } from "lucide-react";
+import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LANGUAGES, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/primitives";
 import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
-import { EXAMPLES } from "./examples";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -50,58 +49,6 @@ export function LanguageMark({ id, size = 40, className }: { id: string; size?: 
     >
       {m.text}
     </span>
-  );
-}
-
-const EXAMPLE_ICONS: Record<string, React.ReactNode> = {
-  "binary-search": <Search />,
-  "bubble-sort": <ArrowDownUp />,
-  "reverse-linked-list": <Undo2 />,
-  fibonacci: <Repeat2 />,
-};
-
-/** Classic programs with their input and tests ready: open one and press Run, Visualize or Run all. */
-function Examples({ busy }: { busy: boolean }) {
-  const createExample = useWorkspace((s) => s.createExample);
-  const [opening, setOpening] = useState<string | null>(null);
-  const open = async (id: string, language: string) => {
-    setOpening(`${id}:${language}`);
-    await createExample(id, language);
-    setOpening(null);
-  };
-  return (
-    <section aria-labelledby="examples-heading" className="mt-12">
-      <h2 id="examples-heading" className="text-lg font-semibold tracking-tight text-fg">
-        Examples
-      </h2>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {EXAMPLES.map((ex) => (
-          <li key={ex.id} className="flex flex-col rounded-xl border border-line-strong bg-surface p-4">
-            <span className="flex size-9 items-center justify-center rounded-[10px] bg-accent-soft/60 text-accent [&_svg]:size-[18px]">{EXAMPLE_ICONS[ex.id]}</span>
-            <h3 className="mt-3 text-[15px] font-semibold text-fg">{ex.title}</h3>
-            <p className="mt-0.5 flex-1 text-sm text-fg-subtle">{ex.about}</p>
-            <div className="mt-3 flex gap-2">
-              {ex.versions.map((v) => {
-                const lang = getLanguage(v.language)!;
-                return (
-                  <button
-                    key={v.language}
-                    type="button"
-                    disabled={busy || !!opening}
-                    aria-label={`Open ${ex.title} in ${lang.name}`}
-                    onClick={() => void open(ex.id, v.language)}
-                    className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line-strong text-[13px] text-fg-muted transition-colors hover:border-accent hover:text-fg disabled:opacity-60"
-                  >
-                    <LanguageMark id={v.language} size={18} className="rounded-[5px]" />
-                    {lang.name}
-                  </button>
-                );
-              })}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 
@@ -183,7 +130,6 @@ export function StartScreen() {
           </section>
         )}
 
-        <Examples busy={!!busy} />
       </div>
     </div>
   );

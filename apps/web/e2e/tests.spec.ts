@@ -186,18 +186,23 @@ test("a program that ignores its input is called out; once it reads input, each 
   await fillTest(page, "8\n3 4 6 7 9 12 16 17\n5", "-1");
   const note = panel(page).getByRole("note", { name: "Program ignores input" });
   await expect(note).toContainText("Main.java never reads its input");
-  await note.getByRole("button", { name: "Show how" }).click();
-  await expect(note).toContainText("new Scanner(System.in)");
   if (shots) await page.screenshot({ path: `${shots}/tests-ignores-input.png` });
 
-  await page.getByRole("tab", { name: /Main\.java/ }).click();
-  await setCode(
-    page,
-    SEARCH(
-      "        Scanner in = new Scanner(System.in);\n        int n = in.nextInt();\n        int[] arr = new int[n];\n        for (int i = 0; i < n; i++) arr[i] = in.nextInt();\n        System.out.println(search(arr, in.nextInt()));",
-      "import java.util.Scanner;\n\n",
-    ),
+  // One click rewrites the fixed values to read from input, adds the Scanner and its import,
+  // and puts the old values in Program Input so a plain Run prints what it did before.
+  await note.getByRole("button", { name: "Read from input" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { monaco: { editor: { getModels(): { getValue(): string }[] } } }).monaco.editor.getModels()[0]!.getValue())).toContain(
+    "int[] arr = new int[in.nextInt()];",
   );
+  const code = await page.evaluate(() => (window as unknown as { monaco: { editor: { getModels(): { getValue(): string }[] } } }).monaco.editor.getModels()[0]!.getValue());
+  expect(code).toMatch(/^import java\.util\.Scanner;\n/);
+  expect(code).toContain("Scanner in = new Scanner(System.in);");
+  expect(code).toContain("int n = in.nextInt();");
+  await waitSaved(page);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(page.getByRole("log", { name: "Program output" })).toContainText("-1", { timeout: 60_000 });
+  await expect(page.getByRole("log", { name: "Program output" })).toContainText("Process finished with exit code 0");
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
   await expect(note).toHaveCount(0);
   await panel(page).getByRole("button", { name: "Run all" }).click();
   await expect(panel(page).getByText("2 / 2 passed")).toBeVisible({ timeout: 60_000 });
@@ -224,33 +229,4 @@ test("stopping right after Run all stops the run, even before the server has acc
   // The next run works normally.
   await panel(page).getByRole("button", { name: "Run all" }).click();
   await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 60_000 });
-});
-
-test("every example opens with its input and tests, and all its tests pass", async ({ page }) => {
-  test.setTimeout(400_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await freshJava(page);
-  for (const title of ["Binary search", "Bubble sort", "Reverse a linked list", "Fibonacci with memory"]) {
-    for (const language of ["Java", "Python"]) {
-      await page.getByRole("button", { name: "Home" }).click();
-      await page.getByRole("button", { name: `Open ${title} in ${language}` }).click();
-      await expect(page.getByRole("button", { name: `Project: ${title}` })).toBeVisible();
-      // The Tests button toggles the tool window; it stays open from the previous example.
-      if (!(await list(page).isVisible())) await page.getByRole("button", { name: "Tests", exact: true }).click();
-      await expect(list(page).getByRole("option")).toHaveCount(3);
-      await expect(panel(page).getByRole("note", { name: "Program ignores input" })).toHaveCount(0);
-      await panel(page).getByRole("button", { name: "Run all" }).click();
-      await expect(panel(page).getByText("3 / 3 passed"), `${title} in ${language}`).toBeVisible({ timeout: 60_000 });
-    }
-  }
-  if (shots) await page.screenshot({ path: `${shots}/example-tests.png` });
-
-  // An example that was only opened is not kept as recent work.
-  await page.getByRole("button", { name: "Home" }).click();
-  await page.getByRole("button", { name: "Open Bubble sort in Java" }).click();
-  await expect(page.getByRole("button", { name: "Project: Bubble sort" })).toBeVisible();
-  await page.getByRole("button", { name: "Home" }).click();
-  if (shots) await page.screenshot({ path: `${shots}/start-examples.png`, fullPage: true });
-  // The Java and Python versions that ran are kept; the third copy, only opened, is not.
-  await expect(page.getByRole("list", { name: "Recent projects" }).getByText("Bubble sort")).toHaveCount(2);
 });

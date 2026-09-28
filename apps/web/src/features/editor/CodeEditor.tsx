@@ -14,6 +14,7 @@ import { resolveTheme, useSettings } from "@/features/settings/store";
 import { runCommand } from "@/features/commands/registry";
 import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
+import { installAutoImport } from "./auto-import-editor";
 import { installSnippets } from "./snippets";
 import { editorBridge } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
@@ -25,7 +26,7 @@ export function CodeEditor() {
   const project = useWorkspace((s) => s.project);
   const activeFile = useWorkspace((s) => s.activeFile);
   const diagnostics = useExecution((s) => s.diagnostics);
-  const { theme, fontSize, tabSize, wordWrap, minimap } = useSettings();
+  const { theme, fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
 
   // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
@@ -104,6 +105,7 @@ export function CodeEditor() {
     installBreakpointGutter(ed, monaco);
     installAiQuickFix(monaco);
     installSnippets(monaco);
+    installAutoImport(ed);
     setMounted(true);
 
     // Subscribe here rather than via the `onChange` prop: the wrapper attaches that in an
@@ -209,8 +211,12 @@ export function CodeEditor() {
         cursorBlinking: "blink",
         cursorSmoothCaretAnimation: "on",
         renderLineHighlight: "line",
-        bracketPairColorization: { enabled: false },
-        guides: { bracketPairs: false, indentation: true },
+        bracketPairColorization: { enabled: bracketColors },
+        guides: { bracketPairs: bracketColors ? "active" : false, indentation: true },
+        autoClosingBrackets: autoClose ? "languageDefined" : "never",
+        autoClosingQuotes: autoClose ? "languageDefined" : "never",
+        quickSuggestions: suggestions ? { other: true, comments: false, strings: false } : false,
+        suggestOnTriggerCharacters: suggestions,
         padding: { top: 6, bottom: 6 },
         lineDecorationsWidth: 18,
         stickyScroll: { enabled: true },

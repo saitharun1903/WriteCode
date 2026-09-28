@@ -1,4 +1,3 @@
-import { EXAMPLES } from "../src/features/projects/examples";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -255,9 +254,53 @@ test("Python: stops on uncaught exceptions", async ({ page }) => {
   await expect(output(page)).toContainText("IndexError");
 });
 
+const LINKED_LIST = `import java.util.Scanner;
+
+public class Main {
+    static class Node {
+        int value;
+        Node next;
+
+        Node(int value) {
+            this.value = value;
+        }
+    }
+
+    static Node reverse(Node head) {
+        Node prev = null;
+        Node current = head;
+        while (current != null) {
+            Node next = current.next;
+            current.next = prev;
+            prev = current;
+            current = next;
+        }
+        return prev;
+    }
+
+    public static void main(String[] args) {
+        Scanner in = new Scanner(System.in);
+        int n = in.nextInt();
+        Node head = null;
+        Node tail = null;
+        for (int i = 0; i < n; i++) {
+            Node node = new Node(in.nextInt());
+            if (head == null) {
+                head = node;
+            } else {
+                tail.next = node;
+            }
+            tail = node;
+        }
+        for (Node p = reverse(head); p != null; p = p.next) {
+            System.out.print(p.value + " ");
+        }
+    }
+}
+`;
+
 test("Java nested classes appear by their source name (Node, not Main$Node)", async ({ page }) => {
-  const example = EXAMPLES.find((e) => e.id === "reverse-linked-list")!;
-  await javaProject(page, example.versions.find((v) => v.language === "java")!.files[0]!.content);
+  await javaProject(page, LINKED_LIST);
   await page.getByRole("button", { name: "Program Input" }).click();
   await page.getByRole("textbox", { name: "Program input (stdin)" }).fill("3\n1 2 3");
   await waitSaved(page);
