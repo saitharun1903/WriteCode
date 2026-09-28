@@ -466,7 +466,7 @@ function NoTests() {
         </div>
         <div>
           <p className="text-sm font-semibold text-fg">Check your program against test cases</p>
-          <p className="mt-1 text-sm text-fg-subtle">Save inputs with the output you expect, then run them all at once. Each test gets its own time limit, and wrong lines are shown side by side.</p>
+          <p className="mt-1 text-sm text-fg-subtle">Save inputs with the output you expect, then run them all at once.</p>
         </div>
         <div className="flex w-full flex-col gap-2">
           {option(<Plus />, "Add a test", "Type an input and the expected output", () => add())}

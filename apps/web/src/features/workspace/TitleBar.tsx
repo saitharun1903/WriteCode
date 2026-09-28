@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, Menu, Moon, PanelLeft, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
+import { Bug, ChevronDown, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
 import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -12,7 +12,6 @@ import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { resolveTheme, useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
-import { useUI } from "./ui-store";
 import { LogoMark } from "./Logo";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
@@ -111,7 +110,7 @@ function RunControls() {
             className="flex h-full max-w-48 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-fg transition-colors hover:bg-hover data-[state=open]:bg-active"
           >
             <FileIcon name={project.entryFile || "file"} />
-            <span className="truncate">{project.entryFile ? project.entryFile.split("/").pop() : "No entry file"}</span>
+            <span className="hidden truncate sm:inline">{project.entryFile ? project.entryFile.split("/").pop() : "No entry file"}</span>
             <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
           </button>
         }
@@ -163,11 +162,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
         {!compact && <span className="text-[15px] font-semibold tracking-tight text-fg">{PRODUCT.name}</span>}
       </button>
 
-      {compact && project ? (
-        <IconButton label="Project files" onClick={() => useUI.getState().setDrawer(useUI.getState().drawer === "sidebar" ? "none" : "sidebar")}>
-          <PanelLeft />
-        </IconButton>
-      ) : (
+      {(!compact || !project) && (
         <DropdownMenu
           entries={MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) }))}
           trigger={
@@ -180,7 +175,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
 
       {project && (
         <>
-          <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />
+          {!compact && <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />}
           <DropdownMenu
             entries={[
               { kind: "label", label: "Recent projects" },
@@ -198,10 +193,13 @@ export function TitleBar({ compact }: { compact: boolean }) {
               { label: "Close project", onSelect: () => runCommand("project.close") },
             ]}
             trigger={
-              <button className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active">
+              <button
+                aria-label={`Project: ${project.name}`}
+                className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active"
+              >
                 <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
-                <span className="truncate">{project.name}</span>
-                <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
+                <span className="hidden truncate sm:inline">{project.name}</span>
+                <ChevronDown className="hidden size-3.5 shrink-0 text-fg-subtle sm:block" />
               </button>
             }
           />
@@ -221,7 +219,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
         </div>
       )}
 
-      <div className="relative ml-auto flex items-center gap-1">
+      <div className="relative ml-auto flex min-w-0 items-center gap-1">
         {project && <RunControls />}
         {project && !compact && (
           <span className="ml-2 mr-1">
@@ -233,7 +231,9 @@ export function TitleBar({ compact }: { compact: boolean }) {
             <Search />
           </IconButton>
         )}
-        <ThemeToggle />
+        <span className={cn(compact && project && "hidden sm:inline-flex")}>
+          <ThemeToggle />
+        </span>
         <IconButton label="Settings" shortcut="Mod+," onClick={() => runCommand("prefs.open")}>
           <Settings />
         </IconButton>

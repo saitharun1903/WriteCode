@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Bug, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AssistantPanel } from "@/features/assistant/AssistantPanel";
@@ -20,7 +21,7 @@ import { StartScreen } from "@/features/projects/StartScreen";
 import { useWorkspace } from "@/features/projects/store";
 import { SearchPanel } from "@/features/search/SearchPanel";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { resolveTheme, useSettings, type BottomTab, type SideView } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { ActivityBar } from "./ActivityBar";
@@ -152,6 +153,17 @@ function DesktopWorkbench() {
 }
 
 /** Tablet/phone: editor fills the screen; sidebar and panel open as drawers. */
+/** Phone and tablet tab bar: the tool windows people reach for most, with Search in the title bar. */
+const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: SideView } | { kind: "bottom"; id: BottomTab } | { kind: "ai"; id: "ai" }))[] = [
+  { kind: "side", id: "explorer", label: "Files", icon: <FolderClosed /> },
+  { kind: "bottom", id: "run", label: "Run", icon: <Play /> },
+  { kind: "bottom", id: "debug", label: "Debug", icon: <Bug /> },
+  { kind: "bottom", id: "visualize", label: "Visualize", icon: <Workflow /> },
+  { kind: "bottom", id: "tests", label: "Tests", icon: <FlaskConical /> },
+  { kind: "side", id: "history", label: "History", icon: <History /> },
+  { kind: "ai", id: "ai", label: "AI", icon: <Sparkles /> },
+];
+
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const setDrawer = useUI((s) => s.setDrawer);
@@ -164,62 +176,50 @@ function CompactWorkbench() {
       <div className="min-h-0 flex-1">
         <EditorArea />
       </div>
-      <nav aria-label="Panels" className="flex h-10 shrink-0 items-stretch border-t border-line bg-canvas text-xs">
-        {(
-          [
-            ["explorer", "Files"],
-            ["search", "Search"],
-            ["history", "History"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => {
-              updateLayout({ sideView: id });
-              setDrawer(drawer === "sidebar" && sideView === id ? "none" : "sidebar");
-            }}
-            className={cn("flex-1 text-fg-subtle", drawer === "sidebar" && sideView === id && "text-fg")}
-          >
-            {label}
-          </button>
-        ))}
-        {(
-          [
-            ["run", "Run"],
-            ["debug", "Debug"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => {
-              updateLayout({ bottomTab: id });
-              setDrawer(drawer === "bottom" && bottomTab === id ? "none" : "bottom");
-            }}
-            className={cn("flex-1 text-fg-subtle", drawer === "bottom" && bottomTab === id && "text-fg")}
-          >
-            {label}
-          </button>
-        ))}
-        <button onClick={() => setDrawer(drawer === "assistant" ? "none" : "assistant")} className={cn("flex-1 text-fg-subtle", drawer === "assistant" && "text-fg")}>
-          AI
-        </button>
+      <nav aria-label="Panels" className="flex h-[52px] shrink-0 items-stretch border-t border-line bg-canvas px-1 pb-[env(safe-area-inset-bottom)]">
+        {TABS.map((t) => {
+          const active = t.kind === "side" ? drawer === "sidebar" && sideView === t.id : t.kind === "bottom" ? drawer === "bottom" && bottomTab === t.id : drawer === "assistant";
+          return (
+            <button
+              key={t.id}
+              aria-pressed={active}
+              onClick={() => {
+                if (t.kind === "side") {
+                  updateLayout({ sideView: t.id });
+                  setDrawer(active ? "none" : "sidebar");
+                } else if (t.kind === "bottom") {
+                  updateLayout({ bottomTab: t.id });
+                  setDrawer(active ? "none" : "bottom");
+                } else setDrawer(active ? "none" : "assistant");
+              }}
+              className={cn(
+                "relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] transition-colors [&_svg]:size-[18px]",
+                active ? (t.kind === "ai" ? "text-[#8a7cf5]" : "text-accent") : "text-fg-subtle active:text-fg",
+              )}
+            >
+              {active && <span aria-hidden className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-current" />}
+              {t.icon}
+              <span className="max-w-full truncate">{t.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {drawer !== "none" && (
-        <button aria-label="Close drawer" className="absolute inset-0 bottom-10 z-20 bg-black/40 animate-fade" onClick={() => setDrawer("none")} />
+        <button aria-label="Close drawer" className="absolute inset-0 bottom-[52px] z-20 bg-black/40 animate-fade" onClick={() => setDrawer("none")} />
       )}
       {drawer === "sidebar" && (
-        <div className="absolute inset-y-0 bottom-10 left-0 z-30 w-[min(320px,85vw)] border-r border-line shadow-float animate-slide-up">
+        <div className="absolute inset-y-0 bottom-[52px] left-0 z-30 w-[min(320px,85vw)] border-r border-line shadow-float animate-slide-up">
           <SideView />
         </div>
       )}
       {drawer === "bottom" && (
-        <div className="absolute inset-x-0 bottom-10 z-30 h-[65%] border-t border-line shadow-float animate-slide-up">
+        <div className="absolute inset-x-0 bottom-[52px] z-30 h-[65%] border-t border-line shadow-float animate-slide-up">
           <BottomPanel onClose={() => setDrawer("none")} />
         </div>
       )}
       {drawer === "assistant" && (
-        <div className="absolute inset-x-0 bottom-10 top-0 z-30 border-t border-line shadow-float animate-slide-up">
+        <div className="absolute inset-x-0 bottom-[52px] top-0 z-30 border-t border-line shadow-float animate-slide-up">
           <AssistantPanel onClose={() => setDrawer("none")} />
         </div>
       )}
