@@ -360,3 +360,15 @@
   color: var(--warning);
   opacity: 1;
 }
+
+/*
+ * Program output. JetBrains Mono at a slightly heavier weight renders crisply on
+ * Windows; ligatures are off so the program's own characters (!=, ->) show as typed.
+ */
+.cw-console {
+  font-weight: 450;
+  font-variant-ligatures: none;
+  font-feature-settings: "calt" 0;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: auto;
+}

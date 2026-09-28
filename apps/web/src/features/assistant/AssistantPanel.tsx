@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Copy,
   FileCode2,
+  Gauge,
   Lightbulb,
   Play,
   RotateCcw,
@@ -30,6 +31,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
 import { useVisualize } from "@/features/visualize/store";
 import { cn } from "@/lib/cn";
+import type { AssistantEffort } from "@cw/shared";
 import { parseEditBlock, resolveEdit, type ResolvedHunk } from "./edits";
 import { editTarget, useAssistant, type ChatMessage } from "./store";
 
@@ -361,12 +363,19 @@ function Thinking({ message }: { message: ChatMessage }) {
       </div>
     );
   }
-  if (!thinking || !message.thoughtMs) return null;
+  if (!message.thoughtMs) return null;
+  if (!thinking) {
+    return (
+      <p className="mb-1.5 text-[12px] text-fg-subtle">
+        Answered in {Math.max(1, Math.round(message.thoughtMs / 1000))}s{message.effort && message.effort !== "medium" ? ` · ${message.effort === "high" ? "High" : "Low"} effort` : ""}
+      </p>
+    );
+  }
   return (
     <div className="mb-1.5">
       <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-1 text-[12px] text-fg-subtle hover:text-fg" aria-expanded={open}>
         <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        Thought for {Math.max(1, Math.round(message.thoughtMs / 1000))}s
+        Thought for {Math.max(1, Math.round(message.thoughtMs / 1000))}s{message.effort && message.effort !== "medium" ? ` · ${message.effort === "high" ? "High" : "Low"} effort` : ""}
       </button>
       {open && <div className="mt-1 whitespace-pre-wrap border-l-2 border-line-strong pl-3 text-[12px] leading-relaxed text-fg-subtle">{thinking.replace(/\*\*/g, "")}</div>}
     </div>
@@ -513,6 +522,106 @@ function ContextLine() {
   );
 }
 
+// -- Effort
+
+const EFFORTS: { id: AssistantEffort; label: string; about: string }[] = [
+  { id: "low", label: "Low", about: "Fastest answers, usually within a few seconds. Good for quick questions and simple errors." },
+  { id: "medium", label: "Medium", about: "Balanced. Answers quickly, and thinks harder on its own for reviews and bug hunts." },
+  { id: "high", label: "High", about: "Reasons longest and double-checks its work. Best for tricky bugs; can take 10–30 seconds." },
+];
+
+/** Faster to smarter: how hard the assistant thinks before answering. */
+function EffortControl() {
+  const effort = useAssistant((s) => s.effort);
+  const setEffort = useAssistant((s) => s.setEffort);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const index = EFFORTS.findIndex((e) => e.id === effort);
+  const current = EFFORTS[index]!;
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const escape = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Effort: ${current.label}`}
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors",
+          open ? "border-[#8a7cf5]/70 bg-[#8a7cf5]/10 text-fg" : "border-line-strong text-fg-muted hover:border-fg-faint hover:text-fg",
+        )}
+      >
+        <Gauge className="size-3.5 text-[#8a7cf5]" />
+        <span className="text-fg-subtle">Effort</span>
+        <span className="font-medium text-fg">{current.label}</span>
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Reasoning effort"
+          className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-2xl border border-line-strong bg-overlay p-4 shadow-float animate-fade"
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="text-[13px] text-fg-subtle">Effort</span>
+            <span className="text-[14px] font-semibold text-fg">{current.label}</span>
+          </div>
+          <div className="mt-3 flex justify-between text-[12px] text-fg-subtle">
+            <span>Faster</span>
+            <span>Smarter</span>
+          </div>
+          <div className="relative mt-2 h-8">
+            {/* Track with a dot per level; the native range input on top keeps keyboard and screen readers working. */}
+            <div className="absolute inset-x-0 top-1/2 h-6 -translate-y-1/2 rounded-full bg-hover">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#6d8cff]/35 to-[#c26cea]/45 transition-[width] duration-200"
+                style={{ width: `calc(24px + (100% - 24px) * ${index / (EFFORTS.length - 1)})` }}
+              />
+              {EFFORTS.map((e, i) => (
+                <span
+                  key={e.id}
+                  className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-fg-faint"
+                  style={{ left: `calc(12px + (100% - 24px) * ${i / (EFFORTS.length - 1)})` }}
+                />
+              ))}
+              <span
+                className="absolute top-1/2 h-7 w-6 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-md ring-1 ring-black/10 transition-[left] duration-200"
+                style={{ left: `calc(12px + (100% - 24px) * ${index / (EFFORTS.length - 1)})` }}
+              />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={EFFORTS.length - 1}
+              step={1}
+              value={index}
+              aria-label="Reasoning effort"
+              aria-valuetext={current.label}
+              onChange={(e) => setEffort(EFFORTS[Number(e.target.value)]!.id)}
+              className="absolute inset-0 size-full cursor-pointer opacity-0"
+            />
+          </div>
+          <p className="mt-3 text-[12px] leading-relaxed text-fg-subtle">{current.about}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** AI assistant tool window: questions about the open project, answered with its code, last run and visualizer state. */
 export function AssistantPanel({ onClose }: { onClose: () => void }) {
   const available = useAssistant((s) => s.available);
@@ -612,7 +721,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
           <div className="shrink-0 border-t border-line pt-2">
             <ContextLine />
             <form
-              className="mx-3 mb-1.5 flex items-end gap-2 rounded-2xl border border-line-strong bg-surface-2 p-1.5 pl-3.5 shadow-sm transition-colors focus-within:border-[#8a7cf5]/70 focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,#8a7cf5_18%,transparent)]"
+              className="mx-3 mb-1.5 flex flex-col rounded-2xl border border-line-strong bg-surface-2 shadow-sm transition-colors focus-within:border-[#8a7cf5]/70 focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,#8a7cf5_18%,transparent)]"
               onSubmit={(e) => {
                 e.preventDefault();
                 send(draft);
@@ -632,22 +741,25 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                     send(draft);
                   }
                 }}
-                className="max-h-40 min-h-7 flex-1 resize-none bg-transparent py-1 text-[13px] leading-5 text-fg outline-none placeholder:text-fg-faint"
+                className="max-h-40 min-h-9 resize-none bg-transparent px-3.5 pb-1 pt-2.5 text-[13px] leading-5 text-fg outline-none placeholder:text-fg-faint"
               />
-              {streaming ? (
-                <button type="button" aria-label="Stop" onClick={stop} className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fg text-canvas transition-transform hover:scale-105">
-                  <Square className="size-2.5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  aria-label="Send question"
-                  disabled={!draft.trim()}
-                  className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-white transition-all hover:scale-105 disabled:scale-100 disabled:opacity-30", AI_GRADIENT)}
-                >
-                  <ArrowUp className="size-4" />
-                </button>
-              )}
+              <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                <EffortControl />
+                {streaming ? (
+                  <button type="button" aria-label="Stop" onClick={stop} className="flex size-7 shrink-0 items-center justify-center rounded-full bg-fg text-canvas transition-transform hover:scale-105">
+                    <Square className="size-2.5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    aria-label="Send question"
+                    disabled={!draft.trim()}
+                    className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-white transition-all hover:scale-105 disabled:scale-100 disabled:opacity-30", AI_GRADIENT)}
+                  >
+                    <ArrowUp className="size-4" />
+                  </button>
+                )}
+              </div>
             </form>
             <p className="px-3.5 pb-2 text-[10.5px] text-fg-faint">Powered by Google Gemini · answers can be wrong, so run the code to check · Shift+Enter for a new line</p>
           </div>

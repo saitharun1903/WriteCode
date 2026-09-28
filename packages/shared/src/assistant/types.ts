@@ -60,9 +60,18 @@ export interface AssistantContext {
   visualizer?: AssistantStep;
 }
 
+/**
+ * How hard the assistant thinks: `low` answers fastest, `high` reasons longest
+ * and checks its work. `medium` (the default) thinks more only for reviews and
+ * bug hunts.
+ */
+export type AssistantEffort = "low" | "medium" | "high";
+export const ASSISTANT_EFFORTS: readonly AssistantEffort[] = ["low", "medium", "high"];
+
 export interface AssistantRequest {
   messages: AssistantMessage[];
   context: AssistantContext;
+  effort?: AssistantEffort;
 }
 
 /** Server-sent event payloads of POST /assistant/chat. */
@@ -96,7 +105,8 @@ const optInt = (v: unknown) => v === undefined || v === null || (typeof v === "n
 export function validateAssistantRequest(input: unknown): AssistantValidation {
   const fail = (error: string): AssistantValidation => ({ ok: false, error });
   if (!isObject(input)) return fail("Request body must be an object.");
-  const { messages, context } = input;
+  const { messages, context, effort } = input;
+  if (effort !== undefined && !ASSISTANT_EFFORTS.includes(effort as AssistantEffort)) return fail("effort must be low, medium or high.");
 
   if (!Array.isArray(messages) || messages.length === 0 || messages.length > ASSISTANT_LIMITS.maxMessages) {
     return fail(`Send between 1 and ${ASSISTANT_LIMITS.maxMessages} messages.`);

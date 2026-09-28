@@ -447,3 +447,31 @@ test("visualizer: records a Java run across classes", async ({ page }) => {
   await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("4");
   await expect(objects.getByRole("group", { name: "Box object" })).toContainText("items");
 });
+
+test("console starts with a plain header, not the sandbox's command line", async ({ page }) => {
+  await freshProject(page, "Java");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Hello World", { timeout: 90_000 });
+  await expect(output(page)).toContainText("Running Main.java · Java 21");
+  await expect(output(page)).not.toContainText("-XX:");
+});
+
+test("assistant effort: faster to smarter, remembered across reloads", async ({ page }) => {
+  await freshProject(page, "Python");
+  await page.getByRole("button", { name: "AI Assistant" }).click();
+  const chip = page.getByRole("button", { name: /^Effort:/ });
+  await expect(chip).toHaveAccessibleName("Effort: Medium");
+  await chip.click();
+  const slider = page.getByRole("slider", { name: "Reasoning effort" });
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(chip).toHaveAccessibleName("Effort: Low");
+  await expect(page.getByRole("dialog", { name: "Reasoning effort" })).toContainText("Fastest answers");
+  await page.keyboard.press("End");
+  await expect(chip).toHaveAccessibleName("Effort: High");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Reasoning effort" })).toHaveCount(0);
+  // The panel stays open across reloads (layout is remembered), and so does the effort.
+  await page.reload();
+  await expect(page.getByRole("button", { name: /^Effort:/ })).toHaveAccessibleName("Effort: High", { timeout: 30_000 });
+});

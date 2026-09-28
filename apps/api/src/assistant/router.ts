@@ -1,4 +1,5 @@
 import type { Redis } from "ioredis";
+import type { AssistantEffort } from "@cw/shared";
 import { config } from "../config.js";
 import { AssistantError, secondsUntilPacificMidnight, streamAnswer, type Chunk } from "./gemini.js";
 import type { GeminiContent } from "./prompt.js";
@@ -34,7 +35,19 @@ export function routeFor(question: string): Route {
 
 interface Candidate {
   model: string;
-  thinking: "low" | "medium";
+  thinking: "low" | "medium" | "high";
+}
+
+/**
+ * The user's effort setting. Low: fast models, least reasoning. Medium: fast
+ * models for everyday questions, strong ones for reviews. High: strong models
+ * reasoning longest, which takes longer before the first word, so the backup
+ * model waits longer too.
+ */
+function hedgeFor(effort: AssistantEffort): number {
+  if (effort === "high") return Math.max(config.assistant.hedgeMs, 15_000);
+  if (effort === "low") return Math.min(config.assistant.hedgeMs, 1_500);
+  return config.assistant.hedgeMs;
 }
 
 const restKey = (model: string) => `ai:exhausted:${model}`;
@@ -44,10 +57,12 @@ export class AnswerRouter {
   constructor(private readonly redis: Redis) {}
 
   /** Models to try, in order, with their reasoning level; resting models are left out. */
-  async plan(route: Route): Promise<{ candidates: Candidate[]; dailyOut: number; total: number }> {
-    const fast = config.assistant.fastModels.map((model) => ({ model, thinking: "low" as const }));
-    const strong = config.assistant.models.map((model) => ({ model, thinking: route === "deep" ? ("medium" as const) : ("low" as const) }));
-    const ordered = (route === "deep" ? [...strong, ...fast] : [...fast, ...strong]).filter((c, i, all) => all.findIndex((x) => x.model === c.model) === i);
+  async plan(route: Route, effort: AssistantEffort = "medium"): Promise<{ candidates: Candidate[]; dailyOut: number; total: number }> {
+    const deep = effort === "high" || (effort === "medium" && route === "deep");
+    const strongThinking = effort === "high" ? "high" : deep ? "medium" : "low";
+    const fast = config.assistant.fastModels.map((model): Candidate => ({ model, thinking: effort === "high" ? "medium" : "low" }));
+    const strong = config.assistant.models.map((model): Candidate => ({ model, thinking: strongThinking }));
+    const ordered = (deep ? [...strong, ...fast] : [...fast, ...strong]).filter((c, i, all) => all.findIndex((x) => x.model === c.model) === i);
     const names = ordered.map((c) => c.model);
     const [rests, latencies] = await Promise.all([
       names.length ? this.redis.mget(...names.map(restKey)) : Promise.resolve([]),
@@ -86,12 +101,14 @@ export class AnswerRouter {
    */
   async answer(opts: {
     question: string;
+    effort?: AssistantEffort;
     systemInstruction: { parts: { text: string }[] };
     contents: GeminiContent[];
     signal: AbortSignal;
     onChunk: (chunk: Chunk) => void;
   }): Promise<string> {
-    const { candidates, dailyOut, total } = await this.plan(routeFor(opts.question));
+    const effort = opts.effort ?? "medium";
+    const { candidates, dailyOut, total } = await this.plan(routeFor(opts.question), effort);
     if (candidates.length === 0) {
       throw dailyOut === total
         ? new AssistantError("The assistant has used up today's free answers. It will be back tomorrow.", "all models out of daily quota", 429)
@@ -122,7 +139,7 @@ export class AnswerRouter {
         running++;
         lead ??= model;
         const started = Date.now();
-        const hedge = setTimeout(() => launch(), config.assistant.hedgeMs);
+        const hedge = setTimeout(() => launch(), hedgeFor(effort));
 
         void (async () => {
           try {

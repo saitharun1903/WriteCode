@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { AssistantContext, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep } from "@cw/shared";
+import type { AssistantContext, AssistantEffort, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep } from "@cw/shared";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
 import { API_URL } from "@/features/execution/api";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -24,6 +24,8 @@ export interface ChatMessage {
   startedAt?: number;
   /** How long the model thought before answering, once the answer started. */
   thoughtMs?: number;
+  /** Effort the answer was asked with. */
+  effort?: AssistantEffort;
 }
 
 /** An edit from an answer that the user applied, so it can be undone. */
@@ -41,6 +43,9 @@ interface AssistantState {
   streaming: boolean;
   /** Project the conversation is about; a different project starts a new chat. */
   projectId: string | null;
+  /** How hard the assistant thinks: faster (low) to smarter (high). Remembered per browser. */
+  effort: AssistantEffort;
+  setEffort: (effort: AssistantEffort) => void;
   checkAvailability: () => Promise<void>;
   ask: (text: string) => Promise<void>;
   /** Asks the previous question again after a failure. */
@@ -186,8 +191,25 @@ async function* events(body: ReadableStream<Uint8Array>): AsyncGenerator<Assista
   }
 }
 
+const EFFORT_KEY = "cw:ai-effort";
+
+function savedEffort(): AssistantEffort {
+  try {
+    const v = localStorage.getItem(EFFORT_KEY);
+    if (v === "low" || v === "medium" || v === "high") return v;
+  } catch {}
+  return "medium";
+}
+
 export const useAssistant = create<AssistantState>((set, get) => ({
   available: null,
+  effort: typeof window === "undefined" ? "medium" : savedEffort(),
+  setEffort: (effort) => {
+    set({ effort });
+    try {
+      localStorage.setItem(EFFORT_KEY, effort);
+    } catch {}
+  },
   applied: {},
   messages: [],
   streaming: false,
@@ -213,7 +235,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     set({
       projectId,
       streaming: true,
-      messages: [...earlier, { id: nextId(), role: "user", text }, { id: answerId, role: "assistant", text: "", pending: true, startedAt: Date.now() }],
+      messages: [...earlier, { id: nextId(), role: "user", text }, { id: answerId, role: "assistant", text: "", pending: true, startedAt: Date.now(), effort: get().effort }],
     });
 
     // Earlier turns give follow-up questions their meaning; failed answers are left out.
@@ -230,7 +252,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       const res = await fetch(`${API_URL}/api/v1/assistant/chat`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history, context }),
+        body: JSON.stringify({ messages: history, context, effort: get().effort }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {

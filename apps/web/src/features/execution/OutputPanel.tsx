@@ -14,7 +14,7 @@ const streamClass: Record<LogChunk["stream"], string> = {
   stderr: "text-danger",
   compile: "text-danger",
   stdin: "text-success",
-  system: "text-fg-subtle",
+  system: "font-sans text-[12px] tracking-normal text-fg-subtle",
 };
 
 /**
@@ -197,7 +197,7 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
       {run && (
         <div
           className={cn(
-            "px-3 py-2 font-mono text-[13px] leading-[20px]",
+            "cw-console px-3.5 py-2.5 font-mono text-[13.5px] leading-[22px]",
             wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
           )}
         >

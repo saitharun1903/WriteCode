@@ -103,6 +103,36 @@ describe("routing", () => {
   });
 });
 
+describe("effort", () => {
+  it("low: fast models with the least reasoning, even for reviews", async () => {
+    const { candidates } = await new AnswerRouter(fakeRedis().redis).plan("deep", "low");
+    expect(candidates).toEqual([
+      { model: "lite", thinking: "low" },
+      { model: "lite2", thinking: "low" },
+      { model: "big", thinking: "low" },
+      { model: "mid", thinking: "low" },
+    ]);
+  });
+
+  it("high: strong models reasoning longest, even for simple questions", async () => {
+    const { candidates } = await new AnswerRouter(fakeRedis().redis).plan("fast", "high");
+    expect(candidates).toEqual([
+      { model: "big", thinking: "high" },
+      { model: "mid", thinking: "high" },
+      { model: "lite", thinking: "medium" },
+      { model: "lite2", thinking: "medium" },
+    ]);
+  });
+
+  it("sends the chosen reasoning level to Gemini", async () => {
+    const { redis } = fakeRedis();
+    const { calls } = mockModels({ big: { body: sse("careful answer") } });
+    const router = new AnswerRouter(redis);
+    await router.answer({ question: "fix it", effort: "high", systemInstruction: { parts: [] }, contents: [], signal: new AbortController().signal, onChunk: () => {} });
+    expect(calls).toEqual([{ model: "big", thinking: "high" }]);
+  });
+});
+
 describe("hedging", () => {
   it("starts a second model when the first is slow, keeps the faster answer and cancels the other", async () => {
     const { redis, hash } = fakeRedis();

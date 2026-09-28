@@ -3,7 +3,6 @@
 import { create } from "zustand";
 import {
   anyFileIsRunnable,
-  expandCommand,
   findEntryPoints,
   isTerminalStatus,
   parseDiagnostics,
@@ -213,8 +212,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
           mode,
           interactive,
           status: "SUBMITTING",
-          // The real command the sandbox runs, shown first like a desktop IDE console.
-          log: [{ stream: "system", text: `${expandCommand(lang.runtime.command, { entry: project.entryFile, files: project.files }).join(" ")}\n` }],
+          // A plain first line saying what runs; the sandbox's command and JVM tuning flags are noise to the user.
+          log: [{ stream: "system", text: `${mode === "debug" ? "Debugging" : mode === "visualize" ? "Recording" : "Running"} ${project.entryFile} · ${lang.name} ${lang.version}\n` }],
           startedAt: Date.now(),
         },
       });

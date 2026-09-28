@@ -56,6 +56,7 @@ export class AssistantController {
       const question = parsed.value.messages[parsed.value.messages.length - 1]!.text;
       model = await this.router.answer({
         question,
+        effort: parsed.value.effort,
         systemInstruction,
         contents,
         signal: abort.signal,
