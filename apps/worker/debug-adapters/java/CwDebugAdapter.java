@@ -721,8 +721,10 @@ public final class CwDebugAdapter {
     }
 
     private static String simpleName(String type) {
-        int k = type.lastIndexOf('.');
-        return k < 0 ? type : type.substring(k + 1);
+        String s = type.substring(type.lastIndexOf('.') + 1);
+        int d = s.lastIndexOf('$');
+        // Nested classes by their source name (Main$Node -> Node); anonymous ones (Main$1) keep theirs.
+        return d >= 0 && d + 1 < s.length() && !Character.isDigit(s.charAt(d + 1)) ? s.substring(d + 1) : s;
     }
 
     private static String unbox(ObjectReference o) {
@@ -983,7 +985,7 @@ public final class CwDebugAdapter {
         private static String str(Object v) {
             Object u = unwrap(v);
             if (u == null) return "null";
-            if (u instanceof ObjectReference) return ((ObjectReference) u).referenceType().name() + "@" + ((ObjectReference) u).uniqueID();
+            if (u instanceof ObjectReference) return simpleName(((ObjectReference) u).referenceType().name()) + "@" + ((ObjectReference) u).uniqueID();
             return String.valueOf(u);
         }
 

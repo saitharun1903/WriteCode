@@ -26,6 +26,7 @@ import { goToLocation } from "@/features/editor/navigate";
 import { ConsoleView } from "@/features/execution/OutputPanel";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
+import { sourceTypeName } from "@/features/visualize/model";
 import { cn } from "@/lib/cn";
 import { previewOf, shortValue } from "./inline-values";
 import { frameKey, useDebug, type StopInfo } from "./store";
@@ -44,7 +45,7 @@ export function valueColor(value: string): string {
 function shortType(type: string): string {
   const generic = type.indexOf("<");
   const base = generic >= 0 ? type.slice(0, generic) : type;
-  return base.slice(base.lastIndexOf(".") + 1) + (generic >= 0 ? type.slice(generic) : "");
+  return sourceTypeName(base.slice(base.lastIndexOf(".") + 1)) + (generic >= 0 ? type.slice(generic) : "");
 }
 
 /** Collections small enough that their contents are loaded up front, for the inline preview. */

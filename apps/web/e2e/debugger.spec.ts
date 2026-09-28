@@ -1,3 +1,4 @@
+import { EXAMPLES } from "../src/features/projects/examples";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
@@ -252,4 +253,21 @@ test("Python: stops on uncaught exceptions", async ({ page }) => {
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("IndexError");
+});
+
+test("Java nested classes appear by their source name (Node, not Main$Node)", async ({ page }) => {
+  const example = EXAMPLES.find((e) => e.id === "reverse-linked-list")!;
+  await javaProject(page, example.versions.find((v) => v.language === "java")!.files[0]!.content);
+  await page.getByRole("button", { name: "Program Input" }).click();
+  await page.getByRole("textbox", { name: "Program input (stdin)" }).fill("3\n1 2 3");
+  await waitSaved(page);
+  // current.next = prev;
+  await cursorTo(page, 18);
+  await page.keyboard.press("F9");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars).toContainText("Node");
+  await expect(vars).not.toContainText("Main$Node");
 });
