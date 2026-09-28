@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { Bug, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AssistantPanel } from "@/features/assistant/AssistantPanel";
 import { Toaster } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/primitives";
 import { CommandPalette } from "@/features/commands/CommandPalette";
@@ -30,6 +30,9 @@ import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
 
+
+// Downloaded the first time the assistant is opened.
+const AssistantPanel = dynamic(() => import("@/features/assistant/AssistantPanel").then((m) => m.AssistantPanel), { ssr: false });
 
 function SideView() {
   const view = useSettings((s) => s.layout.sideView);

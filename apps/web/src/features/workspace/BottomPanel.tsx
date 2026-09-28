@@ -1,20 +1,33 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { CircleCheck, CircleX, Keyboard, Loader2, Minus, OctagonAlert, Pause } from "lucide-react";
 import { basename } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
-import { DebugToolWindow } from "@/features/debug/DebugPanel";
-import { VisualizerPanel } from "@/features/visualize/VisualizerPanel";
+import { Spinner } from "@/components/ui/primitives";
 import { useDebug } from "@/features/debug/store";
 import { FileIcon } from "@/features/explorer/file-icon";
 import { InputPanel } from "@/features/execution/InputPanel";
 import { RunMetrics, RunToolWindow } from "@/features/execution/OutputPanel";
 import { ProblemsPanel } from "@/features/execution/ProblemsPanel";
-import { TestsPanel } from "@/features/tests/TestsPanel";
 import { STATUS_META } from "@/features/execution/status";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useSettings, type BottomTab } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
+
+function Loading() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <Spinner />
+    </div>
+  );
+}
+
+// Heavier tool windows download the first time they are opened, keeping the first page load small.
+const DebugToolWindow = dynamic(() => import("@/features/debug/DebugPanel").then((m) => m.DebugToolWindow), { ssr: false, loading: Loading });
+const VisualizerPanel = dynamic(() => import("@/features/visualize/VisualizerPanel").then((m) => m.VisualizerPanel), { ssr: false, loading: Loading });
+const TestsPanel = dynamic(() => import("@/features/tests/TestsPanel").then((m) => m.TestsPanel), { ssr: false, loading: Loading });
 
 const TITLES: Record<BottomTab, string> = {
   run: "Run",
