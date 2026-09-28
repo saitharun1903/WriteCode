@@ -1,13 +1,12 @@
 "use client";
 
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Fragment } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { runCommand } from "@/features/commands/registry";
 import { useCursor } from "@/features/editor/bridge";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
-import { useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 
 function Widget({ children, onClick, label, className }: { children: React.ReactNode; onClick?: () => void; label?: string; className?: string }) {
@@ -28,7 +27,6 @@ export function StatusBar() {
   const runner = useExecution((s) => s.runner);
   const runnerReason = useExecution((s) => s.runnerReason);
   const cursor = useCursor();
-  const tabSize = useSettings((s) => s.tabSize);
 
   const runnerLabel = { unknown: "Checking runner…", online: "Runner online", offline: "Runner offline", unavailable: "Runner unavailable" }[runner];
   const crumbs = project ? [project.name, ...(activeFile ? activeFile.split("/") : [])] : [];
@@ -46,24 +44,12 @@ export function StatusBar() {
       </nav>
 
       <div className="ml-auto flex h-full items-center py-0.5">
-        {saveState === "saving" || saveState === "pending" ? (
-          <Widget>
-            <Loader2 className="size-3.5 animate-spin" /> Saving…
-          </Widget>
-        ) : saveState === "error" ? (
-          <Widget className="text-danger">Save failed</Widget>
-        ) : null}
+        {/* Autosave is silent; only a failure is worth a label. */}
+        {saveState === "error" && <Widget className="text-danger">Save failed</Widget>}
         {activeFile && (
           <Widget onClick={() => runCommand("edit.goToLine")} label="Go to line">
             {cursor.line}:{cursor.column}
           </Widget>
-        )}
-        {project && (
-          <>
-            <Widget>LF</Widget>
-            <Widget>UTF-8</Widget>
-            <Widget>{tabSize} spaces</Widget>
-          </>
         )}
         <Tooltip content={runnerReason ?? runnerLabel} side="top">
           <button
@@ -79,7 +65,8 @@ export function StatusBar() {
                 runner === "unknown" && "bg-fg-faint",
               )}
             />
-            {runnerLabel}
+            {/* Online is the normal state: a green dot is enough. */}
+            <span className={runner === "online" ? "sr-only" : undefined}>{runnerLabel}</span>
           </button>
         </Tooltip>
       </div>

@@ -448,12 +448,12 @@ test("visualizer: records a Java run across classes", async ({ page }) => {
   await expect(objects.getByRole("group", { name: "Box object" })).toContainText("items");
 });
 
-test("console starts with a plain header, not the sandbox's command line", async ({ page }) => {
+test("console shows only the program's output, not the sandbox's command line", async ({ page }) => {
   await freshProject(page, "Java");
   await page.getByRole("button", { name: "Run program" }).click();
   await expect(output(page)).toContainText("Hello World", { timeout: 90_000 });
-  await expect(output(page)).toContainText("Running Main.java · Java 21");
   await expect(output(page)).not.toContainText("-XX:");
+  await expect(output(page)).not.toContainText("Running Main.java");
 });
 
 test("assistant effort: faster to smarter, remembered across reloads", async ({ page }) => {

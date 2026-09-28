@@ -203,13 +203,10 @@ function preview(input: string): string {
   return line ? line : "No input";
 }
 
-function Field({ label, hint, value, onChange, placeholder, rows = 4 }: { label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder: string; rows?: number }) {
+function Field({ label, value, onChange, placeholder, rows = 4 }: { label: string; value: string; onChange: (v: string) => void; placeholder: string; rows?: number }) {
   return (
     <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="flex items-baseline justify-between gap-2 text-xs font-medium text-fg-muted">
-        {label}
-        {hint && <span className="font-normal text-fg-faint">{hint}</span>}
-      </span>
+      <span className="text-xs font-medium text-fg-muted">{label}</span>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -263,13 +260,12 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
       {/* Side by side when there is room: what goes in, what should come out, what came out. */}
       <div className="@container p-3">
         <div className="grid grid-cols-2 items-start gap-3 @[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
-          <Field label="Input" hint="sent to stdin" value={test.input} onChange={(input) => update(test.id, { input })} placeholder={"What the program reads, e.g.\n3\n1 2 3"} />
+          <Field label="Input" value={test.input} onChange={(input) => update(test.id, { input })} placeholder="What the program reads" />
           <Field
             label="Expected output"
-            hint={test.expected.trim() ? "trailing spaces ignored" : "optional"}
             value={test.expected}
             onChange={(expected) => update(test.id, { expected })}
-            placeholder={"What it should print, e.g.\n6\n\nLeave empty to just see the output."}
+            placeholder="What it should print (optional)"
           />
           <div className="col-span-2 min-w-0 @[900px]:col-span-1">
             {compileError && shown === "not-run" ? (

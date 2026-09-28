@@ -581,27 +581,25 @@ export function DebugToolWindow() {
             </button>
           ))}
         </div>
-        <span
+        {/* No pill while idle: the empty view already says how to start. */}
+        {tone !== "idle" && <span
           className={cn(
             "ml-auto flex items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px]",
             tone === "paused" && "bg-warning-soft text-fg",
             tone === "running" && "bg-success-soft text-fg",
             tone === "starting" && "bg-accent-soft/60 text-fg",
-            tone === "idle" && "text-fg-subtle",
           )}
         >
-          {tone !== "idle" && (
-            <span
-              className={cn(
-                "size-2 shrink-0 rounded-full",
-                tone === "paused" && "bg-warning",
-                tone === "running" && "animate-pulse bg-success",
-                tone === "starting" && "animate-pulse bg-accent",
-              )}
-            />
-          )}
+          <span
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              tone === "paused" && "bg-warning",
+              tone === "running" && "animate-pulse bg-success",
+              tone === "starting" && "animate-pulse bg-accent",
+            )}
+          />
           {status}
-        </span>
+        </span>}
       </div>
 
       {!supported ? (
@@ -623,8 +621,7 @@ export function DebugToolWindow() {
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-fg-subtle">
               <CircleDot className="size-6 text-danger/70" />
               <p className="max-w-md">
-                Click the gutter next to a line number (or press <Kbd shortcut="F9" />) to add a breakpoint, then start debugging. The program pauses there so you
-                can inspect every variable and step line by line.
+                Click next to a line number to add a breakpoint, then start debugging.
               </p>
               <Button variant="primary" onClick={() => runCommand("debug.startOrContinue")}>
                 Start debugging

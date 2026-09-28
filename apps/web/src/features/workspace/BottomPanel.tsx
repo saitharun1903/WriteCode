@@ -35,10 +35,11 @@ const toneClass = {
 };
 
 /** The session tab next to the tool window title: entry file, state icon and state label. */
-function SessionTab() {
+function SessionTab({ tab }: { tab: BottomTab }) {
   const run = useExecution((s) => s.run);
   const paused = useDebug((s) => s.phase === "paused");
-  if (!run) return null;
+  // A plain run's status belongs on the Run tab only, not on Debug or Visualize.
+  if (!run || run.mode !== tab) return null;
   const running = isRunning(run);
   const meta = STATUS_META[run.error ? "SYSTEM_ERROR" : run.status];
   const label = run.error ? "Failed to start" : running && run.mode === "debug" && paused ? "Paused" : meta.label;
@@ -67,7 +68,7 @@ export function BottomPanel({ onClose }: { onClose: () => void }) {
     <section aria-label={TITLES[tab]} className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line pl-3 pr-1.5">
         <h2 className="text-sm font-semibold text-fg">{TITLES[tab]}</h2>
-        {(tab === "run" || tab === "debug" || tab === "visualize") && <SessionTab />}
+        {(tab === "run" || tab === "debug" || tab === "visualize") && <SessionTab tab={tab} />}
         <div className="ml-auto flex items-center gap-2">
           {tab === "run" && <RunMetrics />}
           <IconButton label="Hide" shortcut="Mod+J" size="sm" onClick={onClose}>

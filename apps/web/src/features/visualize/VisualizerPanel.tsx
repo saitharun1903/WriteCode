@@ -21,7 +21,6 @@ import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "motion/react
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { getLanguage, type HeapObject, type Trace, type TraceFrame, type TraceStep, type TraceValue } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { runCommand } from "@/features/commands/registry";
 import { showLocation } from "@/features/editor/navigate";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -756,16 +755,9 @@ function EmptyState({ recording, failed, message }: { recording: boolean; failed
       ) : (
         <>
           <p className="max-w-md text-fg">Watch your program run, one line at a time.</p>
-          <p className="max-w-md">
-            Every variable, list, map and object at every step, the arrows between them, and what each line changed. Play it like a video or scrub back and
-            forth.
-          </p>
           <Button variant="primary" size="sm" icon={<Workflow className="size-4" />} onClick={() => runCommand("run.visualize")}>
             Visualize
           </Button>
-          <p className="flex items-center gap-1.5 text-xs">
-            <Kbd shortcut="Mod+Alt+Enter" />
-          </p>
         </>
       )}
     </div>

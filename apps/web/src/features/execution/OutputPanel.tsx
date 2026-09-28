@@ -263,15 +263,9 @@ function formatMs(ms?: number) {
 export function RunMetrics() {
   const r = useExecution((s) => s.run?.result);
   if (!r) return null;
-  const parts = [
-    r.queueTime !== undefined && `queue ${formatMs(r.queueTime)}`,
-    r.startupTime !== undefined && `sandbox ${formatMs(r.startupTime)}`,
-    r.compileTime !== undefined && `compile ${formatMs(r.compileTime)}`,
-    r.executionTime !== undefined && `run ${formatMs(r.executionTime)}`,
-    r.memoryUsed !== undefined && `${(r.memoryUsed / 1024 / 1024).toFixed(1)} MB`,
-  ].filter(Boolean);
-  if (!parts.length) return null;
-  return <span className="hidden truncate text-xs text-fg-subtle md:inline">{parts.join(" · ")}</span>;
+  // How long the program itself ran; queue, sandbox and compiler times are infrastructure detail.
+  if (r.executionTime === undefined) return null;
+  return <span className="hidden text-xs tabular-nums text-fg-subtle md:inline">{formatMs(r.executionTime)}</span>;
 }
 
 /** Run tool window: vertical action toolbar plus the console. */

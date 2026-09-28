@@ -126,7 +126,7 @@ export function renderDebugDecorations(
   state.run.set(
     input.runLines.map((line) => ({
       range: new monaco.Range(line, 1, line, 1),
-      options: { linesDecorationsClassName: "cw-run-glyph", linesDecorationsTooltip: "Run" },
+      options: { linesDecorationsClassName: "cw-run-glyph" },
     })),
   );
 

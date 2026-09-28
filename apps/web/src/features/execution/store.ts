@@ -6,7 +6,6 @@ import {
   findEntryPoints,
   isTerminalStatus,
   parseDiagnostics,
-  requireLanguage,
   type DebugCommand,
   type Diagnostic,
   type ExecutionMode,
@@ -201,7 +200,6 @@ export const useExecution = create<ExecutionState>((set, get) => {
         return;
       }
 
-      const lang = requireLanguage(project.language);
       // With no prepared input, the program reads what the user types while it runs.
       const interactive = !project.stdin;
       set({
@@ -212,8 +210,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
           mode,
           interactive,
           status: "SUBMITTING",
-          // A plain first line saying what runs; the sandbox's command and JVM tuning flags are noise to the user.
-          log: [{ stream: "system", text: `${mode === "debug" ? "Debugging" : mode === "visualize" ? "Recording" : "Running"} ${project.entryFile} · ${lang.name} ${lang.version}\n` }],
+          // The console shows only the program's own output; the session tab already names the file.
+          log: [],
           startedAt: Date.now(),
         },
       });

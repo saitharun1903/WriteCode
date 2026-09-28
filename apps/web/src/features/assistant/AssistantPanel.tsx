@@ -474,7 +474,6 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
           <Sparkles className="size-5" />
         </div>
         <p className="text-[16px] font-semibold tracking-tight text-fg">How can I help with your code?</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-fg-subtle">I can see your files, your last run and the visualizer. When I suggest a fix, you can apply it with one click.</p>
       </div>
       <div className="flex flex-col gap-2">
         {suggestions.map((s) => (
@@ -490,7 +489,8 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
             <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg [&_svg]:size-3.5", s.primary ? "bg-[#8a7cf5] text-white" : "bg-hover text-fg-muted")}>{s.icon}</span>
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium text-fg">{s.label}</span>
-              <span className="block truncate text-[11.5px] text-fg-subtle">{s.hint}</span>
+              {/* Only the suggestions tied to what just happened need a second line. */}
+              {s.primary && <span className="block truncate text-[11.5px] text-fg-subtle">{s.hint}</span>}
             </span>
           </button>
         ))}
@@ -761,7 +761,6 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </form>
-            <p className="px-3.5 pb-2 text-[10.5px] text-fg-faint">Powered by Google Gemini · answers can be wrong, so run the code to check · Shift+Enter for a new line</p>
           </div>
         </>
       )}
