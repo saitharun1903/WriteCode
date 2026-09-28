@@ -6,6 +6,14 @@ export interface ProjectFile {
   content: string;
 }
 
+/** A saved input with the output the program should print for it. */
+export interface TestCase {
+  id: string;
+  input: string;
+  /** Empty: no expectation, the test only shows what the program printed. */
+  expected: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -17,6 +25,8 @@ export interface Project {
   stdin: string;
   /** Debugger breakpoints: file path -> sorted 1-based lines. Optional for projects saved before debugging existed. */
   breakpoints?: Record<string, number[]>;
+  /** Test cases, run together from the Tests tool window. Optional for projects saved before tests existed. */
+  tests?: TestCase[];
   createdAt: number;
   updatedAt: number;
   /** When the project was last run or debugged. Unset until its first run. */

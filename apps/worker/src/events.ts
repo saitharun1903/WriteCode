@@ -7,6 +7,7 @@ import {
   type ExecutionResult,
   type ExecutionStatus,
   type ExecutionStreamEvent,
+  type TestRunResult,
   type Trace,
 } from "@cw/shared";
 
@@ -46,6 +47,12 @@ export class EventEmitter {
   trace(trace: Trace) {
     this.flushChunks();
     this.push({ type: "trace", executionId: this.executionId, trace });
+  }
+
+  /** Test mode: one test finished. */
+  test(test: TestRunResult) {
+    this.flushChunks();
+    this.push({ type: "test", executionId: this.executionId, test });
   }
 
   chunk(type: ChunkType, text: string) {

@@ -2,6 +2,7 @@ import type Docker from "dockerode";
 import type { Redis } from "ioredis";
 import {
   INTERACTIVE_LIMITS,
+  TEST_LIMITS,
   TRACE_LIMITS,
   expandCommand,
   requireLanguage,
@@ -9,6 +10,7 @@ import {
   type ExecutionRequest,
   type ExecutionResult,
   type ExecutionStatus,
+  type TestRunResult,
   type Trace,
 } from "@cw/shared";
 import type { EventEmitter } from "./events.js";
@@ -41,6 +43,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
   // Visualize mode runs the program under the language's tracer instead of its run command.
   const tracer: Tracer | null = request.mode === "visualize" ? await tracerFor(ctx.docker, request, interactive ? INPUT_FIFO : STDIN_PATH) : null;
   const limits = tracer ? tracer.limits(ctx.limits) : ctx.limits;
+  const tests = request.mode === "test" ? (request.tests ?? []) : null;
 
   let stdout = "";
   let stderr = "";
@@ -67,6 +70,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     workspaceMb: ctx.workspaceMb,
     maxFileSizeBytes: ctx.maxFileSizeBytes,
     ...(interactive ? { lifetimeSeconds: Math.ceil((limits.compileTimeoutMs + INTERACTIVE_LIMITS.maxWallMs) / 1000) + 30 } : {}),
+    ...(tests ? { lifetimeSeconds: Math.ceil((limits.compileTimeoutMs + tests.length * (limits.timeoutMs + TEST_STEP_MARGIN_MS + 1000)) / 1000) + 30 } : {}),
   });
 
   let reader: { stop: () => void } | null = null;
@@ -105,6 +109,8 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
       const failed = classifyCompile(compile);
       if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.exitCode ?? undefined });
     }
+
+    if (tests) return finish("SUCCESS", { compileTime, ...(await runTests(ctx, sandbox, tests, limits)) });
 
     let channel: InputChannel | null = null;
     if (interactive) {
@@ -175,6 +181,67 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     // Remove in the background so the result is not delayed; the startup sweep catches failures.
     void sandbox.dispose();
   }
+}
+
+/** Extra time the worker allows a test before killing the sandbox; the in-sandbox `timeout` normally ends it first. */
+const TEST_STEP_MARGIN_MS = 3000;
+
+/**
+ * Test mode: runs the compiled program once per input, each with the full run
+ * time limit, enforced inside the sandbox with `timeout` so a test that runs
+ * too long does not take the other tests down with it. Only a crash of the
+ * sandbox itself (or cancelling) stops the remaining tests.
+ */
+async function runTests(ctx: RunContext, sandbox: Sandbox, inputs: string[], limits: ExecutionLimits): Promise<Partial<ExecutionResult>> {
+  const lang = requireLanguage(ctx.request.language);
+  const argv = expandCommand(lang.runtime.command, { entry: ctx.request.entry, files: ctx.request.files });
+  const seconds = (limits.timeoutMs / 1000).toFixed(1);
+  const results: TestRunResult[] = [];
+  ctx.events.status("RUNNING");
+  for (const [index, input] of inputs.entries()) {
+    if (sandbox.isKilled) break;
+    await sandbox.writeStdin(input);
+    let stdout = "";
+    let stderr = "";
+    const run = await sandbox.runStep({
+      argv: ["timeout", "-s", "KILL", seconds, ...argv],
+      timeoutMs: limits.timeoutMs + TEST_STEP_MARGIN_MS,
+      maxOutputBytes: TEST_LIMITS.maxOutputBytesPerTest,
+      dropExcessOutput: true,
+      stdin: "file",
+      onStdout: (c) => void (stdout += c),
+      onStderr: (c) => void (stderr += c),
+      isCancelled: ctx.isCancelled,
+    });
+    // GNU timeout exits 124 when it stopped the program; older coreutils report the KILL (137) instead.
+    const timedOut = run.timedOut || run.exitCode === 124 || (run.exitCode === 137 && run.durationMs >= limits.timeoutMs - 50);
+    const status = classifyRun({ ...run, timedOut, outputLimited: false });
+    const message =
+      status === "TIME_LIMIT"
+        ? `Stopped after ${limits.timeoutMs / 1000}s.`
+        : status === "RUNTIME_ERROR"
+          ? explainRuntimeError(run.exitCode, stderr)
+          : run.outputLimited
+            ? `Output after the first ${TEST_LIMITS.maxOutputBytesPerTest / 1024} KB was not kept.`
+            : messageFor(status, limits);
+    const result: TestRunResult = {
+      index,
+      status,
+      stdout,
+      stderr,
+      exitCode: run.exitCode ?? undefined,
+      executionTime: Math.min(run.durationMs, limits.timeoutMs),
+      ...(message ? { message } : {}),
+    };
+    results.push(result);
+    ctx.events.test(result);
+    if (status === "CANCELLED") return { status: "CANCELLED", tests: results } as Partial<ExecutionResult>;
+  }
+  const executionTime = results.reduce((n, t) => n + (t.executionTime ?? 0), 0);
+  if (results.length < inputs.length) {
+    return { tests: results, executionTime, message: `The sandbox stopped after test ${results.length}; the remaining tests did not run.` };
+  }
+  return { tests: results, executionTime };
 }
 
 /** Reads and sanity-checks the trace the tracer wrote. The program shares the sandbox, so the file is untrusted. */

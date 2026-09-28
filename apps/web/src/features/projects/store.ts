@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { getLanguage, isWithin, rebase, type Project, type ProjectSummary } from "@cw/shared";
+import { getLanguage, isWithin, rebase, type Project, type ProjectSummary, type TestCase } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
@@ -43,6 +43,7 @@ interface WorkspaceState {
   setBreakpoints: (file: string, lines: number[]) => void;
   clearBreakpoints: () => void;
   setStdin: (stdin: string) => void;
+  setTests: (tests: TestCase[]) => void;
   /** Records that the open project was run or debugged, which makes it recent work. */
   markRun: () => void;
   flush: () => Promise<void>;
@@ -386,6 +387,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (project && project.breakpoints && Object.keys(project.breakpoints).length) {
         commit({ ...project, breakpoints: {}, updatedAt: Date.now() });
       }
+    },
+
+    setTests(tests) {
+      const project = get().project;
+      if (project && project.tests !== tests) commit({ ...project, tests, updatedAt: Date.now() });
     },
 
     setStdin(stdin) {

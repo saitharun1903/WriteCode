@@ -214,6 +214,16 @@ describe("debug protocol", () => {
     expect(r.ok && r.value.mode).toBe("debug");
   });
 
+  it("accepts test mode with inputs and rejects stray or oversized tests", () => {
+    const r = validateExecutionRequest({ ...base, mode: "test", tests: ["1 2", ""] });
+    expect(r.ok && r.value.tests).toEqual(["1 2", ""]);
+    expect(validateExecutionRequest({ ...base, mode: "test", tests: [] }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "test", tests: [1] }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "test", tests: Array(13).fill("") }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, mode: "test", tests: ["x"], stdin: "y" }).ok).toBe(false);
+    expect(validateExecutionRequest({ ...base, tests: ["x"] }).ok).toBe(false);
+  });
+
   it("rejects debug mode for languages without a debugger and bad breakpoints", () => {
     expect(validateExecutionRequest({ language: "cpp", files: [{ path: "main.cpp", content: "" }], entry: "main.cpp", mode: "debug" }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);

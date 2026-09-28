@@ -70,7 +70,7 @@ export function CommandPalette() {
               <Cmdk.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">No matches.</Cmdk.Empty>
 
               {mode === "commands" &&
-                (["Run", "Debug", "AI", "File", "Edit", "Go", "View", "Project", "Preferences"] as const).map((category) => (
+                (["Run", "Debug", "Test", "AI", "File", "Edit", "Go", "View", "Project", "Preferences"] as const).map((category) => (
                   <Cmdk.Group
                     key={category}
                     heading={category}

@@ -10,6 +10,7 @@ import { FileIcon } from "@/features/explorer/file-icon";
 import { InputPanel } from "@/features/execution/InputPanel";
 import { RunMetrics, RunToolWindow } from "@/features/execution/OutputPanel";
 import { ProblemsPanel } from "@/features/execution/ProblemsPanel";
+import { TestsPanel } from "@/features/tests/TestsPanel";
 import { STATUS_META } from "@/features/execution/status";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useSettings, type BottomTab } from "@/features/settings/store";
@@ -19,6 +20,7 @@ const TITLES: Record<BottomTab, string> = {
   run: "Run",
   debug: "Debug",
   visualize: "Visualize",
+  tests: "Tests",
   problems: "Problems",
   input: "Program Input",
 };
@@ -77,6 +79,7 @@ export function BottomPanel({ onClose }: { onClose: () => void }) {
         {tab === "run" && <RunToolWindow />}
         {tab === "debug" && <DebugToolWindow />}
         {tab === "visualize" && <VisualizerPanel />}
+        {tab === "tests" && <TestsPanel />}
         {tab === "problems" && <ProblemsPanel />}
         {tab === "input" && <InputPanel />}
       </div>

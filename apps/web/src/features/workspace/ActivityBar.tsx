@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, CircleAlert, FolderClosed, History, Keyboard, Play, Search, Workflow } from "lucide-react";
+import { Bug, CircleAlert, FlaskConical, FolderClosed, History, Keyboard, Play, Search, Workflow } from "lucide-react";
 import { IconButton } from "@/components/ui/button";
 import { primaryShortcut } from "@/features/commands/registry";
 import { useExecution } from "@/features/execution/store";
@@ -17,6 +17,7 @@ const BOTTOM: { id: BottomTab; label: string; icon: React.ReactNode; command: st
   { id: "run", label: "Run", icon: <Play />, command: "view.run" },
   { id: "debug", label: "Debug", icon: <Bug />, command: "view.debug" },
   { id: "visualize", label: "Visualize", icon: <Workflow />, command: "view.visualize" },
+  { id: "tests", label: "Tests", icon: <FlaskConical />, command: "view.tests" },
   { id: "problems", label: "Problems", icon: <CircleAlert />, command: "view.problems" },
   { id: "input", label: "Program Input", icon: <Keyboard />, command: "view.input" },
 ];

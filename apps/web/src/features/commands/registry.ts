@@ -8,13 +8,14 @@ import { editorBridge, useCursor } from "@/features/editor/bridge";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSnapshots } from "@/features/history/snapshot-store";
+import { useTests } from "@/features/tests/store";
 import { DEFAULT_SETTINGS, resolveTheme, useSettings, type BottomTab, type SideView } from "@/features/settings/store";
 import { useUI } from "@/features/workspace/ui-store";
 
 export interface Command {
   id: string;
   title: string;
-  category: "Run" | "Debug" | "AI" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
+  category: "Run" | "Debug" | "Test" | "AI" | "File" | "Edit" | "View" | "Project" | "Preferences" | "Go";
   /** Display + binding, e.g. "Mod+Shift+P". Multiple bindings separated by " / ". */
   shortcut?: string;
   /** Returns false when the command cannot run in the current state. */
@@ -122,6 +123,27 @@ export const COMMANDS: Command[] = [
       if (!file) return;
       showBottom("run");
       void useExecution.getState().execute({ entry: file });
+    },
+  },
+  {
+    id: "tests.runAll",
+    title: "Run All Tests",
+    category: "Test",
+    shortcut: "Mod+Shift+Enter",
+    enabled: () => !!useWorkspace.getState().project?.tests?.length && useTests.getState().phase === "idle",
+    run: () => {
+      showBottom("tests");
+      void useTests.getState().run();
+    },
+  },
+  {
+    id: "tests.add",
+    title: "Add Test",
+    category: "Test",
+    enabled: hasProject,
+    run: () => {
+      showBottom("tests");
+      useTests.getState().add();
     },
   },
   {
@@ -388,6 +410,7 @@ export const COMMANDS: Command[] = [
   { id: "view.history", title: "Show Run History", category: "View", shortcut: "Mod+Shift+H", run: () => showSide("history") },
   { id: "view.run", title: "Show Run", category: "View", shortcut: "Alt+4", run: () => showBottom("run") },
   { id: "view.visualize", title: "Show Visualize", category: "View", run: () => showBottom("visualize") },
+  { id: "view.tests", title: "Show Tests", category: "View", run: () => showBottom("tests") },
   { id: "view.problems", title: "Show Problems", category: "View", shortcut: "Mod+Shift+M", run: () => showBottom("problems") },
   { id: "view.input", title: "Show Program Input (stdin)", category: "View", run: () => showBottom("input") },
   { id: "view.resetLayout", title: "Reset Layout", category: "View", run: () => useSettings.getState().resetLayout() },

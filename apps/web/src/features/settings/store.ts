@@ -4,8 +4,8 @@ import { create } from "zustand";
 
 export type ThemePreference = "dark" | "light" | "system";
 /** Bottom tool windows. */
-export type BottomTab = "run" | "debug" | "visualize" | "problems" | "input";
-const BOTTOM_TABS: readonly BottomTab[] = ["run", "debug", "visualize", "problems", "input"];
+export type BottomTab = "run" | "debug" | "visualize" | "tests" | "problems" | "input";
+const BOTTOM_TABS: readonly BottomTab[] = ["run", "debug", "visualize", "tests", "problems", "input"];
 export type SideView = "explorer" | "search" | "history";
 
 export interface Settings {

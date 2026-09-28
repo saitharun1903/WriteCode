@@ -41,8 +41,11 @@ export interface SourceFile {
   content: string;
 }
 
-/** `visualize` runs the program under a tracer and returns a step-by-step trace. */
-export type ExecutionMode = "run" | "debug" | "visualize";
+/**
+ * `visualize` runs the program under a tracer and returns a step-by-step trace.
+ * `test` compiles once and runs the program once per test input.
+ */
+export type ExecutionMode = "run" | "debug" | "visualize" | "test";
 
 export interface ExecutionRequest {
   language: string;
@@ -60,7 +63,29 @@ export interface ExecutionRequest {
   mode?: ExecutionMode;
   /** Debug mode only: project file -> 1-based breakpoint lines. */
   breakpoints?: Record<string, number[]>;
+  /** Test mode only: the stdin of each test, in order. Expected outputs stay in the browser. */
+  tests?: string[];
 }
+
+/** One test of a test-mode execution. */
+export interface TestRunResult {
+  index: number;
+  /** SUCCESS when the program exited normally; checking its output is the client's job. */
+  status: ExecutionStatus;
+  stdout: string;
+  stderr: string;
+  exitCode?: number;
+  executionTime?: number;
+  message?: string;
+}
+
+export const TEST_LIMITS = {
+  maxTests: 12,
+  /** All test inputs together. */
+  maxTotalInputBytes: 512 * 1024,
+  /** Output kept per test; the rest is dropped (the program keeps running). */
+  maxOutputBytesPerTest: 64 * 1024,
+} as const;
 
 export interface ExecutionLimits {
   /** Wall-clock limit for the run phase, in milliseconds. */
@@ -95,6 +120,8 @@ export interface ExecutionResult {
   runtimeVersion: string;
   /** Short, user-facing explanation for non-success states. */
   message?: string;
+  /** Test mode: one entry per test that ran. */
+  tests?: TestRunResult[];
   createdAt: string;
   finishedAt?: string;
 }
@@ -110,7 +137,9 @@ export type ExecutionStreamEvent =
   | { type: "result"; executionId: string; result: ExecutionResult }
   | { type: "debug"; executionId: string; event: DebugEvent }
   /** Visualize mode: the recorded trace, sent once before the result. */
-  | { type: "trace"; executionId: string; trace: Trace };
+  | { type: "trace"; executionId: string; trace: Trace }
+  /** Test mode: a test finished. */
+  | { type: "test"; executionId: string; test: TestRunResult };
 
 /** Interactive runs: typed-input waits do not count toward `timeoutMs`, within these caps. */
 export const INTERACTIVE_LIMITS = {

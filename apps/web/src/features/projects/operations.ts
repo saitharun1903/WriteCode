@@ -48,7 +48,7 @@ export function summarize(p: Project): ProjectSummary {
     fileCount: p.files.length,
     updatedAt: p.updatedAt,
     lastRunAt: p.lastRunAt,
-    untouched: !p.lastRunAt && matchesTemplate(p),
+    untouched: !p.lastRunAt && !p.tests?.length && matchesTemplate(p),
   };
 }
 

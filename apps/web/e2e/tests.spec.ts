@@ -1,0 +1,158 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * The Tests tool window against the real stack: tests are saved with the
+ * project, run together in one sandbox, and judged line by line.
+ * Run with E2E_EXECUTION=1 (API, worker and Docker running).
+ */
+test.skip(!process.env.E2E_EXECUTION, "set E2E_EXECUTION=1 with the API, worker and Docker running");
+test.setTimeout(180_000);
+
+const shots = process.env.E2E_SHOTS;
+
+async function waitSaved(page: Page) {
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
+}
+
+async function freshJava(page: Page) {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase("code-workspace");
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    });
+  });
+  await page.reload();
+  await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "New Java project" }).click();
+  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello World");
+}
+
+async function setCode(page: Page, code: string) {
+  await page.evaluate((text) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue(text);
+  }, code);
+  await waitSaved(page);
+}
+
+// Largest of n numbers, with a classic bug: starting from 0 breaks all-negative input.
+const MAX = `import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner in = new Scanner(System.in);
+        int n = in.nextInt();
+        int max = 0;
+        for (int i = 0; i < n; i++) {
+            max = Math.max(max, in.nextInt());
+        }
+        System.out.println(max);
+    }
+}
+`;
+
+const panel = (page: Page) => page.getByRole("region", { name: "Tests" });
+const list = (page: Page) => panel(page).getByRole("listbox", { name: "Tests" });
+
+async function fillTest(page: Page, input: string, expected: string) {
+  await panel(page).getByRole("textbox", { name: /^Input/ }).fill(input);
+  await panel(page).getByRole("textbox", { name: /^Expected output/ }).fill(expected);
+}
+
+test("tests: add, run all, see the wrong line, fix the code, all pass, saved with the project", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(page, MAX);
+
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await expect(panel(page).getByText("Check your program against test cases")).toBeVisible();
+  await panel(page).getByRole("button", { name: /Add a test/ }).click();
+  await fillTest(page, "3\n1 5 2", "5");
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  await fillTest(page, "2\n-4 -7", "-4");
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  // Trailing spaces and blank lines in the expected output do not matter.
+  await fillTest(page, "1\n9", "9  \n\n");
+  await waitSaved(page);
+
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("2 / 3 passed")).toBeVisible({ timeout: 60_000 });
+  await expect(list(page).getByRole("option", { name: /Test 1.*Passed/ })).toBeVisible();
+  await expect(list(page).getByRole("option", { name: /Test 2.*Wrong answer/ })).toBeVisible();
+  await expect(list(page).getByRole("option", { name: /Test 3.*Passed/ })).toBeVisible();
+
+  await list(page).getByRole("option", { name: /Test 2/ }).click();
+  await expect(panel(page).getByText("First difference on line 1")).toBeVisible();
+  const row = panel(page).getByRole("row").nth(1);
+  await expect(row).toContainText("-4");
+  await expect(row).toContainText("0");
+  if (shots) await page.screenshot({ path: `${shots}/tests-wrong-answer.png` });
+
+  // Fix the bug; the tests re-run and all pass.
+  await page.getByRole("tab", { name: /Main\.java/ }).click();
+  await setCode(page, MAX.replace("int max = 0;", "int max = Integer.MIN_VALUE;"));
+  await page.keyboard.press("Control+Shift+Enter");
+  await expect(panel(page).getByText("3 / 3 passed")).toBeVisible({ timeout: 60_000 });
+  if (shots) await page.screenshot({ path: `${shots}/tests-all-passed.png` });
+
+  // Tests are part of the project.
+  await page.reload();
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await expect(list(page).getByRole("option")).toHaveCount(3);
+});
+
+test("tests: an endless loop or a crash only fails its own test; compile errors are shown once", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(
+    page,
+    `import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        int n = new Scanner(System.in).nextInt();
+        while (n < 0) { }
+        System.out.println(100 / n);
+    }
+}
+`,
+  );
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await panel(page).getByRole("button", { name: /Add a test/ }).click();
+  await fillTest(page, "-1", "");
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  await fillTest(page, "0", "");
+  await panel(page).getByRole("button", { name: "Add test" }).click();
+  await fillTest(page, "4", "25");
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("1 / 3 passed")).toBeVisible({ timeout: 90_000 });
+  await expect(list(page).getByRole("option", { name: /Test 1.*Time limit/ })).toBeVisible();
+  await expect(list(page).getByRole("option", { name: /Test 2.*Runtime error/ })).toBeVisible();
+  await list(page).getByRole("option", { name: /Test 2/ }).click();
+  await expect(panel(page).getByText("ArithmeticException")).toBeVisible();
+  if (shots) await page.screenshot({ path: `${shots}/tests-runtime-error.png` });
+
+  await page.getByRole("tab", { name: /Main\.java/ }).click();
+  await setCode(page, "public class Main {\n    public static void main(String[] args) {\n        int x = ;\n    }\n}\n");
+  await panel(page).getByRole("button", { name: "Run all" }).click();
+  await expect(panel(page).getByText("Didn’t compile")).toBeVisible({ timeout: 60_000 });
+  await expect(panel(page).getByText("Compiler output")).toBeVisible();
+});
+
+test("a successful run can be saved as a test in one click", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await freshJava(page);
+  await setCode(page, MAX.replace("int max = 0;", "int max = Integer.MIN_VALUE;"));
+  await page.getByRole("button", { name: "Program Input" }).click();
+  await page.getByRole("textbox", { name: "Program input (stdin)" }).fill("4\n3 8 -1 6");
+  await waitSaved(page);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(page.getByRole("log", { name: "Program output" })).toContainText("Process finished with exit code 0", { timeout: 60_000 });
+  await page.getByRole("button", { name: "Save as test" }).click();
+  await expect(page.getByRole("button", { name: "Saved as a test" })).toBeVisible();
+  await page.getByRole("button", { name: "Saved as a test" }).click();
+  await expect(panel(page).getByRole("textbox", { name: /^Input/ })).toHaveValue("4\n3 8 -1 6");
+  await expect(panel(page).getByRole("textbox", { name: /^Expected output/ })).toHaveValue("8\n");
+});

@@ -1,6 +1,6 @@
 import { validLines } from "../debug/types.js";
 import { getLanguage } from "../languages/registry.js";
-import { REQUEST_BOUNDS, type ExecutionRequest } from "./types.js";
+import { REQUEST_BOUNDS, TEST_LIMITS, type ExecutionRequest } from "./types.js";
 
 export type ValidationResult = { ok: true; value: ExecutionRequest } | { ok: false; error: string };
 
@@ -83,7 +83,18 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
   if (interactive && stdin) return { ok: false, error: "Interactive runs take input while running; do not send stdin as well." };
 
   const mode = body.mode ?? "run";
-  if (mode !== "run" && mode !== "debug" && mode !== "visualize") return { ok: false, error: "mode must be 'run', 'debug' or 'visualize'." };
+  if (mode !== "run" && mode !== "debug" && mode !== "visualize" && mode !== "test") return { ok: false, error: "mode must be 'run', 'debug', 'visualize' or 'test'." };
+  let tests: string[] | undefined;
+  if (mode === "test") {
+    if (interactive || stdin) return { ok: false, error: "Test runs take their input from the tests." };
+    if (!Array.isArray(body.tests) || body.tests.length === 0) return { ok: false, error: "At least one test is required." };
+    if (body.tests.length > TEST_LIMITS.maxTests) return { ok: false, error: `Too many tests (max ${TEST_LIMITS.maxTests}).` };
+    if (!body.tests.every((t) => typeof t === "string")) return { ok: false, error: "Each test input must be a string." };
+    tests = body.tests as string[];
+    if (tests.reduce((n, t) => n + byteLength(t), 0) > TEST_LIMITS.maxTotalInputBytes) return { ok: false, error: "Test inputs too large." };
+  } else if (body.tests !== undefined) {
+    return { ok: false, error: "tests are only accepted in test mode." };
+  }
   if (mode === "visualize") {
     const lang = getLanguage(body.language)!;
     if (!lang.visualizer || lang.visualizer.supportLevel === "planned") {
@@ -113,5 +124,5 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     }
   }
 
-  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin, interactive, mode, breakpoints } };
+  return { ok: true, value: { language: body.language, files, entry: body.entry, stdin, interactive, mode, breakpoints, ...(tests ? { tests } : {}) } };
 }

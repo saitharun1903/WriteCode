@@ -49,6 +49,12 @@ export interface StepOptions {
    * not count toward `timeoutMs`, within these caps.
    */
   clock?: { waiting: () => boolean; maxInputWaitMs: number; maxWallMs: number };
+  /**
+   * Past `maxOutputBytes`, drop further output instead of killing the sandbox
+   * (test mode, where later tests still need it). The step's own time limit
+   * still ends a program that never stops printing.
+   */
+  dropExcessOutput?: boolean;
 }
 
 export interface StepResult extends StepOutcome {
@@ -123,6 +129,11 @@ export class Sandbox {
     for (const batch of buildWriteBatches(entries)) await this.exec(batch.argv);
   }
 
+  /** Replaces the prepared stdin (test mode: each test has its own input). */
+  async writeStdin(stdin: string): Promise<void> {
+    for (const batch of buildWriteBatches([{ path: STDIN_PATH, content: stdin }])) await this.exec(batch.argv);
+  }
+
   /** Runs a step, streaming decoded output, and enforces time, output and cancellation limits. */
   async runStep(step: StepOptions): Promise<StepResult> {
     const container = this.requireContainer();
@@ -153,7 +164,7 @@ export class Sandbox {
       if (bytes <= step.maxOutputBytes) return true;
       if (!outcome.outputLimited) {
         outcome.outputLimited = true;
-        void this.kill();
+        if (!step.dropExcessOutput) void this.kill();
       }
       return false;
     };

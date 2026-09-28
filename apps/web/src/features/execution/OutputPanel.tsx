@@ -1,10 +1,13 @@
 "use client";
 
-import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { runCommand } from "@/features/commands/registry";
+import { runCommand, showBottom } from "@/features/commands/registry";
+import { useWorkspace } from "@/features/projects/store";
+import { useLastRunAsTest, useTests } from "@/features/tests/store";
+import { TEST_LIMITS } from "@cw/shared";
 import { cn } from "@/lib/cn";
 import { STATUS_META } from "./status";
 import { isRunning, useExecution, type LogChunk, type RunState } from "./store";
@@ -114,6 +117,28 @@ function highlight(text: string, query: string) {
   return out;
 }
 
+/** Keeps a successful run's input and output as a test, to re-check after later changes. */
+function SaveAsTest() {
+  const lastRun = useLastRunAsTest();
+  const saved = useWorkspace((s) => !!lastRun && !!s.project?.tests?.some((t) => t.input === lastRun.input && t.expected === lastRun.expected));
+  const count = useWorkspace((s) => s.project?.tests?.length ?? 0);
+  if (!lastRun) return null;
+  return saved ? (
+    <button type="button" onClick={() => showBottom("tests")} className="ml-3 inline-flex items-center gap-1 rounded-full border border-success/50 px-2 font-sans text-xs text-success hover:bg-success-soft">
+      <Check className="size-3" /> Saved as a test
+    </button>
+  ) : (
+    <button
+      type="button"
+      disabled={count >= TEST_LIMITS.maxTests}
+      onClick={() => useTests.getState().add(lastRun)}
+      className="ml-3 inline-flex items-center gap-1 rounded-full border border-line-strong px-2 font-sans text-xs text-fg-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+    >
+      <FlaskConical className="size-3" /> Save as test
+    </button>
+  );
+}
+
 /** Closing line printed after the program ends, in the style of an IDE run console. */
 function Epilogue({ run }: { run: RunState }) {
   const r = run.result;
@@ -140,6 +165,7 @@ function Epilogue({ run }: { run: RunState }) {
   return (
     <div className="mt-[20px]">
       {line}
+      <SaveAsTest />
       {failed && (
         <button
           type="button"

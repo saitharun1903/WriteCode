@@ -32,6 +32,8 @@ interface RunOptions {
   /** Delay before sending each typed item, to prove waits are not counted as run time. */
   typeDelayMs?: number;
   cancelAfterMs?: number;
+  /** Test mode: one stdin per test. */
+  tests?: string[];
 }
 interface Outcome {
   result: ExecutionResult;
@@ -43,6 +45,7 @@ async function run(language: string, files: Files, opts: RunOptions = {}): Promi
   const executionId = randomUUID();
   const statuses: ExecutionStatus[] = [];
   let stdinEcho = "";
+  const tested: number[] = [];
   const typed = [...(opts.typed ?? [])];
   const interactive = opts.typed !== undefined;
   let cancelled = false;
@@ -64,6 +67,9 @@ async function run(language: string, files: Files, opts: RunOptions = {}): Promi
       if (type === "stdin") stdinEcho += text;
     },
     debug() {},
+    test(t: { index: number }) {
+      tested.push(t.index);
+    },
     async result() {},
   } as unknown as EventEmitter;
 
@@ -79,6 +85,7 @@ async function run(language: string, files: Files, opts: RunOptions = {}): Promi
         entry,
         stdin: opts.stdin,
         interactive,
+        ...(opts.tests ? { mode: "test" as const, tests: opts.tests } : {}),
       },
       limits: config.limits,
       runtime: config.runtime,
@@ -89,6 +96,7 @@ async function run(language: string, files: Files, opts: RunOptions = {}): Promi
       log: () => {},
       commandRedis,
     });
+    if (opts.tests) expect(tested).toEqual((result.tests ?? []).map((t) => t.index));
     return { result, statuses, stdinEcho };
   } finally {
     commandRedis?.disconnect();
@@ -1123,5 +1131,42 @@ except OSError as e:
     expect(o.statuses).toContain("WAITING_FOR_INPUT");
     expect(o.result.status).toBe("CANCELLED");
     await expectCleanedUp(o.result.id);
+  });
+});
+
+// ================================================================== Test mode
+
+describe.skipIf(!enabled).concurrent("Test mode", () => {
+  it("compiles once and runs every input; a slow or crashing test does not stop the others", { timeout: T }, async () => {
+    const code = main(
+      `        java.util.Scanner in = new java.util.Scanner(System.in);
+        int n = in.nextInt();
+        if (n < 0) while (true) {}
+        System.out.println(10 / n);`,
+    );
+    const o = await run("java", { "Main.java": code }, { tests: ["2", "-1", "0", "5\n"] });
+    expect(o.result.status).toBe("SUCCESS");
+    expect(o.statuses.filter((s) => s === "COMPILING")).toHaveLength(1);
+    const tests = o.result.tests!;
+    expect(tests.map((t) => t.status)).toEqual(["SUCCESS", "TIME_LIMIT", "RUNTIME_ERROR", "SUCCESS"]);
+    expect(tests[0]!.stdout).toBe("5\n");
+    expect(tests[1]!.executionTime).toBeLessThanOrEqual(config.limits.timeoutMs);
+    expect(tests[2]!.stderr).toContain("ArithmeticException");
+    expect(tests[3]!.stdout).toBe("2\n");
+    await expectCleanedUp(o.result.id);
+  });
+
+  it("keeps the first 64 KB of a flood and still runs the next test", { timeout: T }, async () => {
+    const o = await run("python", { "main.py": 'n = int(input())\nfor i in range(n): print("x" * 100)\nprint("done")\n' }, { tests: ["100000", "1"] });
+    expect(o.result.tests!.map((t) => t.status)).toEqual(["SUCCESS", "SUCCESS"]);
+    expect(o.result.tests![0]!.stdout.length).toBeLessThanOrEqual(64 * 1024);
+    expect(o.result.tests![0]!.message).toContain("64 KB");
+    expect(o.result.tests![1]!.stdout).toBe("x".repeat(100) + "\ndone\n");
+  });
+
+  it("stops at a compilation error without running tests", { timeout: T }, async () => {
+    const o = await run("cpp", { "main.cpp": "int main() { return x; }\n" }, { tests: ["1"] });
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(o.result.tests).toBeUndefined();
   });
 });
