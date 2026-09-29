@@ -32,7 +32,7 @@ import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
 import { JoinDialog, LivePanel, LiveStrip, SessionEndedDialog } from "@/features/live/LiveUI";
 import { promptJoin } from "@/features/live/store";
-import { isLiveRoomId } from "@cw/shared";
+import { getLanguage, isLiveRoomId } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 
 
@@ -241,6 +241,7 @@ function CompactWorkbench() {
 
 /** The link is read once per page load (effects run twice in development). */
 let liveLinkHandled = false;
+let newProjectHandled = false;
 
 /** `live`: the page was opened from a live session link (`/live#<id>`). */
 export function WorkspaceShell({ live = false }: { live?: boolean }) {
@@ -272,7 +273,14 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
 
   useEffect(() => {
     useSettings.getState().hydrate();
-    void useWorkspace.getState().init();
+    const init = useWorkspace.getState().init();
+    // Landing pages link to /?new=<language>: start a project in that language.
+    const wanted = new URLSearchParams(location.search).get("new");
+    if (wanted && !newProjectHandled) {
+      newProjectHandled = true;
+      history.replaceState(null, "", location.pathname + location.hash);
+      if (getLanguage(wanted)) void init.then(() => useWorkspace.getState().createProject(wanted));
+    }
     // Fetch the editor while the start screen is showing, so opening a project is instant.
     const idle = window.requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 300));
     idle(() => void import("@/features/editor/monaco-setup").then((m) => m.preloadMonaco()));

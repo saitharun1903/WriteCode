@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/primitives";
 import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
+import { LANDING_PAGES } from "@/features/seo/pages";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -130,6 +131,17 @@ export function StartScreen() {
           </section>
         )}
 
+        <nav aria-label="Compilers and tools" className="mt-14 border-t border-line-strong/60 pt-6 text-[13px] text-fg-subtle">
+          <ul className="flex flex-wrap gap-x-4 gap-y-2">
+            {LANDING_PAGES.map((p) => (
+              <li key={p.slug}>
+                <a href={`/${p.slug}`} className="hover:text-fg hover:underline">
+                  {p.kind === "language" ? `Online ${p.label}` : p.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
     </div>
   );
