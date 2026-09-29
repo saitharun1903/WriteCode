@@ -110,6 +110,5 @@ includes periodic backups (check hPanel → Backups). For your own copy of the
 database:
 
 ```bash
-docker compose --env-file deploy/.env.production -f deploy/docker-compose.prod.yml \
-  exec -T postgres pg_dump -U cw code_workspace | gzip > backup-$(date +%F).sql.gz
+docker exec writecode-postgres-1 pg_dump -U cw code_workspace | gzip > backup-$(date +%F).sql.gz
 ```
