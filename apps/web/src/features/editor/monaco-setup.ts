@@ -6,6 +6,11 @@ import { loader, type Monaco } from "@monaco-editor/react";
 // never depends on a third-party CDN.
 loader.config({ paths: { vs: "/monaco/vs" } });
 
+/** Starts downloading the editor in the background, so it is ready when a project opens. */
+export function preloadMonaco() {
+  void loader.init().catch(() => {});
+}
+
 let themesDefined = false;
 
 /**

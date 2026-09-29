@@ -79,3 +79,8 @@ CMD ["node_modules/.bin/prisma", "migrate", "deploy"]
 FROM caddy:2-alpine AS web
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /repo/apps/web/out /srv
+# Compressed once here at maximum level instead of on every request (Monaco alone is several MB).
+RUN apk add --no-cache zstd \
+  && find /srv -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.json' -o -name '*.svg' -o -name '*.txt' \) -size +1k \
+     -exec gzip -9 -k {} \; -exec zstd -19 -q {} \; \
+  && apk del zstd

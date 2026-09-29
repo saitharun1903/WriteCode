@@ -248,6 +248,9 @@ export function WorkspaceShell() {
   useEffect(() => {
     useSettings.getState().hydrate();
     void useWorkspace.getState().init();
+    // Fetch the editor while the start screen is showing, so opening a project is instant.
+    const idle = window.requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 300));
+    idle(() => void import("@/features/editor/monaco-setup").then((m) => m.preloadMonaco()));
   }, []);
 
   // Apply theme, following the OS when set to "system".
