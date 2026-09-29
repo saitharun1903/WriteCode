@@ -21,7 +21,7 @@ about 50–100 people actively running programs, and 4 debug sessions at once.
    Never share the private key or the password.
 6. Note the VPS's **public IPv4 address** (VPS overview page).
 7. hPanel's VPS **Firewall** is off by default. If you turn it on, allow TCP 22,
-   TCP 80, TCP 443 and UDP 443. `setup-server.sh` also opens exactly these
+   TCP 80 and TCP 443. `setup-server.sh` also opens exactly these
    ports in the VM's own firewall (ufw).
 
 ## 2. A user for the app (recommended)
