@@ -303,7 +303,9 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       let dir = "";
       for (const part of parts) {
         const next = dir ? `${dir}/${part}` : part;
-        if (!ws.project.files.some((f) => f.path.startsWith(`${next}/`))) ws.createFolder(dir, part);
+        const project = useWorkspace.getState().project!;
+        const exists = project.folders.includes(next) || project.files.some((f) => f.path.startsWith(`${next}/`));
+        if (!exists) ws.createFolder(dir, part);
         dir = next;
       }
       target = ws.createFile(dir, name);

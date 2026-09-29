@@ -33,6 +33,7 @@ import { FileIcon } from "@/features/explorer/file-icon";
 import { editorBridge } from "@/features/editor/bridge";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
+import { toast } from "@/components/ui/toast";
 import { useSettings } from "@/features/settings/store";
 import { useVisualize } from "@/features/visualize/store";
 import { cn } from "@/lib/cn";
@@ -71,10 +72,13 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
       type="button"
       className="flex h-6 items-center gap-1 rounded-md px-1.5 text-[11.5px] text-fg-subtle hover:bg-hover hover:text-fg"
       onClick={() =>
-        void navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        })
+        void navigator.clipboard?.writeText(text).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          },
+          () => toast.error("Could not copy", "The browser did not allow access to the clipboard."),
+        )
       }
     >
       {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}

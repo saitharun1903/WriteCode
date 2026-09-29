@@ -70,10 +70,18 @@ interface ExecutionState {
   cancel: () => Promise<void>;
   clearOutput: () => void;
   bumpHistory: () => void;
+  /** Leaves the current run behind (its project was closed): stops it on the server and clears the console. */
+  abandon: () => void;
 }
 
 const MAX_LOG_CHARS = 1_200_000;
+/** Beyond this many chunks, output joins the last one so the console stays fast. */
+const MAX_LOG_CHUNKS = 4000;
 let stream: ExecutionStream | null = null;
+/** Set from the click until the run is accepted, so a double press starts one run. */
+let starting = false;
+/** Stop was pressed before the server accepted the run; cancel it as soon as it has an id. */
+let cancelRequested = false;
 
 /** Called when the project's entry file has no entry point and several others do. Set by the UI. */
 export const entryChooser: { open: ((mode: ExecutionMode) => void) | null } = { open: null };
@@ -83,13 +91,37 @@ export function sendDebugCommand(requestId: string, command: DebugCommand): bool
   return stream?.sendDebug(requestId, command) ?? false;
 }
 
-function appendLog(log: LogChunk[], chunk: LogChunk): LogChunk[] {
-  const last = log[log.length - 1];
-  const total = log.reduce((n, c) => n + c.text.length, 0);
-  if (total > MAX_LOG_CHARS) return log;
-  if (last && last.stream === chunk.stream) return [...log.slice(0, -1), { stream: chunk.stream, text: last.text + chunk.text }];
-  return [...log, chunk];
+/** Characters in each log array, so appending does not re-count the whole log. */
+const logSizes = new WeakMap<LogChunk[], number>();
+
+function logSize(log: LogChunk[]): number {
+  let n = logSizes.get(log);
+  if (n === undefined) {
+    n = log.reduce((sum, c) => sum + c.text.length, 0);
+    logSizes.set(log, n);
+  }
+  return n;
 }
+
+function appendLogs(log: LogChunk[], chunks: LogChunk[]): LogChunk[] {
+  let total = logSize(log);
+  if (total > MAX_LOG_CHARS || !chunks.length) return log;
+  const next = log.slice();
+  for (const chunk of chunks) {
+    if (total > MAX_LOG_CHARS) break;
+    const last = next[next.length - 1];
+    if (last && (last.stream === chunk.stream || next.length >= MAX_LOG_CHUNKS)) next[next.length - 1] = { stream: last.stream, text: last.text + chunk.text };
+    else next.push(chunk);
+    total += chunk.text.length;
+  }
+  logSizes.set(next, total);
+  return next;
+}
+
+// Output arrives in many small pieces (every switch between stdout and stderr is one);
+// they are applied together a few times a second instead of re-rendering the console for each.
+let pendingLog: { id: string; chunks: LogChunk[] } | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Breakpoints for files that still exist, in the shape the API expects. */
 function liveBreakpoints(project: Project): Record<string, number[]> {
@@ -105,7 +137,23 @@ function snapshotFiles(project: Project) {
 }
 
 export const useExecution = create<ExecutionState>((set, get) => {
+  const flushLog = () => {
+    if (pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = null;
+    const batch = pendingLog;
+    pendingLog = null;
+    if (!batch) return;
+    set((s) => (s.run && s.run.id === batch.id ? { run: { ...s.run, log: appendLogs(s.run.log, batch.chunks) } } : s));
+  };
+
+  const queueLog = (id: string, chunk: LogChunk) => {
+    if (pendingLog && pendingLog.id !== id) flushLog();
+    (pendingLog ??= { id, chunks: [] }).chunks.push(chunk);
+    pendingTimer ??= setTimeout(flushLog, 40);
+  };
+
   const finish = async (result: ExecutionResult, project: Project) => {
+    flushLog();
     stream?.close();
     stream = null;
     if (get().run?.mode === "debug") useDebug.getState().onEnded();
@@ -139,6 +187,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
   };
 
   const fail = (title: string, detail?: string, requestId?: string) => {
+    flushLog();
     stream?.close();
     stream = null;
     if (get().run?.mode === "debug") useDebug.getState().onEnded();
@@ -162,10 +211,68 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
     async execute(options) {
       const mode = options?.mode ?? "run";
-      const current = get().run;
-      if (current && !isTerminalStatus(current.status as ExecutionStatus) && !current.error) return;
+      if (starting || isRunning(get().run)) return;
+      starting = true;
+      try {
+        await start(mode, options?.entry);
+      } finally {
+        starting = false;
+      }
+    },
 
-      if (options?.entry) useWorkspace.getState().setEntryFile(options.entry);
+    async cancel() {
+      const run = get().run;
+      if (!run?.id) {
+        // Still being accepted: cancel it the moment the server gives it an id.
+        if (run?.status === "SUBMITTING") cancelRequested = true;
+        return;
+      }
+      try {
+        await api.cancelExecution(run.id);
+      } catch {
+        // The result event (CANCELLED or otherwise) is authoritative; nothing to do here.
+      }
+    },
+
+    sendInput(text, eof = false) {
+      const run = get().run;
+      if (!run?.id || !run.interactive || run.inputClosed || !isRunning(run)) return;
+      if (!stream?.sendInput(text, eof)) {
+        set((s) => ({ run: s.run ? { ...s.run, inputError: "Not connected to the program." } : s.run }));
+        return;
+      }
+      set((s) => ({ run: s.run ? { ...s.run, inputError: undefined, inputClosed: eof || s.run.inputClosed } : s.run }));
+    },
+
+    clearOutput() {
+      const run = get().run;
+      if (run && !isTerminalStatus(run.status as ExecutionStatus) && !run.error) {
+        flushLog();
+        set({ run: { ...run, log: [] } });
+      } else {
+        set({ run: null, diagnostics: [] });
+      }
+    },
+
+    bumpHistory: () => set((s) => ({ historyVersion: s.historyVersion + 1 })),
+
+    abandon() {
+      const run = get().run;
+      pendingLog = null;
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      if (run?.id && isRunning(run)) void api.cancelExecution(run.id).catch(() => {});
+      stream?.close();
+      stream = null;
+      if (run?.mode === "debug") useDebug.getState().onEnded();
+      if (run?.mode === "visualize") useVisualize.getState().clear();
+      set({ run: null, diagnostics: [] });
+    },
+  };
+
+  async function start(mode: ExecutionMode, entry?: string) {
+      cancelRequested = false;
+      if (entry) useWorkspace.getState().setEntryFile(entry);
       await useWorkspace.getState().flush();
       let project = useWorkspace.getState().project;
       if (!project) return;
@@ -243,22 +350,34 @@ export const useExecution = create<ExecutionState>((set, get) => {
         return fail("Could not start execution", e instanceof Error ? e.message : String(e), e instanceof ApiError ? e.requestId : undefined);
       }
 
+      // The project was closed while the run was being accepted: it is not wanted any more.
+      if (get().run?.projectId !== project.id || get().run?.status !== "SUBMITTING") {
+        void api.cancelExecution(id).catch(() => {});
+        return;
+      }
       if (mode === "visualize") useVisualize.getState().clear();
       set((s) => ({ runner: "online", run: s.run ? { ...s.run, id, status: "QUEUED" } : s.run }));
+      // Stop was pressed while the run was being accepted; its CANCELLED result arrives on the stream.
+      if (cancelRequested) {
+        cancelRequested = false;
+        void api.cancelExecution(id).catch(() => {});
+      }
       useWorkspace.getState().markRun();
       if (mode === "debug") useDebug.getState().onStarted(id);
+      stream?.close();
       stream = streamExecution(id, controlToken, {
         onEvent: (event) => {
           if (get().run?.id !== id) return;
           switch (event.type) {
             case "status":
+              flushLog();
               set((s) => ({ run: s.run ? { ...s.run, status: event.status } : s.run }));
               break;
             case "stdout":
             case "stderr":
             case "compile":
             case "stdin":
-              set((s) => ({ run: s.run ? { ...s.run, log: appendLog(s.run.log, { stream: event.type, text: event.chunk }) } : s.run }));
+              queueLog(id, { stream: event.type, text: event.chunk });
               break;
             case "debug":
               useDebug.getState().onEvent(event.event);
@@ -280,6 +399,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           {
             const result = recoverable ? await waitForResult(id, () => get().run?.id === id) : null;
             if (result) {
+              flushLog();
               set((s) => ({
                 run: s.run
                   ? {
@@ -299,39 +419,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
           if (get().run?.id === id) fail("Lost connection to the program", recoverable ? `${message} It did not finish within a minute; run it again.` : message);
         },
       });
-    },
-
-    async cancel() {
-      const id = get().run?.id;
-      if (!id) return;
-      try {
-        await api.cancelExecution(id);
-      } catch {
-        // The result event (CANCELLED or otherwise) is authoritative; nothing to do here.
-      }
-    },
-
-    sendInput(text, eof = false) {
-      const run = get().run;
-      if (!run?.id || !run.interactive || run.inputClosed || !isRunning(run)) return;
-      if (!stream?.sendInput(text, eof)) {
-        set((s) => ({ run: s.run ? { ...s.run, inputError: "Not connected to the program." } : s.run }));
-        return;
-      }
-      set((s) => ({ run: s.run ? { ...s.run, inputError: undefined, inputClosed: eof || s.run.inputClosed } : s.run }));
-    },
-
-    clearOutput() {
-      const run = get().run;
-      if (run && !isTerminalStatus(run.status as ExecutionStatus) && !run.error) {
-        set({ run: { ...run, log: [] } });
-      } else {
-        set({ run: null, diagnostics: [] });
-      }
-    },
-
-    bumpHistory: () => set((s) => ({ historyVersion: s.historyVersion + 1 })),
-  };
+  }
 });
 
 export function isRunning(run: RunState | null): boolean {
@@ -341,6 +429,12 @@ export function isRunning(run: RunState | null): boolean {
 // Errors describe the code as it was when it ran. Once a file is edited, its marks no longer
 // line up with the text (a deleted line would keep its red squiggle), so they are cleared.
 useWorkspace.subscribe((s, prev) => {
+  // A run, its console, errors and debug session belong to the project they ran for.
+  if (s.project?.id !== prev.project?.id) {
+    const { run, diagnostics } = useExecution.getState();
+    if ((run && run.projectId !== s.project?.id) || diagnostics.length) useExecution.getState().abandon();
+    return;
+  }
   if (!s.project || !prev.project || s.project.id !== prev.project.id || s.project.files === prev.project.files) return;
   const { diagnostics } = useExecution.getState();
   if (!diagnostics.length) return;

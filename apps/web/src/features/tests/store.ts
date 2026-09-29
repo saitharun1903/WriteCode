@@ -221,6 +221,8 @@ export const useTests = create<TestsState>((set, get) => {
 
     reset: () => {
       generation++;
+      // Tests of the project being left would otherwise keep a worker busy until they finish.
+      if (executionId) void api.cancelExecution(executionId).catch(() => {});
       stream?.close();
       stream = null;
       executionId = null;

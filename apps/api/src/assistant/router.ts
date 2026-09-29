@@ -27,6 +27,9 @@ const SLOW_MS = 12_000;
 /** Seconds an overloaded model is skipped before being tried again. */
 const OVERLOAD_REST_S = 120;
 
+/** Models asked at the same time for one question. */
+const MAX_IN_FLIGHT = 2;
+
 export type Route = "fast" | "deep";
 
 export function routeFor(question: string): Route {
@@ -139,7 +142,8 @@ export class AnswerRouter {
         running++;
         lead ??= model;
         const started = Date.now();
-        const hedge = setTimeout(() => launch(), hedgeFor(effort));
+        // A slow model gets company, but at most two race at once: every call spends quota.
+        const hedge = setTimeout(() => running < MAX_IN_FLIGHT && launch(), hedgeFor(effort));
 
         void (async () => {
           try {

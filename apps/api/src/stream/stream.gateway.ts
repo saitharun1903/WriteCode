@@ -23,7 +23,8 @@ const MAX_COMMANDS_PER_SECOND = 30;
  * `{"type":"debug","executionId","token","requestId","command"}` and
  * `{"type":"stdin","executionId","token","data","eof"}` (typed input).
  */
-@WebSocketGateway({ path: "/ws" })
+// maxPayload makes the socket refuse oversized frames before buffering them.
+@WebSocketGateway({ path: "/ws", maxPayload: MAX_MESSAGE_BYTES * 4 })
 export class StreamGateway implements OnGatewayConnection {
   private readonly logger = new Logger(StreamGateway.name);
 
@@ -84,11 +85,11 @@ export class StreamGateway implements OnGatewayConnection {
     client.on("close", () => {
       for (const u of unsubscribers) u();
       unsubscribers.clear();
-      // A debug session nobody is watching would hold a sandbox until it times out; end it.
+      // A debug session or interactive run nobody is watching would hold a sandbox until it times out; end it.
       for (const id of followed) {
         setTimeout(() => {
           if (this.hub.subscribers(id) > 0) return;
-          void this.executions.sendDebugCommand(id, "orphaned", { cmd: "terminate" }).catch(() => {});
+          void this.executions.endUnwatched(id).catch(() => {});
         }, ORPHAN_GRACE_MS);
       }
     });

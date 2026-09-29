@@ -1,13 +1,17 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Redis } from "ioredis";
-import { redisKeys } from "@cw/shared";
+import { isTerminalStatus, redisKeys, type ExecutionStatus } from "@cw/shared";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
 
 export type RateDecision = { ok: true } | { ok: false; reason: "rate" | "concurrency"; retryAfterSeconds: number };
 
-/** Entries older than this are treated as finished even if no completion was observed. */
-const ACTIVE_STALE_MS = 2 * 60 * 1000;
+/**
+ * Entries older than this are treated as finished even if no completion was observed.
+ * Longer than the longest session (debug and interactive runs last up to 15 minutes),
+ * so long sessions keep counting against the client's cap.
+ */
+const ACTIVE_STALE_MS = 16 * 60 * 1000;
 
 /**
  * Per-client limits backed by Redis so they hold across API instances:
@@ -35,13 +39,33 @@ export class RateLimiter {
     if (count > config.rateLimit.perMinute) {
       return { ok: false, reason: "rate", retryAfterSeconds: 60 - Math.floor((now % 60_000) / 1000) };
     }
-    if (active >= config.rateLimit.concurrent) return { ok: false, reason: "concurrency", retryAfterSeconds: 2 };
+    if (active >= config.rateLimit.concurrent && (await this.stillActive(activeKey)) >= config.rateLimit.concurrent) {
+      return { ok: false, reason: "concurrency", retryAfterSeconds: 2 };
+    }
     return { ok: true };
   }
 
   async markActive(client: string, executionId: string, now = Date.now()): Promise<void> {
     const key = redisKeys.activeByClient(client);
     await this.redis.multi().zadd(key, now, executionId).expire(key, ACTIVE_STALE_MS / 1000).exec();
+  }
+
+  /** Drops runs that have a final result but whose completion was missed (an API restart), and counts the rest. */
+  private async stillActive(activeKey: string): Promise<number> {
+    const ids = await this.redis.zrange(activeKey, "0", "-1");
+    if (!ids.length) return 0;
+    const results = await this.redis.mget(ids.map((id) => redisKeys.result(id)));
+    const finished = ids.filter((_, i) => {
+      const raw = results[i];
+      if (!raw) return false;
+      try {
+        return isTerminalStatus((JSON.parse(raw) as { status: ExecutionStatus }).status);
+      } catch {
+        return false;
+      }
+    });
+    if (finished.length) await this.redis.zrem(activeKey, ...finished);
+    return ids.length - finished.length;
   }
 
   async markDone(client: string, executionId: string): Promise<void> {

@@ -552,3 +552,31 @@ test("stack trace and compiler locations in the console open the editor at that 
   await activeTab(page, "Main.java");
   await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^4:/);
 });
+
+test("errors and output belong to their project: opening another project starts clean", async ({ page }) => {
+  await freshProject(page, "Java");
+  await setCode(page, `public class Main {
+    public static void main(String[] args) {
+        int n = 1;
+        int n = 2;
+    }
+}
+`);
+  // A quick double press starts one run, not two.
+  const posts: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && /\/executions$/.test(r.url())) posts.push(r.url());
+  });
+  await page.getByRole("button", { name: "Run program" }).dblclick();
+  await expect(output(page)).toContainText("already defined", { timeout: 120_000 });
+  expect(posts).toHaveLength(1);
+  await expect(page.locator(".monaco-editor .squiggly-error")).not.toHaveCount(0);
+
+  await page.getByRole("button", { name: "Home" }).click();
+  await page.getByRole("button", { name: "New Java project" }).click();
+  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello");
+  await expect(page.locator(".monaco-editor .squiggly-error")).toHaveCount(0);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("Hello", { timeout: 120_000 });
+  await expect(output(page)).not.toContainText("already defined");
+});

@@ -10,7 +10,7 @@ import { canDebug, canVisualize, getCommand, isEnabled, primaryShortcut, runComm
 import { FileIcon, ProjectBadge } from "@/features/explorer/file-icon";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { useResolvedTheme, useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 import { LogoMark } from "./Logo";
 
@@ -66,8 +66,7 @@ function AssistantButton() {
 }
 
 function ThemeToggle() {
-  const theme = useSettings((s) => s.theme);
-  const dark = resolveTheme(theme) === "dark";
+  const dark = useResolvedTheme() === "dark";
   return (
     <IconButton label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={() => runCommand("prefs.toggleTheme")}>
       {dark ? <Sun /> : <Moon />}

@@ -47,19 +47,29 @@ function buildBindings(): Map<string, string> {
   return map;
 }
 
+
+function isEditable(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || target.tagName === "TEXTAREA" || target.tagName === "INPUT");
+}
+
 /** Installs global shortcuts. Monaco handles its own when focused and marks those events defaultPrevented. */
 export function useGlobalKeybindings() {
   useEffect(() => {
     const bindings = buildBindings();
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing) return;
+      // AltGr (Ctrl+Alt on Windows) and Option on macOS type characters such as ó, ñ and ¢.
+      if (e.getModifierState?.("AltGraph")) return;
+      if (isMac() && e.altKey && !e.metaKey && !e.ctrlKey && isEditable(e.target)) return;
       const shortcut = eventToShortcut(e);
       if (!shortcut) return;
       const id = bindings.get(shortcut);
       if (!id) return;
       const cmd = COMMANDS.find((c) => c.id === id)!;
+      // A shortcut that does nothing right now leaves the key to the browser (Ctrl+F finds in the page).
+      if (!isEnabled(cmd)) return;
       e.preventDefault();
-      if (isEnabled(cmd)) cmd.run();
+      cmd.run();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

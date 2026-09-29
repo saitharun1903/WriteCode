@@ -139,8 +139,14 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     await this.store.appendEvent({ type: "status", executionId: id, status: "QUEUED" });
 
     const job: ExecutionJob = { executionId: id, request, enqueuedAt: Date.now() };
-    // One attempt only: user code must never be silently re-run.
-    await queue.add(request.mode === "debug" ? "debug" : "run", job, { jobId: id, attempts: 1, removeOnComplete: 1000, removeOnFail: 1000 });
+    // One attempt only: user code must never be silently re-run. Finished jobs hold the request
+    // (source and input) in Redis; the result lives in its own key, so they are dropped soon.
+    await queue.add(request.mode === "debug" ? "debug" : "run", job, {
+      jobId: id,
+      attempts: 1,
+      removeOnComplete: { age: 600, count: 200 },
+      removeOnFail: { age: 3600, count: 200 },
+    });
     return { id, controlToken };
   }
 
@@ -189,6 +195,19 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     if (isTerminalStatus(result.status)) return "The debug session has ended.";
     await this.store.appendCommand(id, { requestId, command });
     return null;
+  }
+
+  /**
+   * Ends a session whose page has gone: a debug session, or a run that reads typed input (it
+   * can only wait for input nobody will type). Runs with prepared input keep going; the page
+   * may still collect their result.
+   */
+  async endUnwatched(id: string): Promise<void> {
+    const result = await this.store.getResult(id);
+    if (!result || isTerminalStatus(result.status)) return;
+    const row = await this.prisma.execution.findUnique({ where: { id }, select: { interactive: true } });
+    await this.store.appendCommand(id, { requestId: "orphaned", command: { cmd: "terminate" } });
+    if (row?.interactive) await this.cancel(id);
   }
 
   /** Forwards typed input (and optionally end-of-file) to a running program. Returns an error message or null. */

@@ -65,7 +65,16 @@ export function EditorTabs() {
               onClick={() => openFile(path)}
               onAuxClick={(e) => e.button === 1 && closeTab(path)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") openFile(path);
+                if (e.key === "Enter" || e.key === " ") return openFile(path);
+                if (e.key === "Delete") return closeTab(path);
+                // Arrow keys move between tabs, as in any tab strip.
+                const i = openTabs.indexOf(path);
+                const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: openTabs.length - 1 }[e.key];
+                const next = to === undefined ? undefined : openTabs[(to + openTabs.length) % openTabs.length];
+                if (!next) return;
+                e.preventDefault();
+                openFile(next);
+                requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[role="tab"][title="${CSS.escape(next)}"]`)?.focus());
               }}
               className={cn(
                 "group relative flex min-w-0 max-w-60 shrink-0 items-center gap-1.5 pl-3 pr-1.5 text-sm",

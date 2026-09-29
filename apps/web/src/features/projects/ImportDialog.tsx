@@ -20,7 +20,12 @@ export const importPicker: { files: (() => void) | null; folder: (() => void) | 
 export async function reviewImport(incoming: IncomingFile[] | Promise<IncomingFile[]>) {
   const project = useWorkspace.getState().project;
   if (!project) return;
-  const files = await incoming;
+  let files: IncomingFile[];
+  try {
+    files = await incoming;
+  } catch {
+    return void toast.error("Could not read those files", "They may have been moved, or the browser was not allowed to read them.");
+  }
   if (!files.length) return;
   useImport.getState().set(planImport(project, files));
 }

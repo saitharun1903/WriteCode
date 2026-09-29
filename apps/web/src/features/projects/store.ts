@@ -238,10 +238,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (!trimmed) return void toast.error("Project name cannot be empty.");
       const current = get().project;
       if (current?.id === id) return commit({ ...current, name: trimmed, updatedAt: Date.now() });
-      const stored = await projectRepo.get(id);
-      if (!stored) return;
-      const next = { ...stored, name: trimmed, updatedAt: Date.now() };
-      await projectRepo.put(next);
+      let next: Project;
+      try {
+        const stored = await projectRepo.get(id);
+        if (!stored) return;
+        next = { ...stored, name: trimmed, updatedAt: Date.now() };
+        await projectRepo.put(next);
+      } catch (e) {
+        return void toast.error("Could not rename project", errorMessage(e));
+      }
       set((s) => ({ projects: s.projects.map((p) => (p.id === id ? ops.summarize(next) : p)) }));
     },
 
@@ -263,10 +268,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
     async duplicateProject(id) {
       await get().flush();
-      const source = await projectRepo.get(id);
-      if (!source) return;
-      const copy = ops.duplicateProject(source, createId(), get().projects.map((p) => p.name));
-      await projectRepo.put(copy);
+      let copy: Project;
+      try {
+        const source = await projectRepo.get(id);
+        if (!source) return;
+        copy = ops.duplicateProject(source, createId(), get().projects.map((p) => p.name));
+        await projectRepo.put(copy);
+      } catch (e) {
+        return void toast.error("Could not duplicate project", errorMessage(e));
+      }
       set((s) => ({ projects: [ops.summarize(copy), ...s.projects] }));
       toast.success(`Created "${copy.name}"`);
     },

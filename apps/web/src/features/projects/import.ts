@@ -9,6 +9,8 @@ export interface IncomingFile {
   /** Path as picked or dropped, e.g. "src/Main.java" or "My Folder/notes.txt". */
   path: string;
   bytes: Uint8Array;
+  /** Size on disk, when the bytes were not read because the file is skipped anyway. */
+  size?: number;
 }
 
 export interface PlannedFile {
@@ -67,7 +69,7 @@ export function planImport(project: Project, incoming: readonly IncomingFile[]):
       skipped.push({ path: original, reason: "not a text file" });
       continue;
     }
-    if (item.bytes.length > REQUEST_BOUNDS.maxFileBytes) {
+    if ((item.size ?? item.bytes.length) > REQUEST_BOUNDS.maxFileBytes) {
       skipped.push({ path: original, reason: `larger than ${REQUEST_BOUNDS.maxFileBytes / 1024} KB` });
       continue;
     }
@@ -109,19 +111,30 @@ export function applyImport(project: Project, files: readonly PlannedFile[]): Pr
 
 /** Files chosen with an <input type="file"> (a folder pick keeps each file's relative path). */
 export async function readPicked(list: FileList): Promise<IncomingFile[]> {
-  return Promise.all(
-    [...list].map(async (file) => ({
-      path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
-      bytes: new Uint8Array(await file.arrayBuffer()),
-    })),
-  );
+  const out: IncomingFile[] = [];
+  // Copied first: the list is live and emptied when the input is reset after the pick.
+  for (const file of [...list]) {
+    const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+    const segments = path.split("/");
+    // A picked folder lists everything in it, dependencies included; leave those out as a drop does.
+    if (segments.slice(1, -1).some((s) => IGNORED_DIRS.has(s) || s.startsWith("."))) continue;
+    if (out.length >= READ_LIMIT) break;
+    // Files the plan will skip are not read: they may be large.
+    const skip = BINARY_EXT.test(path) || file.size > REQUEST_BOUNDS.maxFileBytes || segments[segments.length - 1]!.startsWith(".");
+    out.push({ path, size: file.size, bytes: skip ? new Uint8Array(0) : new Uint8Array(await file.arrayBuffer()) });
+  }
+  return out;
 }
+
+/** A generous cap so a picked or dropped home folder cannot hang the tab; the plan enforces the real limit. */
+const READ_LIMIT = 500;
 
 async function walk(entry: FileSystemEntry, out: IncomingFile[], limit: number): Promise<void> {
   if (out.length >= limit) return;
   if (entry.isFile) {
     const file = await new Promise<File>((ok, fail) => (entry as FileSystemFileEntry).file(ok, fail));
-    out.push({ path: entry.fullPath.replace(/^\//, ""), bytes: new Uint8Array(await file.arrayBuffer()) });
+    const skip = BINARY_EXT.test(entry.name) || file.size > REQUEST_BOUNDS.maxFileBytes;
+    out.push({ path: entry.fullPath.replace(/^\//, ""), size: file.size, bytes: skip ? new Uint8Array(0) : new Uint8Array(await file.arrayBuffer()) });
     return;
   }
   if (!entry.isDirectory || IGNORED_DIRS.has(entry.name) || entry.name.startsWith(".")) return;
@@ -140,7 +153,6 @@ export async function readDropped(data: DataTransfer): Promise<IncomingFile[]> {
   const entries = [...data.items].map((i) => (i.kind === "file" ? i.webkitGetAsEntry() : null)).filter((e): e is FileSystemEntry => !!e);
   if (!entries.length) return readPicked(data.files);
   const out: IncomingFile[] = [];
-  // A generous cap so a dropped home folder cannot hang the tab; the plan enforces the real limit.
-  for (const e of entries) await walk(e, out, 500);
+  for (const e of entries) await walk(e, out, READ_LIMIT);
   return out;
 }

@@ -10,7 +10,7 @@ import { inlineValues, previewOf, shortValue } from "@/features/debug/inline-val
 import { previousLocation, stepLocation, useVisualize } from "@/features/visualize/store";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { useResolvedTheme, useSettings } from "@/features/settings/store";
 import { runCommand } from "@/features/commands/registry";
 import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
@@ -26,7 +26,8 @@ export function CodeEditor() {
   const project = useWorkspace((s) => s.project);
   const activeFile = useWorkspace((s) => s.activeFile);
   const diagnostics = useExecution((s) => s.diagnostics);
-  const { theme, fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
+  const resolvedTheme = useResolvedTheme();
+  const { fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
 
   // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
@@ -187,7 +188,7 @@ export function CodeEditor() {
       path={`file:///${project.id}/${file.path}`}
       value={file.content}
       language={monacoLanguageForPath(file.path)}
-      theme={resolveTheme(theme) === "light" ? "cw-light" : "cw-dark"}
+      theme={resolvedTheme === "light" ? "cw-light" : "cw-dark"}
       beforeMount={defineThemes}
       onMount={handleMount}
       loading={

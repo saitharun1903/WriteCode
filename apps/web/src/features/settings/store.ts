@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 
 export type ThemePreference = "dark" | "light" | "system";
@@ -92,6 +93,23 @@ function persist(s: Settings) {
 export function resolveTheme(pref: ThemePreference): "dark" | "light" {
   if (pref !== "system") return pref;
   return typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function subscribeToSystemTheme(onChange: () => void) {
+  const mq = matchMedia("(prefers-color-scheme: light)");
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
+
+/** The theme in use, following the OS as it changes when the preference is "system". */
+export function useResolvedTheme(): "dark" | "light" {
+  const theme = useSettings((s) => s.theme);
+  const system = useSyncExternalStore(
+    subscribeToSystemTheme,
+    () => resolveTheme("system"),
+    () => "dark" as const,
+  );
+  return theme === "system" ? system : theme;
 }
 
 export const useSettings = create<SettingsState>((set, get) => ({

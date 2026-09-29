@@ -63,6 +63,8 @@ if up "$TAG" && ready; then
     docker image ls "writecode/$target" --format '{{.CreatedAt}}\t{{.Tag}}' | sort -r | tail -n +4 | cut -f2 \
       | xargs -r -I{} docker image rm "writecode/$target:{}" >/dev/null 2>&1 || true
   done
+  # Build cache grows with every deployment; keep only the last week's.
+  docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -71,6 +73,8 @@ log "DEPLOY FAILED for $TAG"
 "${COMPOSE[@]}" logs --tail 80 api worker web || true
 if [ -n "$PREVIOUS" ]; then
   log "rolling back to $PREVIOUS"
+  # The previous images with the compose file they were deployed with.
+  git checkout --quiet --detach "$PREVIOUS" || log "could not check out $PREVIOUS; using the current compose file"
   up "$PREVIOUS" && ready && log "rolled back to $PREVIOUS" || log "ROLLBACK FAILED; investigate now"
 fi
 exit 1

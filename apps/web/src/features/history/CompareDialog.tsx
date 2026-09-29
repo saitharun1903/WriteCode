@@ -7,7 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/primitives";
 import { defineThemes } from "@/features/editor/monaco-setup";
 import { useWorkspace } from "@/features/projects/store";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { useResolvedTheme } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 import { useSnapshots } from "./snapshot-store";
 
@@ -18,7 +18,7 @@ export function CompareDialog() {
   const compare = useSnapshots((s) => s.compare);
   const close = useSnapshots((s) => s.closeCompare);
   const project = useWorkspace((s) => s.project);
-  const theme = useSettings((s) => s.theme);
+  const theme = useResolvedTheme();
 
   const files = useMemo(() => {
     if (!compare || !project) return [];
@@ -86,7 +86,7 @@ export function CompareDialog() {
               original={selected.before}
               modified={selected.after}
               language={monacoLanguageForPath(selected.path)}
-              theme={resolveTheme(theme) === "light" ? "cw-light" : "cw-dark"}
+              theme={theme === "light" ? "cw-light" : "cw-dark"}
               beforeMount={defineThemes}
               loading={<Spinner />}
               options={{

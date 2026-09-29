@@ -71,6 +71,12 @@ else
   sudo ufw --force enable
 fi
 
+echo "== security updates and SSH brute-force protection"
+# The kernel is the sandbox boundary, so it must stay patched.
+sudo apt-get install -y unattended-upgrades fail2ban
+sudo dpkg-reconfigure -f noninteractive unattended-upgrades
+sudo systemctl enable --now fail2ban
+
 echo "== deploy/.env.production"
 ENV_FILE=deploy/.env.production
 if [ ! -f "$ENV_FILE" ]; then

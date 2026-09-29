@@ -208,13 +208,21 @@ export const COMMANDS: Command[] = [
     shortcut: "Mod+Shift+F5",
     enabled: inDebugSession,
     run: () => {
-      // Stop the current session, then start a fresh one once it has ended.
+      // Stop the current session, then start a fresh one once it has ended; give up if it does not
+      // end soon or the project is closed meanwhile, rather than starting a session much later.
+      const projectId = useExecution.getState().run?.projectId;
       const unsubscribe = useExecution.subscribe((s) => {
+        if (s.run?.projectId !== projectId) return stop();
         if (!isRunning(s.run)) {
-          unsubscribe();
+          stop();
           startDebugging();
         }
       });
+      const timer = setTimeout(() => unsubscribe(), 15_000);
+      const stop = () => {
+        clearTimeout(timer);
+        unsubscribe();
+      };
       void useExecution.getState().cancel();
     },
   },

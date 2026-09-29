@@ -48,6 +48,20 @@ async function persistResult(result: ExecutionResult): Promise<void> {
   });
 }
 
+/**
+ * Keeps the database from growing without bound: program output is only needed while
+ * the page may still ask for a result, and records are kept a month for abuse analysis.
+ */
+async function pruneRecords(): Promise<void> {
+  const day = 24 * 60 * 60 * 1000;
+  const cleared = await prisma.execution.updateMany({
+    where: { createdAt: { lt: new Date(Date.now() - day) }, OR: [{ stdout: { not: "" } }, { stderr: { not: "" } }, { compileOutput: { not: "" } }] },
+    data: { stdout: "", stderr: "", compileOutput: "" },
+  });
+  const deleted = await prisma.execution.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 30 * day) } } });
+  if (cleared.count || deleted.count) log.info("pruned execution records", { outputsCleared: cleared.count, deleted: deleted.count });
+}
+
 async function heartbeat(): Promise<void> {
   dockerUp = await dockerAvailable(docker);
   if (dockerUp && !preparing) ready = await readyLanguages(docker);
@@ -71,6 +85,8 @@ async function heartbeat(): Promise<void> {
   // Healthy means Redis accepted the heartbeat and Docker answered.
   if (config.healthFile && dockerUp) await writeFile(config.healthFile, String(Date.now())).catch(() => {});
 }
+
+type JobSummary = Pick<ExecutionResult, "id" | "status">;
 
 async function processJob(job: Job<ExecutionJob>): Promise<ExecutionResult> {
   const { executionId, request } = job.data;
@@ -163,6 +179,9 @@ async function main() {
 
   await heartbeat().catch((e) => log.error("heartbeat failed", { error: String(e) }));
   const beatTimer = setInterval(() => void heartbeat().catch((e) => log.error("heartbeat failed", { error: String(e) })), HEARTBEAT_MS);
+  const prune = () => void pruneRecords().catch((e) => log.warn("pruning records failed", { error: String(e) }));
+  prune();
+  const pruneTimer = setInterval(prune, 60 * 60 * 1000);
 
   if (await dockerAvailable(docker)) {
     await sweepOrphans(docker, log).catch((e) => log.warn("orphan sweep failed", { error: String(e) }));
@@ -178,13 +197,18 @@ async function main() {
     preparing = false;
   }
 
-  const worker = new Worker<ExecutionJob, ExecutionResult>(EXECUTION_QUEUE, processJob, {
+  // BullMQ keeps each job's return value in Redis; the result itself is already stored, so keep only a summary.
+  const processAndSummarize = async (job: Job<ExecutionJob>): Promise<JobSummary> => {
+    const result = await processJob(job);
+    return { id: result.id, status: result.status };
+  };
+  const worker = new Worker<ExecutionJob, JobSummary>(EXECUTION_QUEUE, processAndSummarize, {
     connection: redis,
     concurrency: config.concurrency,
     // Never re-run user code automatically after a crash.
     maxStalledCount: 0,
   });
-  const debugWorker = new Worker<ExecutionJob, ExecutionResult>(DEBUG_QUEUE, processJob, {
+  const debugWorker = new Worker<ExecutionJob, JobSummary>(DEBUG_QUEUE, processAndSummarize, {
     connection: redis,
     concurrency: Math.max(config.debugConcurrency, 1),
     maxStalledCount: 0,
@@ -200,6 +224,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     log.info("shutting down", { signal });
     clearInterval(beatTimer);
+    clearInterval(pruneTimer);
     await Promise.all([worker.close(), debugWorker.close()]);
     await redis.del(redisKeys.runnerHeartbeat(config.workerId)).catch(() => {});
     await prisma.$disconnect();
