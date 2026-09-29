@@ -5,7 +5,7 @@ import { toast } from "@/components/ui/toast";
 import { useAssistant } from "@/features/assistant/store";
 import { useDebug } from "@/features/debug/store";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
-import { isRunning, useExecution } from "@/features/execution/store";
+import { isOwnRun, isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSnapshots } from "@/features/history/snapshot-store";
 import { useTests } from "@/features/tests/store";
@@ -36,7 +36,7 @@ export function canDebug(): boolean {
 const debugPhase = () => useDebug.getState().phase;
 const inDebugSession = () => {
   const run = useExecution.getState().run;
-  return run?.mode === "debug" && isRunning(run);
+  return run?.mode === "debug" && isOwnRun(run);
 };
 
 function startDebugging() {
@@ -96,7 +96,7 @@ export const COMMANDS: Command[] = [
     title: "Run",
     category: "Run",
     shortcut: "Mod+Enter",
-    enabled: () => hasProject() && !isRunning(useExecution.getState().run),
+    enabled: () => hasProject() && !isOwnRun(useExecution.getState().run),
     run: () => {
       showBottom("run");
       void useExecution.getState().execute();
@@ -107,7 +107,7 @@ export const COMMANDS: Command[] = [
     title: "Visualize Execution",
     category: "Run",
     shortcut: "Mod+Alt+Enter",
-    enabled: () => hasProject() && canVisualize() && !isRunning(useExecution.getState().run),
+    enabled: () => hasProject() && canVisualize() && !isOwnRun(useExecution.getState().run),
     run: () => {
       showBottom("visualize");
       void useExecution.getState().execute({ mode: "visualize" });
@@ -118,7 +118,7 @@ export const COMMANDS: Command[] = [
     title: "Run Current File",
     category: "Run",
     shortcut: "Mod+Shift+F10",
-    enabled: () => activeFileRunnable() && !isRunning(useExecution.getState().run),
+    enabled: () => activeFileRunnable() && !isOwnRun(useExecution.getState().run),
     run: () => {
       const file = useWorkspace.getState().activeFile;
       if (!file) return;
@@ -160,7 +160,7 @@ export const COMMANDS: Command[] = [
     title: "Start Debugging / Continue",
     category: "Debug",
     shortcut: "F5",
-    enabled: () => hasProject() && (debugPhase() === "paused" || !isRunning(useExecution.getState().run)),
+    enabled: () => hasProject() && (debugPhase() === "paused" || !isOwnRun(useExecution.getState().run)),
     run: () => {
       if (debugPhase() === "paused" && inDebugSession()) return useDebug.getState().command("continue");
       if (canDebug()) return startDebugging();

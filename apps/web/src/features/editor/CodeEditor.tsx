@@ -19,6 +19,7 @@ import { installSnippets } from "./snippets";
 import { editorBridge } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
+import { liveHistory } from "@/features/live/store";
 
 const NO_LINES: number[] = [];
 
@@ -29,6 +30,7 @@ export function CodeEditor() {
   const resolvedTheme = useResolvedTheme();
   const { fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
+  const readOnly = useWorkspace((s) => s.readOnly);
 
   // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
   const [codeFont] = useState(() => {
@@ -96,6 +98,13 @@ export function CodeEditor() {
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, () => runCommand("file.save"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyP, () => runCommand("workbench.quickOpen"));
     ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP, () => runCommand("workbench.commandPalette"));
+    // In a live session, undo takes back only your own changes, never someone else's.
+    const history = (which: "undo" | "redo") => {
+      if (liveHistory(which, editorBridge.currentPath()) === null) ed.trigger("keyboard", which, null);
+    };
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyZ, () => history("undo"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyZ, () => history("redo"));
+    ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyY, () => history("redo"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyJ, () => runCommand("view.toggleBottomPanel"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyB, () => runCommand("view.toggleSidebar"));
 
@@ -197,6 +206,8 @@ export function CodeEditor() {
         </div>
       }
       options={{
+        readOnly,
+        readOnlyMessage: { value: "View only: the owner of this live session has not given you edit access." },
         fontFamily: codeFont,
         fontSize,
         fontLigatures: false,

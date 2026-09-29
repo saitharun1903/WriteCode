@@ -42,7 +42,7 @@ www.{$PUBLIC_HOST} {
 	}
 
 	# API and live execution events (WebSocket upgrade is proxied transparently).
-	@backend path /api/* /ws
+	@backend path /api/* /ws /ws-live
 	handle @backend {
 		reverse_proxy api:4000 {
 			health_uri /api/v1/health/live

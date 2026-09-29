@@ -19,6 +19,10 @@ interface WorkspaceState {
   openTabs: string[];
   activeFile: string | null;
   saveState: SaveState;
+  /** In a live session as view-only: nothing in the project can be changed. */
+  readOnly: boolean;
+  /** Id of a project that belongs to someone else's live session: kept in memory only. */
+  sharedId: string | null;
 
   init: () => Promise<void>;
   createProject: (languageId: string, name?: string) => Promise<void>;
@@ -51,6 +55,13 @@ interface WorkspaceState {
   /** Records that the open project was run or debugged, which makes it recent work. */
   markRun: () => void;
   flush: () => Promise<void>;
+  /** Opens someone else's live project without saving it. */
+  openShared: (project: Project) => void;
+  /** Applies changes that came from other people in a live session. */
+  applyShared: (patch: Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name">) => void;
+  /** Saves the open (shared) project as a project of your own. */
+  saveCopy: () => Promise<Project | null>;
+  setReadOnly: (readOnly: boolean) => void;
 }
 
 const LAST_PROJECT_KEY = "cw:last-project";
@@ -86,6 +97,8 @@ function errorMessage(e: unknown): string {
 export const useWorkspace = create<WorkspaceState>((set, get) => {
   /** Applies a project mutation, updates the listing and schedules a debounced save. */
   const commit = (project: Project) => {
+    // A shared project is someone else's: it lives in memory until the user saves a copy.
+    if (project.id === get().sharedId) return void set({ project, saveState: "saved" });
     set((s) => ({
       project,
       saveState: "pending",
@@ -98,6 +111,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   const persistTabs = () => {
     const { project, openTabs, activeFile } = get();
     if (project) writeJSON(tabsKey(project.id), { openTabs, activeFile });
+  };
+
+  /** True (and says why) when the project cannot be changed: view-only in a live session. */
+  const blocked = () => {
+    if (!get().readOnly) return false;
+    toast.info("View only", "The owner of this live session has not given you edit access.");
+    return true;
   };
 
   /** Runs a pure operation and reports user errors as toasts instead of throwing. */
@@ -113,7 +133,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
   /** Deletes a project the user only opened (never ran, never changed) once they leave it. */
   const discardIfUntouched = async (project: Project | null) => {
-    if (!project || !ops.summarize(project).untouched || get().project?.id === project.id) return;
+    if (!project || project.id === get().sharedId || !ops.summarize(project).untouched || get().project?.id === project.id) return;
     try {
       await projectRepo.delete(project.id);
       localStorage.removeItem(tabsKey(project.id));
@@ -131,7 +151,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     let activeFile = saved?.activeFile && exists(saved.activeFile) ? saved.activeFile : null;
     if (openTabs.length === 0 && exists(project.entryFile)) openTabs = [project.entryFile];
     activeFile ??= openTabs[0] ?? null;
-    set({ project, openTabs, activeFile, saveState: "saved" });
+    set({ project, openTabs, activeFile, saveState: "saved", sharedId: null, readOnly: false });
     writeJSON(LAST_PROJECT_KEY, project.id);
     // A project the user opens starts on its code; Run, Debug, Visualize and Tests open the bottom
     // panel when used. Restoring the last project after a reload keeps the layout as it was.
@@ -158,6 +178,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     openTabs: [],
     activeFile: null,
     saveState: "saved",
+    readOnly: false,
+    sharedId: null,
 
     init() {
       // Idempotent: React StrictMode and remounts may call this more than once.
@@ -222,7 +244,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       void get()
         .flush()
         .then(() => discardIfUntouched(previous));
-      set({ project: null, openTabs: [], activeFile: null });
+      set({ project: null, openTabs: [], activeFile: null, sharedId: null, readOnly: false });
       try {
         localStorage.removeItem(LAST_PROJECT_KEY);
       } catch {}
@@ -284,6 +306,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     replaceFiles(files, entryFile) {
       const project = get().project;
       if (!project) return;
+      if (blocked()) return;
       const entry = entryFile && files.some((f) => f.path === entryFile) ? entryFile : project.entryFile;
       commit({ ...project, files: structuredClone(files), entryFile: entry, updatedAt: Date.now() });
       const exists = (p: string) => files.some((f) => f.path === p);
@@ -327,6 +350,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     updateFile(path, content) {
       const project = get().project;
       if (!project) return;
+      if (blocked()) return;
       const next = ops.updateFileContent(project, path, content);
       if (next !== project) commit(next);
     },
@@ -334,6 +358,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     createFile(dir, name) {
       const project = get().project;
       if (!project) return null;
+      if (blocked()) return null;
       const res = attempt(() => ops.addFile(project, dir, name));
       if (!res) return null;
       commit(res.project);
@@ -344,6 +369,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     createFolder(dir, name) {
       const project = get().project;
       if (!project) return null;
+      if (blocked()) return null;
       const res = attempt(() => ops.addFolder(project, dir, name));
       if (!res) return null;
       commit(res.project);
@@ -353,6 +379,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     renamePath(path, newName) {
       const project = get().project;
       if (!project) return null;
+      if (blocked()) return null;
       const res = attempt(() => ops.renamePath(project, path, newName));
       if (!res) return null;
       commit(res.project);
@@ -367,6 +394,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     movePath(from, toDir) {
       const project = get().project;
       if (!project) return;
+      if (blocked()) return;
       const to = toDir ? `${toDir}/${ops.basename(from)}` : ops.basename(from);
       if (to === from) return;
       const res = attempt(() => ops.movePath(project, from, to));
@@ -382,6 +410,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     deletePath(path) {
       const project = get().project;
       if (!project) return;
+      if (blocked()) return;
       commit(ops.deletePath(project, path));
       const { openTabs, activeFile } = get();
       const next = openTabs.filter((t) => !isWithin(t, path));
@@ -390,6 +419,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     setEntryFile(path) {
+      if (get().readOnly) return;
       const project = get().project;
       if (project && project.entryFile !== path) commit({ ...project, entryFile: path, updatedAt: Date.now() });
     },
@@ -416,6 +446,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     importFiles(files) {
       const project = get().project;
       if (!project || !files.length) return;
+      if (blocked()) return;
       commit(applyImport(project, files));
       const lang = getLanguage(project.language);
       const first = files.find((f) => lang?.extensions.some((e) => f.path.toLowerCase().endsWith(e))) ?? files[0]!;
@@ -428,6 +459,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     setStdin(stdin) {
+      if (blocked()) return;
       const project = get().project;
       if (project && project.stdin !== stdin) commit({ ...project, stdin, updatedAt: Date.now() });
     },
@@ -438,7 +470,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         saveTimer = null;
       }
       const { project, saveState } = get();
-      if (!project || saveState === "saved") return;
+      if (!project || saveState === "saved" || project.id === get().sharedId) return;
       set({ saveState: "saving" });
       try {
         await projectRepo.put(project);
@@ -449,6 +481,49 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         toast.error("Autosave failed", errorMessage(e));
       }
     },
+
+    openShared(project) {
+      openToken++;
+      const previous = get().project;
+      void get()
+        .flush()
+        .then(() => discardIfUntouched(previous));
+      const openTabs = project.files.some((f) => f.path === project.entryFile) ? [project.entryFile] : project.files.slice(0, 1).map((f) => f.path);
+      set({ project, openTabs, activeFile: openTabs[0] ?? null, saveState: "saved", sharedId: project.id, readOnly: false });
+      useSettings.getState().updateLayout({ bottomOpen: false });
+    },
+
+    applyShared(patch) {
+      const project = get().project;
+      if (!project) return;
+      const next = { ...project, ...patch, updatedAt: Date.now() };
+      commit(next);
+      // Tabs of files someone else deleted or renamed close.
+      const exists = (p: string) => next.files.some((f) => f.path === p);
+      const openTabs = get().openTabs.filter(exists);
+      const activeFile = get().activeFile;
+      if (openTabs.length !== get().openTabs.length || (activeFile && !exists(activeFile))) {
+        set({ openTabs, activeFile: activeFile && exists(activeFile) ? activeFile : (openTabs[0] ?? null) });
+        persistTabs();
+      }
+    },
+
+    async saveCopy() {
+      const project = get().project;
+      if (!project) return null;
+      // Saved on purpose, so it counts as recent work.
+      const copy = { ...ops.duplicateProject(project, createId(), get().projects.map((p) => p.name)), lastRunAt: Date.now() };
+      try {
+        await projectRepo.put(copy);
+      } catch (e) {
+        toast.error("Could not save a copy", errorMessage(e));
+        return null;
+      }
+      set((s) => ({ projects: [ops.summarize(copy), ...s.projects] }));
+      return copy;
+    },
+
+    setReadOnly: (readOnly) => set({ readOnly }),
   };
 });
 

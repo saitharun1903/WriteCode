@@ -24,7 +24,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { canDebug, primaryShortcut, runCommand } from "@/features/commands/registry";
 import { goToLocation } from "@/features/editor/navigate";
 import { ConsoleView } from "@/features/execution/OutputPanel";
-import { isRunning, useExecution } from "@/features/execution/store";
+import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { sourceTypeName } from "@/features/visualize/model";
 import { cn } from "@/lib/cn";
@@ -485,7 +485,7 @@ export function DebugToolWindow() {
   const breakpointCount = useWorkspace((s) => Object.values(s.project?.breakpoints ?? {}).reduce((n, lines) => n + lines.length, 0));
   const [tab, setTab] = useState<"frames" | "console">("frames");
   const [breakpointsOpen, setBreakpointsOpen] = useState(false);
-  const active = run?.mode === "debug" && isRunning(run);
+  const active = run?.mode === "debug" && isOwnRun(run);
   const paused = active && phase === "paused";
   const supported = canDebug();
 

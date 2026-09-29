@@ -9,10 +9,12 @@ import { RunnerStatusService } from "./health/runner-status.service.js";
 import { InfraModule } from "./infra/infra.module.js";
 import { StreamGateway } from "./stream/stream.gateway.js";
 import { StreamHub } from "./stream/stream-hub.js";
+import { LiveController } from "./live/live.controller.js";
+import { LiveGateway, LiveService } from "./live/live.gateway.js";
 
 @Module({
   imports: [InfraModule],
-  controllers: [HealthController, ExecutionsController, AssistantController],
-  providers: [RunnerStatusService, ExecutionStore, RateLimiter, ExecutionsService, StreamHub, StreamGateway],
+  controllers: [HealthController, ExecutionsController, AssistantController, LiveController],
+  providers: [RunnerStatusService, ExecutionStore, RateLimiter, ExecutionsService, StreamHub, StreamGateway, LiveService, LiveGateway],
 })
 export class AppModule {}

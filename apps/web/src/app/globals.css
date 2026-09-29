@@ -388,3 +388,56 @@
 .monaco-hover.workbench-hover {
   display: none !important;
 }
+
+/* ---- Live sessions: other people's cursors, selections and paused lines. */
+.cw-live-c0 { --live: #e5484d; }
+.cw-live-c1 { --live: #3e8ef7; }
+.cw-live-c2 { --live: #30a46c; }
+.cw-live-c3 { --live: #f5a524; }
+.cw-live-c4 { --live: #8e4ec6; }
+.cw-live-c5 { --live: #12a594; }
+.cw-live-c6 { --live: #e93d82; }
+.cw-live-c7 { --live: #d6780f; }
+.monaco-editor .cw-live-sel {
+  background: color-mix(in srgb, var(--live) 26%, transparent);
+}
+/* A zero-width marker at the cursor: absolutely positioned so it takes the line's full height. */
+.monaco-editor .cw-live-caret {
+  position: absolute;
+  height: 100%;
+  margin-left: -1px;
+  border-left: 2px solid var(--live);
+  pointer-events: none;
+}
+.monaco-editor .cw-live-label::after {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  z-index: 5;
+  padding: 0 5px;
+  border-radius: 4px 4px 4px 0;
+  background: var(--live);
+  color: #fff;
+  font: 600 11px/17px var(--font-ui), system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.monaco-editor .cw-live-label.cw-live-below::after {
+  top: 100%;
+  bottom: auto;
+  border-radius: 0 4px 4px 4px;
+}
+.monaco-editor .cw-live-paused {
+  background: color-mix(in srgb, var(--live) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--live);
+}
+.monaco-editor .cw-live-paused-glyph::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  margin: 4px 0 0 5px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid var(--live);
+}

@@ -1,0 +1,419 @@
+"use client";
+
+import { create } from "zustand";
+import type { LiveJoinRole, LiveParticipant, LivePresence, LiveRole, LiveServerMessage, Project } from "@cw/shared";
+import { toast } from "@/components/ui/toast";
+import { API_URL } from "@/features/execution/api";
+import { useExecution } from "@/features/execution/store";
+import { useWorkspace } from "@/features/projects/store";
+import { createId } from "@/lib/id";
+import { bindProject, isReady, metaOf, readProject, writeProject, type Binding } from "./bind";
+import { LiveClient, type LiveStatus } from "./client";
+import { startPresence } from "./presence";
+
+export type SessionStatus = "idle" | "starting" | LiveStatus | "waiting" | "ended" | "removed" | "failed";
+
+interface LiveState {
+  status: SessionStatus;
+  roomId: string | null;
+  /** This person is the owner (started the session from their own project). */
+  owner: boolean;
+  me: LiveParticipant | null;
+  role: LiveRole | null;
+  participants: LiveParticipant[];
+  defaultRole: LiveJoinRole;
+  /** Other people's file, cursor and paused line, by participant id. */
+  presence: Record<string, LivePresence>;
+  following: string | null;
+  error: string | null;
+  panelOpen: boolean;
+  /** A link was opened and we are asking for a name before joining. */
+  joinPrompt: string | null;
+  name: string;
+
+  setPanelOpen: (open: boolean) => void;
+  /** Starts sharing the open project. */
+  start: (name: string) => Promise<void>;
+  /** Joins someone else's session from its link. */
+  join: (roomId: string, name: string) => void;
+  /** Leaves (guests) or disconnects (owner; the session goes on without them). */
+  leave: () => void;
+  /** Owner: ends the session for everyone. */
+  end: () => void;
+  setDefaultRole: (role: LiveJoinRole) => void;
+  setRole: (id: string, role: LiveJoinRole) => void;
+  remove: (id: string) => void;
+  follow: (id: string | null) => void;
+  /** Guest: keeps a copy of the shared project in their own projects. */
+  saveCopy: () => Promise<void>;
+  /** After an ended or removed session: back to the start screen. */
+  dismiss: () => void;
+  /** Reconnects as owner to the session of a project this browser shared earlier. */
+  resumeOwned: (projectId: string) => void;
+}
+
+const NAME_KEY = "cw:live:name";
+const CLIENT_KEY = "cw:live:key";
+const OWNED_KEY = "cw:live:owned";
+
+function read<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function write(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+/** Sessions this browser owns, by project id: the owner token lets it rejoin as owner after a reload. */
+type Owned = Record<string, { roomId: string; ownerToken: string }>;
+
+function clientKey(): string {
+  let key = read<string | null>(CLIENT_KEY, null);
+  if (!key) {
+    key = createId().replace(/-/g, "");
+    write(CLIENT_KEY, key);
+  }
+  return key;
+}
+
+export function liveLink(roomId: string): string {
+  return `${location.origin}/live#${roomId}`;
+}
+
+interface Session {
+  client: LiveClient;
+  roomId: string;
+  projectId: string | null;
+  owner: boolean;
+  binding: Binding | null;
+  stopPresence: (() => void) | null;
+  synced: boolean;
+  announced: Set<string>;
+}
+
+let session: Session | null = null;
+
+export const useLive = create<LiveState>((set, get) => {
+  const teardown = () => {
+    if (!session) return;
+    const s = session;
+    session = null;
+    s.binding?.unbind();
+    s.stopPresence?.();
+    s.client.destroy();
+    useWorkspace.getState().setReadOnly(false);
+  };
+
+  const applyRole = (role: LiveRole) => {
+    if (!session) return;
+    session.client.setWritable(role !== "viewer");
+    const ws = useWorkspace.getState();
+    if (ws.project && ws.project.id === session.projectId) ws.setReadOnly(role === "viewer");
+  };
+
+  /** The document is in sync: set up the project on this side and bind it. */
+  const onSynced = () => {
+    const s = session;
+    if (!s || s.synced) return;
+    const doc = s.client.doc;
+    if (s.owner) {
+      const project = useWorkspace.getState().project;
+      if (!project || project.id !== s.projectId) return;
+      // A fresh session gets the project; a resumed one brings back what others changed meanwhile.
+      if (!isReady(doc)) writeProject(doc, project);
+      else {
+        const shared = readProject(doc, project.files.map((f) => f.path));
+        useWorkspace.getState().applyShared({ files: shared.files, folders: shared.folders, entryFile: shared.entryFile, stdin: shared.stdin, name: shared.name });
+      }
+    } else {
+      if (!isReady(doc)) {
+        set({ status: "waiting" });
+        const meta = metaOf(doc);
+        const onMeta = () => {
+          if (!isReady(doc)) return;
+          meta.unobserve(onMeta);
+          onSynced();
+        };
+        meta.observe(onMeta);
+        return;
+      }
+      const shared = readProject(doc);
+      const project: Project = {
+        id: `live-${s.roomId}`,
+        name: shared.name,
+        language: shared.language,
+        files: shared.files,
+        folders: shared.folders,
+        entryFile: shared.entryFile,
+        stdin: shared.stdin,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      useWorkspace.getState().openShared(project);
+      s.projectId = project.id;
+      applyRole(get().role ?? "viewer");
+    }
+    s.synced = true;
+    const projectId = s.projectId!;
+    s.binding = bindProject(doc, projectId, () => get().role !== "viewer");
+    s.stopPresence = startPresence(s.client, projectId, {
+      me: () => get().me,
+      participants: () => get().participants,
+      following: () => get().following,
+      stopFollowing: () => set({ following: null }),
+      onChange: (presence) => set({ presence }),
+    });
+    set({ status: "connected" });
+    // View-only people follow the owner by default, like a presentation.
+    if (get().role === "viewer" && !get().following) {
+      const presenter = get().participants.find((p) => p.role === "owner");
+      if (presenter) set({ following: presenter.id });
+    }
+  };
+
+  const onMessage = (msg: LiveServerMessage) => {
+    switch (msg.type) {
+      case "welcome":
+        set({ me: msg.you, role: msg.you.role, participants: msg.participants, defaultRole: msg.defaultRole, error: null });
+        applyRole(msg.you.role);
+        if (msg.run && session && !session.owner && session.synced) useExecution.getState().watch({ ...msg.run, by: msg.run.by.name });
+        return;
+      case "participants": {
+        const me = msg.participants.find((p) => p.id === get().me?.id) ?? get().me;
+        set({ participants: msg.participants, me });
+        if (get().following && !msg.participants.some((p) => p.id === get().following)) set({ following: null });
+        return;
+      }
+      case "role": {
+        const before = get().role;
+        set({ role: msg.role, me: get().me ? { ...get().me!, role: msg.role } : null });
+        applyRole(msg.role);
+        if (before && before !== msg.role) {
+          if (msg.role === "viewer") toast.info("You are now view-only", "The owner can give you edit access again.");
+          else toast.success("You can edit now", "The owner gave you edit access.");
+        }
+        return;
+      }
+      case "default-role":
+        set({ defaultRole: msg.role });
+        return;
+      case "run": {
+        const ws = useWorkspace.getState();
+        if (!session || ws.project?.id !== session.projectId) return;
+        useExecution.getState().watch({ executionId: msg.run.executionId, mode: msg.run.mode, entry: msg.run.entry, by: msg.run.by.name });
+        return;
+      }
+      case "ended":
+        set({ status: "ended" });
+        return;
+      case "removed":
+        set({ status: "removed" });
+        return;
+      case "error":
+        set({ error: msg.message });
+        if (msg.code === "too-large") toast.error("Live session is full", msg.message);
+        return;
+    }
+  };
+
+  const connect = (roomId: string, name: string, projectId: string | null, ownerToken?: string) => {
+    teardown();
+    set({ roomId, owner: !!ownerToken, status: "connecting", error: null, participants: [], presence: {}, following: null, me: null, role: null, name });
+    const s: Session = {
+      roomId,
+      projectId,
+      owner: !!ownerToken,
+      binding: null,
+      stopPresence: null,
+      synced: false,
+      announced: new Set(),
+      client: new LiveClient({
+        roomId,
+        name,
+        clientKey: clientKey(),
+        ownerToken,
+        onMessage: (m) => session === s && onMessage(m),
+        onSynced: () => session === s && onSynced(),
+        onStatus: (status, code) => {
+          if (session !== s) return;
+          if (status === "closed") {
+            const ended = code === 4000 || get().status === "ended";
+            const removed = code === 4001 || get().status === "removed";
+            if (s.owner && (ended || code === 4004)) forgetOwned(s.projectId);
+            set({ status: ended ? "ended" : removed ? "removed" : "failed", error: get().error ?? (code === 4004 ? "This live session has ended or the link is wrong." : "Could not connect to the live session.") });
+            teardownKeepProject();
+            return;
+          }
+          if (status === "connected" && s.synced) return set({ status: "connected" });
+          if (status !== "connected") set({ status });
+        },
+      }),
+    };
+    session = s;
+    s.client.start();
+  };
+
+  /** Stops syncing but leaves the project open (a guest can still save a copy). */
+  const teardownKeepProject = () => {
+    const readOnly = useWorkspace.getState().readOnly;
+    teardown();
+    // Nothing more will change; let a former viewer look around freely.
+    if (readOnly) useWorkspace.getState().setReadOnly(false);
+  };
+
+  const forgetOwned = (projectId: string | null) => {
+    if (!projectId) return;
+    const owned = read<Owned>(OWNED_KEY, {});
+    delete owned[projectId];
+    write(OWNED_KEY, owned);
+  };
+
+  return {
+    status: "idle",
+    roomId: null,
+    owner: false,
+    me: null,
+    role: null,
+    participants: [],
+    defaultRole: "editor",
+    presence: {},
+    following: null,
+    error: null,
+    panelOpen: false,
+    joinPrompt: null,
+    name: typeof window === "undefined" ? "" : read<string>(NAME_KEY, ""),
+
+    setPanelOpen: (panelOpen) => set({ panelOpen }),
+
+    async start(name) {
+      const ws = useWorkspace.getState();
+      const project = ws.project;
+      if (!project || ws.sharedId) return;
+      const clean = name.trim().slice(0, 40) || "Owner";
+      write(NAME_KEY, clean);
+      set({ status: "starting", error: null, name: clean });
+      let created: { id: string; ownerToken: string };
+      try {
+        const res = await fetch(`${API_URL}/api/v1/live`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { message?: string };
+          throw new Error(body.message ?? `Request failed (${res.status})`);
+        }
+        created = (await res.json()) as { id: string; ownerToken: string };
+      } catch (e) {
+        set({ status: "idle", error: e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Could not reach the server. Check your connection and try again." });
+        return;
+      }
+      const owned = read<Owned>(OWNED_KEY, {});
+      owned[project.id] = { roomId: created.id, ownerToken: created.ownerToken };
+      write(OWNED_KEY, owned);
+      connect(created.id, clean, project.id, created.ownerToken);
+    },
+
+    join(roomId, name) {
+      const clean = name.trim().slice(0, 40) || "Guest";
+      write(NAME_KEY, clean);
+      set({ joinPrompt: null });
+      void useWorkspace
+        .getState()
+        .flush()
+        .then(() => connect(roomId, clean, null));
+    },
+
+    leave() {
+      const wasGuest = session && !session.owner;
+      teardown();
+      set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, panelOpen: false });
+      if (wasGuest && useWorkspace.getState().sharedId) useWorkspace.getState().closeProject();
+    },
+
+    end() {
+      if (!session?.owner) return;
+      forgetOwned(session.projectId);
+      session.client.send({ type: "end" });
+      // The server closes everyone's connection, ours included.
+      set({ panelOpen: false });
+      setTimeout(() => {
+        if (get().status !== "idle") {
+          teardown();
+          set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null });
+        }
+      }, 1500);
+    },
+
+    setDefaultRole: (role) => session?.client.send({ type: "default-role", role }),
+    setRole: (id, role) => session?.client.send({ type: "set-role", id, role }),
+    remove: (id) => session?.client.send({ type: "remove", id }),
+    follow: (id) => set({ following: id }),
+
+    async saveCopy() {
+      const copy = await useWorkspace.getState().saveCopy();
+      if (!copy) return;
+      toast.success(`Saved "${copy.name}"`, "It is in your projects.");
+      if (get().status === "ended" || get().status === "removed" || get().status === "failed") {
+        get().dismiss();
+        await useWorkspace.getState().openProject(copy.id);
+      }
+    },
+
+    resumeOwned(projectId) {
+      const owned = read<Owned>(OWNED_KEY, {})[projectId];
+      if (!owned || session || get().joinPrompt || (get().status !== "idle" && get().status !== "failed")) return;
+      connect(owned.roomId, read<string>(NAME_KEY, "") || get().name || "Owner", projectId, owned.ownerToken);
+    },
+
+    dismiss() {
+      const shared = useWorkspace.getState().sharedId;
+      teardown();
+      set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null });
+      if (shared && useWorkspace.getState().project?.id === shared) useWorkspace.getState().closeProject();
+    },
+  };
+});
+
+/**
+ * Undo/redo in a live session undoes only this person's own changes (not the
+ * others'). Null when there is no live session, so the editor's own undo runs.
+ */
+export function liveHistory(which: "undo" | "redo", path: string | null): boolean | null {
+  if (!session?.binding) return null;
+  if (path) session.binding[which](path);
+  return true;
+}
+
+/** Asks for a name before joining the session in the page's link (`/live#<id>`). */
+export function promptJoin(roomId: string) {
+  useLive.setState({ joinPrompt: roomId });
+}
+
+if (typeof window !== "undefined") {
+  // Owner's own session follows their project: leaving the project disconnects, reopening resumes.
+  useWorkspace.subscribe((s, prev) => {
+    if (s.project?.id === prev.project?.id) return;
+    if (session && s.project?.id !== session.projectId && session.synced) {
+      const guest = !session.owner;
+      useLive.getState().leave();
+      if (guest) toast.info("You left the live session", "Open the link again to rejoin.");
+    }
+    if (s.project && !s.sharedId) useLive.getState().resumeOwned(s.project.id);
+  });
+
+  // Runs started here are shown to everyone else in the session.
+  useExecution.subscribe((s) => {
+    const run = s.run;
+    if (!session || !run?.id || run.watchedBy || session.announced.has(run.id)) return;
+    if (run.projectId !== session.projectId || useLive.getState().role === "viewer") return;
+    session.announced.add(run.id);
+    session.client.send({ type: "run", executionId: run.id, mode: run.mode === "test" ? "run" : run.mode, entry: run.entry });
+  });
+
+  window.addEventListener("online", () => session?.client.retryNow());
+}
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, Lightbulb, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, FlaskConical, Keyboard, Lightbulb, Radio, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -336,13 +336,20 @@ export function RunToolWindow() {
           label={run?.mode === "debug" ? "Rerun in debugger" : "Rerun"}
           shortcut={run?.mode === "debug" ? "F5" : "Mod+Enter"}
           tooltipSide="right"
-          disabled={running}
+          disabled={running && !run?.watchedBy}
           className="text-success"
           onClick={() => runCommand(run?.mode === "debug" ? "debug.startOrContinue" : "run.execute")}
         >
           <RotateCw />
         </IconButton>
-        <IconButton label="Stop" shortcut="Shift+F5" tooltipSide="right" disabled={!running} className={cn(running && "text-danger")} onClick={() => runCommand("run.cancel")}>
+        <IconButton
+          label={run?.watchedBy ? "Stop watching" : "Stop"}
+          shortcut={run?.watchedBy ? undefined : "Shift+F5"}
+          tooltipSide="right"
+          disabled={!running}
+          className={cn(running && "text-danger")}
+          onClick={() => runCommand("run.cancel")}
+        >
           <Square className={cn(running && "fill-current")} />
         </IconButton>
         <span className="my-1 h-px w-5 bg-line-strong" />
@@ -363,6 +370,13 @@ export function RunToolWindow() {
         </IconButton>
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
+        {run?.watchedBy && (
+          <div role="note" className="flex h-7 shrink-0 items-center gap-1.5 border-b border-line bg-surface-2 px-3 text-xs text-fg-muted">
+            <Radio className="size-3.5 text-success" />
+            {run.watchedBy}&apos;s {run.mode === "debug" ? "debug session" : run.mode === "visualize" ? "visualization" : "run"} · shown live
+            {run.status === "WAITING_FOR_INPUT" && <span className="text-fg-subtle">· waiting for {run.watchedBy} to type the input</span>}
+          </div>
+        )}
         {searchOpen && (
           <div className="flex h-8 shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-2">
             <Search className="size-3.5 text-fg-subtle" />

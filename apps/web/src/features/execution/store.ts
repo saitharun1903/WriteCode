@@ -45,6 +45,8 @@ export interface RunState {
   status: ExecutionStatus | "SUBMITTING";
   log: LogChunk[];
   result?: ExecutionResult;
+  /** Someone else's run in a live session, shown here read-only. Their name. */
+  watchedBy?: string;
   /** Client-side failure (network, validation). Distinct from program errors. */
   error?: { title: string; detail?: string; requestId?: string };
   startedAt: number;
@@ -70,6 +72,11 @@ interface ExecutionState {
   cancel: () => Promise<void>;
   clearOutput: () => void;
   bumpHistory: () => void;
+  /**
+   * Shows someone else's run from a live session (output, errors, result) as
+   * it happens. Ignored while this person has a run of their own going.
+   */
+  watch: (run: { executionId: string; mode: ExecutionMode; entry: string; by: string }) => void;
   /** Leaves the current run behind (its project was closed): stops it on the server and clears the console. */
   abandon: () => void;
 }
@@ -156,7 +163,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
     flushLog();
     stream?.close();
     stream = null;
-    if (get().run?.mode === "debug") useDebug.getState().onEnded();
+    const watched = !!get().run?.watchedBy;
+    if (get().run?.mode === "debug" && !watched) useDebug.getState().onEnded();
     const files = project.files.map((f) => f.path);
     const diagnostics = [
       ...parseDiagnostics(result.language, result.compileOutput, files),
@@ -166,7 +174,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
       run: s.run && s.run.id === result.id ? { ...s.run, status: result.status, result } : s.run,
       diagnostics,
     }));
-    if (useSettings.getState().recordHistory) {
+    if (useSettings.getState().recordHistory && !watched) {
       try {
         await historyRepo.add({
           id: createId(),
@@ -190,7 +198,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
     flushLog();
     stream?.close();
     stream = null;
-    if (get().run?.mode === "debug") useDebug.getState().onEnded();
+    if (get().run?.mode === "debug" && !get().run?.watchedBy) useDebug.getState().onEnded();
     set((s) => ({ run: s.run ? { ...s.run, status: "SYSTEM_ERROR", error: { title, detail, requestId } } : s.run }));
   };
 
@@ -211,7 +219,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
     async execute(options) {
       const mode = options?.mode ?? "run";
-      if (starting || isRunning(get().run)) return;
+      if (starting || isOwnRun(get().run)) return;
       starting = true;
       try {
         await start(mode, options?.entry);
@@ -222,6 +230,13 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
     async cancel() {
       const run = get().run;
+      if (run?.watchedBy) {
+        // Someone else's run: stop showing it here; it keeps running for them.
+        flushLog();
+        stream?.close();
+        stream = null;
+        return void set({ run: null });
+      }
       if (!run?.id) {
         // Still being accepted: cancel it the moment the server gives it an id.
         if (run?.status === "SUBMITTING") cancelRequested = true;
@@ -255,6 +270,18 @@ export const useExecution = create<ExecutionState>((set, get) => {
     },
 
     bumpHistory: () => set((s) => ({ historyVersion: s.historyVersion + 1 })),
+
+    watch({ executionId, mode, entry, by }) {
+      const project = useWorkspace.getState().project;
+      if (!project || starting || isOwnRun(get().run) || get().run?.id === executionId) return;
+      pendingLog = null;
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = null;
+      set({ diagnostics: [], run: { id: executionId, projectId: project.id, entry, mode, interactive: false, status: "QUEUED", log: [], startedAt: Date.now(), watchedBy: by } });
+      useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: mode === "visualize" ? "visualize" : "run" });
+      if (mode === "visualize") useVisualize.getState().clear();
+      follow(executionId, "", project);
+    },
 
     abandon() {
       const run = get().run;
@@ -364,6 +391,11 @@ export const useExecution = create<ExecutionState>((set, get) => {
       }
       useWorkspace.getState().markRun();
       if (mode === "debug") useDebug.getState().onStarted(id);
+      follow(id, controlToken, project);
+  }
+
+  /** Streams an execution's events into the console: this person's run, or one they watch. */
+  function follow(id: string, controlToken: string, project: Project) {
       stream?.close();
       stream = streamExecution(id, controlToken, {
         onEvent: (event) => {
@@ -380,7 +412,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
               queueLog(id, { stream: event.type, text: event.chunk });
               break;
             case "debug":
-              useDebug.getState().onEvent(event.event);
+              if (!get().run?.watchedBy) useDebug.getState().onEvent(event.event);
               break;
             case "trace":
               useVisualize.getState().setTrace(id, event.trace);
@@ -424,6 +456,11 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
 export function isRunning(run: RunState | null): boolean {
   return !!run && !run.error && (run.status === "SUBMITTING" || !isTerminalStatus(run.status));
+}
+
+/** A run this person started (not someone else's run they are watching in a live session). */
+export function isOwnRun(run: RunState | null): boolean {
+  return isRunning(run) && !run!.watchedBy;
 }
 
 // Errors describe the code as it was when it ran. Once a file is edited, its marks no longer

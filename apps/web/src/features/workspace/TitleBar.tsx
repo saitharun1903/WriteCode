@@ -8,11 +8,12 @@ import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { canDebug, canVisualize, getCommand, isEnabled, primaryShortcut, runCommand } from "@/features/commands/registry";
 import { FileIcon, ProjectBadge } from "@/features/explorer/file-icon";
-import { isRunning, useExecution } from "@/features/execution/store";
+import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useResolvedTheme, useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 import { LogoMark } from "./Logo";
+import { LiveButton } from "@/features/live/LiveUI";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
 function fromCommands(ids: (string | "-")[]): MenuEntry[] {
@@ -78,7 +79,7 @@ function ThemeToggle() {
 function RunControls() {
   const project = useWorkspace((s) => s.project)!;
   const run = useExecution((s) => s.run);
-  const running = isRunning(run);
+  const running = isOwnRun(run);
   const lang = getLanguage(project.language);
   // Compiled languages list their main functions; interpreted ones can run any source file.
   const runnable = !lang
@@ -220,8 +221,13 @@ export function TitleBar({ compact }: { compact: boolean }) {
 
       <div className="relative ml-auto flex min-w-0 items-center gap-1">
         {project && <RunControls />}
+        {project && (
+          <span className="ml-1.5">
+            <LiveButton />
+          </span>
+        )}
         {project && !compact && (
-          <span className="ml-2 mr-1">
+          <span className="ml-1.5 mr-1">
             <AssistantButton />
           </span>
         )}

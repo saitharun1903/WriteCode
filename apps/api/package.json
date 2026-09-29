@@ -24,9 +24,12 @@
     "@nestjs/websockets": "^12.1.0",
     "bullmq": "^6.3.8",
     "ioredis": "^6.0.0",
+    "lib0": "^0.2.119",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.7",

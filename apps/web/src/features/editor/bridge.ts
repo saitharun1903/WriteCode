@@ -21,11 +21,13 @@ let instance: editor.IStandaloneCodeEditor | null = null;
 let monacoInstance: Monaco | null = null;
 /** `focus: false` scrolls to the line without moving the cursor or taking focus. */
 let pendingReveal: { line: number; column: number; focus: boolean } | null = null;
+const attachListeners = new Set<(ed: editor.IStandaloneCodeEditor, monaco: Monaco) => void>();
 
 export const editorBridge = {
   attach(ed: editor.IStandaloneCodeEditor, monaco: Monaco) {
     instance = ed;
     monacoInstance = monaco;
+    for (const fn of attachListeners) fn(ed, monaco);
     ed.onDidChangeModel(() => {
       if (!pendingReveal) return;
       const { line, column, focus } = pendingReveal;
@@ -138,5 +140,14 @@ export const editorBridge = {
   },
   get monaco() {
     return monacoInstance;
+  },
+  get editor() {
+    return instance;
+  },
+  /** Calls `fn` with the editor now (if mounted) and whenever a new one mounts. */
+  onAttach(fn: (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => void): () => void {
+    attachListeners.add(fn);
+    if (instance && monacoInstance) fn(instance, monacoInstance);
+    return () => attachListeners.delete(fn);
   },
 };

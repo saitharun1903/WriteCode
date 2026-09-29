@@ -30,6 +30,10 @@ import { BottomPanel } from "./BottomPanel";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
+import { JoinDialog, LivePanel, LiveStrip, SessionEndedDialog } from "@/features/live/LiveUI";
+import { promptJoin } from "@/features/live/store";
+import { isLiveRoomId } from "@cw/shared";
+import { toast } from "@/components/ui/toast";
 
 
 // Downloaded the first time the assistant is opened.
@@ -235,7 +239,11 @@ function CompactWorkbench() {
   );
 }
 
-export function WorkspaceShell() {
+/** The link is read once per page load (effects run twice in development). */
+let liveLinkHandled = false;
+
+/** `live`: the page was opened from a live session link (`/live#<id>`). */
+export function WorkspaceShell({ live = false }: { live?: boolean }) {
   const project = useWorkspace((s) => s.project);
   const status = useWorkspace((s) => s.status);
   const theme = useSettings((s) => s.theme);
@@ -244,6 +252,23 @@ export function WorkspaceShell() {
 
   useGlobalKeybindings();
   useDebugSync();
+
+  useEffect(() => {
+    if (!live) return;
+    const handle = () => {
+      const roomId = location.hash.slice(1);
+      if (isLiveRoomId(roomId)) return promptJoin(roomId);
+      toast.error("This live session link is not complete", "Ask for the link again and open all of it.");
+      history.replaceState(null, "", "/");
+    };
+    if (!liveLinkHandled) {
+      liveLinkHandled = true;
+      handle();
+    }
+    // The same tab opening another (or the same) link again.
+    window.addEventListener("hashchange", handle);
+    return () => window.removeEventListener("hashchange", handle);
+  }, [live]);
 
   useEffect(() => {
     useSettings.getState().hydrate();
@@ -299,6 +324,7 @@ export function WorkspaceShell() {
     <TooltipProvider>
       <div className="flex h-dvh flex-col bg-canvas">
         <TitleBar compact={compact} />
+        <LiveStrip />
         {loading ? (
           <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-subtle">
             <Spinner /> Loading workspace…
@@ -318,6 +344,9 @@ export function WorkspaceShell() {
       <ImportDialog />
       <CompareDialog />
       <EntryPointDialog />
+      <LivePanel />
+      <JoinDialog />
+      <SessionEndedDialog />
       <Toaster />
     </TooltipProvider>
   );
