@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { useWorkspace } from "@/features/projects/store";
 import * as ops from "@/features/projects/operations";
-import { applyTextDiff, bindProject, filesOf, readProject, writeProject } from "./bind";
+import { applyTextDiff, bindProject, filesOf, readProject, readTests, testOrderOf, testsOf, writeProject } from "./bind";
 
 /** Two documents connected directly, as two browsers are through the server. */
 function linked() {
@@ -116,6 +116,34 @@ describe("binding a project to the shared document", () => {
     const binding = bindProject(mine, "p1", () => false);
     useWorkspace.setState({ project: { ...project, files: [{ path: "Main.java", content: "changed" }] } });
     expect(text(theirs)).toBe(project.files[0]!.content);
+    binding.unbind();
+  });
+
+  it("test cases are shared: added, edited, duplicated in place and deleted", () => {
+    const { theirs, binding } = setup();
+    useWorkspace.getState().setTests([{ id: "t1", input: "3", expected: "6" }]);
+    expect(readTests(theirs)).toEqual([{ id: "t1", input: "3", expected: "6" }]);
+    useWorkspace.getState().setTests([
+      { id: "t1", input: "4", expected: "8" },
+      { id: "t2", input: "5", expected: "10" },
+    ]);
+    // A duplicate goes right under its original.
+    useWorkspace.getState().setTests([
+      { id: "t1", input: "4", expected: "8" },
+      { id: "t1b", input: "4", expected: "8" },
+      { id: "t2", input: "5", expected: "10" },
+    ]);
+    expect(readTests(theirs).map((t) => t.id)).toEqual(["t1", "t1b", "t2"]);
+    // Their edit and deletion arrive here.
+    testsOf(theirs).get("t2")!.get("expected")!.insert(2, "0");
+    theirs.transact(() => {
+      testsOf(theirs).delete("t1b");
+      testOrderOf(theirs).delete(1, 1);
+    });
+    expect(useWorkspace.getState().project!.tests).toEqual([
+      { id: "t1", input: "4", expected: "8" },
+      { id: "t2", input: "5", expected: "100" },
+    ]);
     binding.unbind();
   });
 });

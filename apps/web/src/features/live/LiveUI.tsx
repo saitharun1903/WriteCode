@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Eye, LogOut, Pencil, Radio, UserMinus, Users } from "lucide-react";
-import { LIVE_COLORS, LIVE_ROLE_LABEL, type LiveJoinRole, type LiveParticipant } from "@cw/shared";
+import { Check, Copy, Eye, LogOut, Mail, Pencil, Radio, Share2, UserMinus, Users } from "lucide-react";
+import { LIVE_COLORS, LIVE_ROLE_LABEL, PRODUCT, type LiveJoinRole, type LiveParticipant } from "@cw/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Spinner } from "@/components/ui/primitives";
@@ -77,6 +77,90 @@ export function LiveButton() {
         Live
       </span>
     </button>
+  );
+}
+
+const EMAIL = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+
+/** The invitation text, for email and messaging apps. */
+function inviteText(link: string, from: string, project: string, canEdit: boolean) {
+  return {
+    subject: `${from} invited you to code together on ${PRODUCT.name}`,
+    body: [
+      "Hi!",
+      `${from} is sharing the project "${project}" live on ${PRODUCT.name}. Open this link to join. ` +
+        `You will see the code, everyone's cursors and the program's output as they happen${canEdit ? ", and you can edit too" : ""}.`,
+      link,
+      "No sign-up needed: just type your name.",
+    ].join("\n\n"),
+  };
+}
+
+/** Invite people: opens your own email app with the invitation written, or WhatsApp, or the phone's share sheet. */
+function Invite({ roomId }: { roomId: string }) {
+  const [emails, setEmails] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const me = useLive((s) => s.me);
+  const defaultRole = useLive((s) => s.defaultRole);
+  const project = useWorkspace((s) => s.project?.name ?? "project");
+  const text = inviteText(liveLink(roomId), me?.name ?? "Someone", project, defaultRole === "editor");
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  const sendEmail = () => {
+    const list = emails.split(/[\s,;]+/).filter(Boolean);
+    const bad = list.filter((e) => !EMAIL.test(e));
+    if (!list.length) return setProblem("Type at least one email address.");
+    if (bad.length) return setProblem(`Check ${bad.length === 1 ? "this address" : "these addresses"}: ${bad.join(", ")}`);
+    setProblem(null);
+    // Your own email app sends it, from your address: nothing goes through our server.
+    window.location.href = `mailto:${list.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent(text.subject)}&body=${encodeURIComponent(text.body)}`;
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          sendEmail();
+        }}
+      >
+        <Input
+          aria-label="Invite by email"
+          value={emails}
+          onChange={(e) => {
+            setEmails(e.target.value);
+            setProblem(null);
+          }}
+          placeholder="Invite by email: friend@gmail.com, …"
+          className="min-w-0 flex-1"
+        />
+        <Button type="submit" variant="secondary" icon={<Mail className="size-3.5" />}>
+          Email
+        </Button>
+      </form>
+      {problem && <p className="text-xs text-danger">{problem}</p>}
+      <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-subtle">
+        <span>or send it with</span>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(text.body)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-md border border-line-strong/70 px-2 py-0.5 font-medium text-fg-muted hover:bg-hover hover:text-fg"
+        >
+          WhatsApp
+        </a>
+        {canShare && (
+          <button
+            type="button"
+            onClick={() => void navigator.share({ title: text.subject, text: text.body }).catch(() => {})}
+            className="flex items-center gap-1 rounded-md border border-line-strong/70 px-2 py-0.5 font-medium text-fg-muted hover:bg-hover hover:text-fg"
+          >
+            <Share2 className="size-3" /> More apps…
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -231,6 +315,7 @@ export function LivePanel() {
         <div className="space-y-4">
           {status === "reconnecting" && <p className="rounded-md bg-warning-soft px-2.5 py-1.5 text-xs text-warning">Connection lost. Reconnecting… your changes are kept and sent when you are back.</p>}
           <CopyLink roomId={roomId!} />
+          <Invite roomId={roomId!} />
           {owner && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-fg-muted">People who join with the link</span>

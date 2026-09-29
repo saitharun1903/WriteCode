@@ -76,7 +76,7 @@ interface ExecutionState {
    * Shows someone else's run from a live session (output, errors, result) as
    * it happens. Ignored while this person has a run of their own going.
    */
-  watch: (run: { executionId: string; mode: ExecutionMode; entry: string; by: string }) => void;
+  watch: (run: { executionId: string; mode: ExecutionMode; entry: string; by: string; interactive?: boolean }) => void;
   /** Leaves the current run behind (its project was closed): stops it on the server and clears the console. */
   abandon: () => void;
 }
@@ -89,6 +89,9 @@ let stream: ExecutionStream | null = null;
 let starting = false;
 /** Stop was pressed before the server accepted the run; cancel it as soon as it has an id. */
 let cancelRequested = false;
+
+/** Sends typed input to a run watched in a live session. Set by the live session. */
+export const watchedInput: { send: ((executionId: string, text: string, eof: boolean) => boolean) | null } = { send: null };
 
 /** Called when the project's entry file has no entry point and several others do. Set by the UI. */
 export const entryChooser: { open: ((mode: ExecutionMode) => void) | null } = { open: null };
@@ -252,7 +255,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
     sendInput(text, eof = false) {
       const run = get().run;
       if (!run?.id || !run.interactive || run.inputClosed || !isRunning(run)) return;
-      if (!stream?.sendInput(text, eof)) {
+      // Someone else's run: the input goes through the live session to their program.
+      const sent = run.watchedBy ? (watchedInput.send?.(run.id, text, eof) ?? false) : stream?.sendInput(text, eof);
+      if (!sent) {
         set((s) => ({ run: s.run ? { ...s.run, inputError: "Not connected to the program." } : s.run }));
         return;
       }
@@ -271,13 +276,13 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
     bumpHistory: () => set((s) => ({ historyVersion: s.historyVersion + 1 })),
 
-    watch({ executionId, mode, entry, by }) {
+    watch({ executionId, mode, entry, by, interactive = false }) {
       const project = useWorkspace.getState().project;
       if (!project || starting || isOwnRun(get().run) || get().run?.id === executionId) return;
       pendingLog = null;
       if (pendingTimer) clearTimeout(pendingTimer);
       pendingTimer = null;
-      set({ diagnostics: [], run: { id: executionId, projectId: project.id, entry, mode, interactive: false, status: "QUEUED", log: [], startedAt: Date.now(), watchedBy: by } });
+      set({ diagnostics: [], run: { id: executionId, projectId: project.id, entry, mode, interactive, status: "QUEUED", log: [], startedAt: Date.now(), watchedBy: by } });
       useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: mode === "visualize" ? "visualize" : "run" });
       if (mode === "visualize") useVisualize.getState().clear();
       follow(executionId, "", project);

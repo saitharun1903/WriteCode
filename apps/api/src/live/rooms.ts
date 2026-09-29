@@ -9,6 +9,9 @@ import {
   LIVE_COLORS,
   LIVE_LIMITS,
   LiveFrame,
+  REQUEST_BOUNDS,
+  TEST_LIMITS,
+  utf8ByteLength,
   isLiveRoomId,
   type LiveClientMessage,
   type LiveJoinRole,
@@ -86,6 +89,8 @@ class Room {
   readonly awareness = new awarenessProtocol.Awareness(this.doc);
   readonly members = new Map<string, Member>();
   lastRun?: LiveRunNotice;
+  /** Runs announced in this session (most recent last), so typed input can be relayed to them. */
+  readonly runs = new Map<string, { interactive: boolean }>();
   /** The document reached its size limit; further edits are refused. */
   full = false;
   private approxBytes = 0;
@@ -154,6 +159,8 @@ class Room {
     try {
       await this.store.putDoc(this.meta.id, Y.encodeStateAsUpdate(this.doc));
       await this.store.putMeta(this.meta);
+      // Still in use: keeps counting toward its owner's limit of open sessions.
+      await this.store.addRoom(this.meta.client, this.meta.id);
     } catch (e) {
       this.onError(`could not save live session: ${String(e)}`);
     }
@@ -180,12 +187,15 @@ export class LiveRooms {
   constructor(
     private readonly store: LiveStore,
     private readonly log: (message: string) => void = () => {},
+    /** Sends typed input to a running program; returns an error message or null. */
+    readonly sendInput: (executionId: string, data: string, eof: boolean) => Promise<string | null> = async () => "Input is not available.",
+    private readonly maxRoomsPerClient: number = LIVE_LIMITS.maxRoomsPerClient,
   ) {}
 
   /** Starts a session. The owner token is returned once and only its hash is kept. */
   async create(client: string): Promise<{ id: string; ownerToken: string }> {
-    if ((await this.store.openRooms(client)) >= LIVE_LIMITS.maxRoomsPerClient) {
-      throw new LiveError("rate", `You can have ${LIVE_LIMITS.maxRoomsPerClient} live sessions open at once. End one to start another.`);
+    if ((await this.store.openRooms(client)) >= this.maxRoomsPerClient) {
+      throw new LiveError("rate", `You can have ${this.maxRoomsPerClient} live sessions going at once. End one to start another.`);
     }
     const id = randomBytes(18).toString("base64url");
     const ownerToken = randomBytes(24).toString("base64url");
@@ -308,7 +318,9 @@ export class LiveRooms {
 }
 
 const EXECUTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const RUN_MODES = new Set(["run", "debug", "visualize"]);
+const RUN_MODES = new Set(["run", "debug", "visualize", "test"]);
+const TEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_REMEMBERED_RUNS = 20;
 
 /** One person's connection to a session. */
 export class LiveConnection {
@@ -385,8 +397,26 @@ export class LiveConnection {
       case "run": {
         if (me.role === "viewer" || !EXECUTION_ID.test(String(msg.executionId)) || !RUN_MODES.has(msg.mode)) return;
         const entry = typeof msg.entry === "string" ? msg.entry.slice(0, 200) : "";
-        room.lastRun = { executionId: msg.executionId, mode: msg.mode, entry, by: { id: me.id, name: me.name } };
+        const interactive = msg.interactive === true && msg.mode !== "test";
+        const tests =
+          msg.mode === "test" && Array.isArray(msg.tests)
+            ? msg.tests.filter((t): t is string => typeof t === "string" && TEST_ID.test(t)).slice(0, TEST_LIMITS.maxTests)
+            : undefined;
+        room.lastRun = { executionId: msg.executionId, mode: msg.mode, entry, by: { id: me.id, name: me.name }, ...(interactive ? { interactive } : {}), ...(tests ? { tests } : {}) };
+        room.runs.set(msg.executionId, { interactive });
+        if (room.runs.size > MAX_REMEMBERED_RUNS) room.runs.delete(room.runs.keys().next().value!);
         room.broadcast(JSON.stringify({ type: "run", run: room.lastRun } satisfies LiveServerMessage), me);
+        return;
+      }
+      case "input": {
+        const run = room.runs.get(String(msg.executionId));
+        const reply = (message: string) => this.send({ type: "input-error", executionId: String(msg.executionId), message });
+        if (me.role === "viewer") return reply("View-only people cannot type input.");
+        if (!run?.interactive) return reply("This program does not take typed input here.");
+        if (typeof msg.data !== "string" || (msg.eof !== undefined && typeof msg.eof !== "boolean")) return reply("Invalid input.");
+        if (utf8ByteLength(msg.data) > REQUEST_BOUNDS.maxInputChunkBytes) return reply(`Send at most ${REQUEST_BOUNDS.maxInputChunkBytes} bytes at a time.`);
+        const error = await this.rooms.sendInput(String(msg.executionId), msg.data, msg.eof === true).catch(() => "The execution service is unavailable.");
+        if (error) reply(error);
         return;
       }
       case "set-role": {

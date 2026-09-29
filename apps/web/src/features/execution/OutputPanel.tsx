@@ -374,7 +374,9 @@ export function RunToolWindow() {
           <div role="note" className="flex h-7 shrink-0 items-center gap-1.5 border-b border-line bg-surface-2 px-3 text-xs text-fg-muted">
             <Radio className="size-3.5 text-success" />
             {run.watchedBy}&apos;s {run.mode === "debug" ? "debug session" : run.mode === "visualize" ? "visualization" : "run"} · shown live
-            {run.status === "WAITING_FOR_INPUT" && <span className="text-fg-subtle">· waiting for {run.watchedBy} to type the input</span>}
+            {run.status === "WAITING_FOR_INPUT" && (
+              <span className="text-fg-subtle">· {run.interactive ? "waiting for input: you can type it below" : `waiting for ${run.watchedBy} to type the input`}</span>
+            )}
           </div>
         )}
         {searchOpen && (

@@ -242,4 +242,42 @@ describe("live rooms", () => {
     for (let i = 0; i < 10; i++) await rooms.create("busy");
     await expect(rooms.create("busy")).rejects.toMatchObject({ code: "rate" });
   });
+
+  it("people who can edit may type input into an announced interactive run; viewers may not", async () => {
+    const store = new MemoryStore();
+    const sent: [string, string, boolean][] = [];
+    const rooms = new LiveRooms(store, () => {}, async (id, data, eof) => {
+      sent.push([id, data, eof]);
+      return null;
+    });
+    const { id, ownerToken } = await rooms.create("c");
+    const owner = await new Client().join(rooms, id, "Teacher", KEY_A, ownerToken);
+    const ravi = await new Client().join(rooms, id, "Ravi", KEY_B);
+    const executionId = "0b8f6f1e-5d3c-4c9a-9f5e-1a2b3c4d5e6f";
+
+    // Not announced yet: refused.
+    await ravi.conn.control({ type: "input", executionId, data: "5\n" });
+    expect(ravi.last("input-error")?.message).toMatch(/does not take typed input/);
+    await owner.conn.control({ type: "run", executionId, mode: "run", entry: "Main.java", interactive: true });
+    expect(ravi.last("run")?.run.interactive).toBe(true);
+    await ravi.conn.control({ type: "input", executionId, data: "5\n" });
+    await ravi.conn.control({ type: "input", executionId, data: "", eof: true });
+    expect(sent).toEqual([
+      [executionId, "5\n", false],
+      [executionId, "", true],
+    ]);
+
+    await owner.conn.control({ type: "set-role", id: ravi.last("welcome")!.you.id, role: "viewer" });
+    await ravi.conn.control({ type: "input", executionId, data: "6\n" });
+    expect(sent).toHaveLength(2);
+    expect(ravi.last("input-error")?.message).toMatch(/View-only/);
+  });
+
+  it("test runs are announced with the tests they ran", async () => {
+    const { rooms, id, owner } = await session();
+    const ravi = await new Client().join(rooms, id, "Ravi", KEY_B);
+    await owner.conn.control({ type: "run", executionId: "0b8f6f1e-5d3c-4c9a-9f5e-1a2b3c4d5e6f", mode: "test", entry: "Main.java", tests: ["t1", "t2", "bad id!"] });
+    expect(ravi.last("run")?.run).toMatchObject({ mode: "test", tests: ["t1", "t2"] });
+    expect(ravi.last("run")?.run.interactive).toBeUndefined();
+  });
 });

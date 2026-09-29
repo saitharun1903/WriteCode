@@ -58,7 +58,7 @@ interface WorkspaceState {
   /** Opens someone else's live project without saving it. */
   openShared: (project: Project) => void;
   /** Applies changes that came from other people in a live session. */
-  applyShared: (patch: Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name">) => void;
+  applyShared: (patch: Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name" | "tests">) => void;
   /** Saves the open (shared) project as a project of your own. */
   saveCopy: () => Promise<Project | null>;
   setReadOnly: (readOnly: boolean) => void;
@@ -454,6 +454,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     setTests(tests) {
+      if (blocked()) return;
       const project = get().project;
       if (project && project.tests !== tests) commit({ ...project, tests, updatedAt: Date.now() });
     },

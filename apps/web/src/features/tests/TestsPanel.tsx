@@ -70,7 +70,20 @@ function RunAllButton({ compact }: { compact?: boolean }) {
   const phase = useTests((s) => s.phase);
   const run = useTests((s) => s.run);
   const cancel = useTests((s) => s.cancel);
+  const watchedBy = useTests((s) => s.watchedBy);
   const shortcut = primaryShortcut("tests.runAll");
+  if (phase !== "idle" && watchedBy) {
+    return (
+      <button
+        type="button"
+        onClick={() => void cancel()}
+        title="Stop showing this run here; it goes on for them"
+        className="flex h-7 items-center gap-1.5 rounded-full border border-line-strong px-3 text-[12.5px] font-medium text-fg-muted transition-colors hover:bg-hover hover:text-fg"
+      >
+        Stop watching
+      </button>
+    );
+  }
   if (phase !== "idle") {
     return (
       <button
@@ -99,6 +112,8 @@ function PhaseLine() {
   const phase = useTests((s) => s.phase);
   const error = useTests((s) => s.error);
   const compileError = useTests((s) => s.compileError);
+  const watchedBy = useTests((s) => s.watchedBy);
+  if (watchedBy && phase !== "idle") return <p className="text-xs text-success">{watchedBy} is running the tests · shown live</p>;
   if (phase === "starting") return <p className="text-xs text-fg-subtle">Starting…</p>;
   if (phase === "compiling") return <p className="text-xs text-fg-subtle">Compiling…</p>;
   if (compileError) return <p className="text-xs text-danger">Didn’t compile</p>;

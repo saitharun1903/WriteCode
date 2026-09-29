@@ -71,8 +71,11 @@ export class LiveClient {
     this.canWrite = writable;
   }
 
-  send(message: LiveClientMessage) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(message));
+  /** False when not connected (the message is not sent). */
+  send(message: LiveClientMessage): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify(message));
+    return true;
   }
 
   private sendBinary(data: Uint8Array) {

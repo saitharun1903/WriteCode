@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { LIVE_LIMITS } from "@cw/shared";
 
 // One .env at the repository root serves every service; it is optional.
 for (const path of [resolve(process.cwd(), "../../.env"), resolve(process.cwd(), ".env")]) {
@@ -49,6 +50,8 @@ export const config = {
     /** Global queue depth after which new executions are refused. */
     maxQueueDepth: int("MAX_QUEUE_DEPTH", 200),
   },
+  /** Live sessions one client may have going at once (development machines run many test sessions). */
+  liveMaxRoomsPerClient: int("LIVE_MAX_ROOMS_PER_CLIENT", production ? LIVE_LIMITS.maxRoomsPerClient : 100),
   /** WebSocket subscriptions allowed per connection. */
   maxSubscriptionsPerSocket: 8,
   /**

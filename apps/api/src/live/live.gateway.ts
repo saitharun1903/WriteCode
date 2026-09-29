@@ -6,6 +6,7 @@ import type { WebSocket } from "ws";
 import { LIVE_LIMITS, type LiveClientMessage, type LiveServerMessage } from "@cw/shared";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
+import { ExecutionsService } from "../executions/executions.service.js";
 import { RedisLiveStore } from "./redis-store.js";
 import { LiveClose, LiveError, LiveRooms, type LiveConnection } from "./rooms.js";
 
@@ -15,8 +16,9 @@ export class LiveService implements OnApplicationShutdown {
   private readonly logger = new Logger("Live");
   readonly rooms: LiveRooms;
 
-  constructor(@Inject(REDIS) redis: Redis) {
-    this.rooms = new LiveRooms(new RedisLiveStore(redis), (m) => this.logger.warn(m));
+  constructor(@Inject(REDIS) redis: Redis, executions: ExecutionsService) {
+    // Typed input from people in a session goes to runs announced in it (checked by the rooms).
+    this.rooms = new LiveRooms(new RedisLiveStore(redis), (m) => this.logger.warn(m), (id, data, eof) => executions.sendInput(id, data, eof), config.liveMaxRoomsPerClient);
   }
 
   async onApplicationShutdown() {

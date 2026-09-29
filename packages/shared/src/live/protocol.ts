@@ -14,6 +14,8 @@
  * - `meta` (Y.Map): `name`, `language`, `entryFile`, `stdin`, `ready`
  * - `files` (Y.Map<Y.Text>): path → content
  * - `folders` (Y.Map<true>): explicit (possibly empty) folders
+ * - `tests` (Y.Map<Y.Map>): test id → { input: Y.Text, expected: Y.Text }
+ * - `testOrder` (Y.Array<string>): the order tests are listed in
  */
 
 export type LiveRole = "owner" | "editor" | "viewer";
@@ -25,8 +27,9 @@ export const LiveFrame = { sync: 0, awareness: 1 } as const;
 export const LIVE_LIMITS = {
   /** People in one session at once, owner included. */
   maxParticipants: 100,
-  /** Sessions one client may have open at once. */
+  /** Sessions one client may have in use at once (used within `activeWindowSeconds`). */
   maxRoomsPerClient: 10,
+  activeWindowSeconds: 2 * 60 * 60,
   /** Size of the shared document (all files), bytes. */
   maxDocBytes: 3 * 1024 * 1024,
   /** One WebSocket frame, bytes. The first sync of a large project is the biggest. */
@@ -62,9 +65,13 @@ export interface LiveParticipant {
 /** Someone started a run, debug session or visualization that everyone can watch. */
 export interface LiveRunNotice {
   executionId: string;
-  mode: "run" | "debug" | "visualize";
+  mode: "run" | "debug" | "visualize" | "test";
   entry: string;
   by: { id: string; name: string };
+  /** The program reads what people type while it runs; anyone who can edit may type it. */
+  interactive?: boolean;
+  /** Test runs: ids of the tests run, in the order their results arrive. */
+  tests?: string[];
 }
 
 export type LiveClientMessage =
@@ -74,7 +81,9 @@ export type LiveClientMessage =
   | { type: "default-role"; role: LiveJoinRole }
   | { type: "remove"; id: string }
   | { type: "end" }
-  | { type: "run"; executionId: string; mode: LiveRunNotice["mode"]; entry: string };
+  | { type: "run"; executionId: string; mode: LiveRunNotice["mode"]; entry: string; interactive?: boolean; tests?: string[] }
+  /** Typed input for a run someone in the session started. */
+  | { type: "input"; executionId: string; data: string; eof?: boolean };
 
 export type LiveServerMessage =
   | { type: "welcome"; you: LiveParticipant; defaultRole: LiveJoinRole; participants: LiveParticipant[]; run?: LiveRunNotice }
@@ -82,6 +91,7 @@ export type LiveServerMessage =
   | { type: "role"; role: LiveRole }
   | { type: "default-role"; role: LiveJoinRole }
   | { type: "run"; run: LiveRunNotice }
+  | { type: "input-error"; executionId: string; message: string }
   | { type: "ended" }
   | { type: "removed" }
   | { type: "error"; code: "not-found" | "full" | "removed" | "invalid" | "too-large" | "rate"; message: string };

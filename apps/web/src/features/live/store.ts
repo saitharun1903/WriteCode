@@ -1,13 +1,15 @@
 "use client";
 
 import { create } from "zustand";
-import type { LiveJoinRole, LiveParticipant, LivePresence, LiveRole, LiveServerMessage, Project } from "@cw/shared";
+import type { LiveJoinRole, LiveParticipant, LivePresence, LiveRole, LiveRunNotice, LiveServerMessage, Project } from "@cw/shared";
+import { useSettings } from "@/features/settings/store";
+import { useTests } from "@/features/tests/store";
 import { toast } from "@/components/ui/toast";
 import { API_URL } from "@/features/execution/api";
-import { useExecution } from "@/features/execution/store";
+import { useExecution, watchedInput } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { createId } from "@/lib/id";
-import { bindProject, isReady, metaOf, readProject, writeProject, type Binding } from "./bind";
+import { bindProject, isReady, metaOf, readProject, upgradeDoc, writeProject, type Binding } from "./bind";
 import { LiveClient, type LiveStatus } from "./client";
 import { startPresence } from "./presence";
 
@@ -129,8 +131,9 @@ export const useLive = create<LiveState>((set, get) => {
       // A fresh session gets the project; a resumed one brings back what others changed meanwhile.
       if (!isReady(doc)) writeProject(doc, project);
       else {
+        upgradeDoc(doc, project);
         const shared = readProject(doc, project.files.map((f) => f.path));
-        useWorkspace.getState().applyShared({ files: shared.files, folders: shared.folders, entryFile: shared.entryFile, stdin: shared.stdin, name: shared.name });
+        useWorkspace.getState().applyShared({ files: shared.files, folders: shared.folders, entryFile: shared.entryFile, stdin: shared.stdin, name: shared.name, tests: shared.tests });
       }
     } else {
       if (!isReady(doc)) {
@@ -153,6 +156,7 @@ export const useLive = create<LiveState>((set, get) => {
         folders: shared.folders,
         entryFile: shared.entryFile,
         stdin: shared.stdin,
+        tests: shared.tests,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -178,12 +182,26 @@ export const useLive = create<LiveState>((set, get) => {
     }
   };
 
+  /** Shows a run someone else started: in the Run window, or the Tests panel for test runs. */
+  const watchRun = (run: LiveRunNotice) => {
+    const ws = useWorkspace.getState();
+    if (!session || ws.project?.id !== session.projectId) return;
+    if (run.mode === "test") {
+      useTests.getState().watch({ executionId: run.executionId, testIds: run.tests ?? [], by: run.by.name });
+      useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: "tests" });
+      return;
+    }
+    // Everyone who can edit may type the program's input; view-only people watch.
+    const interactive = !!run.interactive && get().role !== "viewer";
+    useExecution.getState().watch({ executionId: run.executionId, mode: run.mode, entry: run.entry, by: run.by.name, interactive });
+  };
+
   const onMessage = (msg: LiveServerMessage) => {
     switch (msg.type) {
       case "welcome":
         set({ me: msg.you, role: msg.you.role, participants: msg.participants, defaultRole: msg.defaultRole, error: null });
         applyRole(msg.you.role);
-        if (msg.run && session && !session.owner && session.synced) useExecution.getState().watch({ ...msg.run, by: msg.run.by.name });
+        if (msg.run && session && !session.owner && session.synced) watchRun(msg.run);
         return;
       case "participants": {
         const me = msg.participants.find((p) => p.id === get().me?.id) ?? get().me;
@@ -204,12 +222,12 @@ export const useLive = create<LiveState>((set, get) => {
       case "default-role":
         set({ defaultRole: msg.role });
         return;
-      case "run": {
-        const ws = useWorkspace.getState();
-        if (!session || ws.project?.id !== session.projectId) return;
-        useExecution.getState().watch({ executionId: msg.run.executionId, mode: msg.run.mode, entry: msg.run.entry, by: msg.run.by.name });
+      case "run":
+        watchRun(msg.run);
         return;
-      }
+      case "input-error":
+        useExecution.setState((s) => ({ run: s.run && s.run.id === msg.executionId ? { ...s.run, inputError: msg.message } : s.run }));
+        return;
       case "ended":
         set({ status: "ended" });
         return;
@@ -411,8 +429,18 @@ if (typeof window !== "undefined") {
     if (!session || !run?.id || run.watchedBy || session.announced.has(run.id)) return;
     if (run.projectId !== session.projectId || useLive.getState().role === "viewer") return;
     session.announced.add(run.id);
-    session.client.send({ type: "run", executionId: run.id, mode: run.mode === "test" ? "run" : run.mode, entry: run.entry });
+    session.client.send({ type: "run", executionId: run.id, mode: run.mode === "test" ? "run" : run.mode, entry: run.entry, interactive: run.interactive });
   });
+
+  // Test runs too: everyone sees the results arrive in their Tests panel.
+  useTests.subscribe((s, prev) => {
+    if (!session || !s.runId || s.runId === prev.runId || s.watchedBy || session.announced.has(s.runId)) return;
+    if (useWorkspace.getState().project?.id !== session.projectId || useLive.getState().role === "viewer") return;
+    session.announced.add(s.runId);
+    session.client.send({ type: "run", executionId: s.runId, mode: "test", entry: "", tests: s.runTestIds });
+  });
+
+  watchedInput.send = (executionId, data, eof) => session?.client.send({ type: "input", executionId, data, eof }) ?? false;
 
   window.addEventListener("online", () => session?.client.retryNow());
 }

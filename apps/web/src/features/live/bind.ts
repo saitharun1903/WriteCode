@@ -2,7 +2,7 @@
 
 import * as Y from "yjs";
 import type { editor } from "monaco-editor";
-import type { Project } from "@cw/shared";
+import type { Project, TestCase } from "@cw/shared";
 import { useWorkspace } from "@/features/projects/store";
 import { editorBridge } from "@/features/editor/bridge";
 import { modelUri } from "@/features/editor/monaco-setup";
@@ -14,9 +14,64 @@ export const filesOf = (doc: Y.Doc) => doc.getMap<Y.Text>("files");
 export const foldersOf = (doc: Y.Doc) => doc.getMap<boolean>("folders");
 export const metaOf = (doc: Y.Doc) => doc.getMap<unknown>("meta");
 
+export const testsOf = (doc: Y.Doc) => doc.getMap<Y.Map<Y.Text>>("tests");
+export const testOrderOf = (doc: Y.Doc) => doc.getArray<string>("testOrder");
+
 export const isReady = (doc: Y.Doc) => metaOf(doc).get("ready") === true;
 
-type Shared = Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name">;
+type Shared = Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name"> & { tests: TestCase[] };
+
+function sharedTest(t: TestCase): Y.Map<Y.Text> {
+  const test = new Y.Map<Y.Text>();
+  const input = new Y.Text();
+  input.insert(0, t.input);
+  const expected = new Y.Text();
+  expected.insert(0, t.expected);
+  test.set("input", input);
+  test.set("expected", expected);
+  return test;
+}
+
+/** Tests in their listed order (each once, even if two people added one at the same moment). */
+export function readTests(doc: Y.Doc): TestCase[] {
+  const tests = testsOf(doc);
+  const seen = new Set<string>();
+  const out: TestCase[] = [];
+  for (const id of testOrderOf(doc).toArray()) {
+    const t = tests.get(id);
+    if (!t || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, input: t.get("input")?.toString() ?? "", expected: t.get("expected")?.toString() ?? "" });
+  }
+  return out;
+}
+
+/** Copies test changes (added, removed, edited) into the shared document. */
+function pushTests(doc: Y.Doc, prev: readonly TestCase[], next: readonly TestCase[]) {
+  const tests = testsOf(doc);
+  const order = testOrderOf(doc);
+  const keep = new Set(next.map((t) => t.id));
+  for (const t of prev) {
+    if (keep.has(t.id)) continue;
+    tests.delete(t.id);
+    const ids = order.toArray();
+    for (let i = ids.length - 1; i >= 0; i--) if (ids[i] === t.id) order.delete(i, 1);
+  }
+  const before = new Map(prev.map((t) => [t.id, t]));
+  for (const [i, t] of next.entries()) {
+    const shared = tests.get(t.id);
+    if (!shared) {
+      tests.set(t.id, sharedTest(t));
+      // Right after the test it follows here, as a duplicate appears under its original.
+      const after = i > 0 ? order.toArray().indexOf(next[i - 1]!.id) : -1;
+      order.insert(after + 1, [t.id]);
+      continue;
+    }
+    const old = before.get(t.id);
+    if (old?.input !== t.input) applyTextDiff(shared.get("input")!, t.input);
+    if (old?.expected !== t.expected) applyTextDiff(shared.get("expected")!, t.expected);
+  }
+}
 
 /** Puts a project into an empty shared document (the owner starting a session). */
 export function writeProject(doc: Y.Doc, project: Project) {
@@ -33,7 +88,19 @@ export function writeProject(doc: Y.Doc, project: Project) {
       files.set(f.path, text);
     }
     for (const folder of project.folders) foldersOf(doc).set(folder, true);
+    for (const t of project.tests ?? []) testsOf(doc).set(t.id, sharedTest(t));
+    testOrderOf(doc).push((project.tests ?? []).map((t) => t.id));
+    meta.set("testsShared", true);
     meta.set("ready", true);
+  }, LOCAL);
+}
+
+/** Sessions started before tests were shared get the owner's tests once, instead of an empty list. */
+export function upgradeDoc(doc: Y.Doc, project: Project) {
+  if (metaOf(doc).get("testsShared") === true) return;
+  doc.transact(() => {
+    pushTests(doc, [], project.tests ?? []);
+    metaOf(doc).set("testsShared", true);
   }, LOCAL);
 }
 
@@ -50,6 +117,7 @@ export function readProject(doc: Y.Doc, order: readonly string[] = []): Shared &
     stdin: String(meta.get("stdin") ?? ""),
     files: [...known, ...added].map((path) => ({ path, content: texts.get(path)!.toString() })),
     folders: [...foldersOf(doc).keys()].sort(),
+    tests: readTests(doc),
   };
 }
 
@@ -94,6 +162,7 @@ function pushChanges(doc: Y.Doc, prev: Project, next: Project) {
       for (const f of [...folders.keys()]) if (!next.folders.includes(f)) folders.delete(f);
       for (const f of next.folders) if (!folders.has(f)) folders.set(f, true);
     }
+    if (prev.tests !== next.tests) pushTests(doc, prev.tests ?? [], next.tests ?? []);
     const meta = metaOf(doc);
     if (prev.entryFile !== next.entryFile) meta.set("entryFile", next.entryFile);
     if (prev.stdin !== next.stdin) meta.set("stdin", next.stdin);
@@ -211,13 +280,14 @@ export function bindProject(doc: Y.Doc, projectId: string, writable: () => boole
       shared.stdin === p.stdin &&
       shared.name === p.name &&
       shared.folders.join("\n") === [...p.folders].sort().join("\n") &&
+      JSON.stringify(shared.tests) === JSON.stringify(p.tests ?? []) &&
       shared.files.length === p.files.length &&
       shared.files.every((f, i) => p.files[i]!.path === f.path && p.files[i]!.content === f.content);
     for (const text of texts.values()) undoerFor(text);
     if (same) return;
     applying = true;
     try {
-      ws.applyShared({ files: shared.files, folders: shared.folders, entryFile: shared.entryFile, stdin: shared.stdin, name: shared.name });
+      ws.applyShared({ files: shared.files, folders: shared.folders, entryFile: shared.entryFile, stdin: shared.stdin, name: shared.name, tests: shared.tests });
     } finally {
       applying = false;
     }

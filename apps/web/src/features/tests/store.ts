@@ -34,6 +34,12 @@ interface TestsState {
   compileError?: string;
   /** The run could not start or was cut short. */
   error?: string;
+  /** Execution of the run in progress, once the server accepted it. */
+  runId: string | null;
+  /** Tests in that run, in the order their results arrive. */
+  runTestIds: string[];
+  /** Someone else's test run in a live session, shown here. Their name. */
+  watchedBy?: string;
 
   select: (id: string | null) => void;
   add: (test?: Partial<Omit<TestCase, "id">>) => string | null;
@@ -44,6 +50,8 @@ interface TestsState {
   run: (ids?: string[]) => Promise<void>;
   cancel: () => Promise<void>;
   reset: () => void;
+  /** Shows someone else's test run from a live session. Ignored while running tests of your own. */
+  watch: (run: { executionId: string; testIds: string[]; by: string }) => void;
 }
 
 let stream: ExecutionStream | null = null;
@@ -68,13 +76,78 @@ export const useTests = create<TestsState>((set, get) => {
     executionId = null;
     // Tests that never started go back to "not run".
     const outcomes = Object.fromEntries(Object.entries(get().outcomes).filter(([, o]) => o.state === "done"));
-    set({ phase: "idle", outcomes, ...patch });
+    set({ phase: "idle", outcomes, runId: null, ...patch });
+  };
+
+  /** Streams a test run's results into the panel: this person's run, or one they watch. */
+  const follow = (id: string, controlToken: string, chosen: TestCase[], project: Project) => {
+    executionId = id;
+    set({ runId: id, runTestIds: chosen.map((t) => t.id) });
+    let compileOutput = "";
+
+    const finish = (r: ExecutionResult) => {
+      const files = project.files.map((f) => f.path);
+      // Compiler errors also show in the editor and the Problems tool window.
+      if (r.status === "COMPILATION_ERROR") useExecution.setState({ diagnostics: parseDiagnostics(r.language, r.compileOutput, files) });
+      // Results carried by the final result as well, in case a live event was missed.
+      const done = Object.fromEntries(
+        (r.tests ?? []).flatMap((t) => {
+          const test = chosen[t.index];
+          return test ? [[test.id, { state: "done" as const, result: t, input: test.input }]] : [];
+        }),
+      );
+      set((st) => ({ outcomes: { ...st.outcomes, ...done } }));
+      end({
+        ...(r.status === "COMPILATION_ERROR" ? { compileError: (r.compileOutput || compileOutput).trim() || r.message || "The program did not compile." } : {}),
+        ...(r.status !== "SUCCESS" && r.status !== "COMPILATION_ERROR" && r.status !== "CANCELLED" ? { error: r.message ?? "The tests could not finish." } : {}),
+        ...(r.status === "SUCCESS" && r.message ? { error: r.message } : {}),
+      });
+    };
+
+    stream = streamExecution(id, controlToken, {
+      onEvent: (event) => {
+        if (executionId !== id) return;
+        switch (event.type) {
+          case "status":
+            if (event.status === "COMPILING") set({ phase: "compiling" });
+            else if (event.status === "RUNNING") set({ phase: "running" });
+            break;
+          case "compile":
+            compileOutput += event.chunk;
+            break;
+          case "test": {
+            const test = chosen[event.test.index];
+            const next = chosen[event.test.index + 1];
+            if (!test) break;
+            set((s) => ({
+              outcomes: {
+                ...s.outcomes,
+                [test.id]: { ...s.outcomes[test.id]!, state: "done", result: event.test },
+                ...(next ? { [next.id]: { ...s.outcomes[next.id]!, state: "running" } } : {}),
+              },
+            }));
+            break;
+          }
+          case "result":
+            finish(event.result);
+            break;
+        }
+      },
+      onError: async () => {
+        // The connection dropped; the tests keep running on the server. Wait for their result.
+        const r = await waitForResult(id, () => executionId === id);
+        if (r && executionId === id) return finish(r);
+        if (executionId === id) end({ error: "Lost the connection and the tests did not finish within a minute. Run them again." });
+      },
+    });
   };
 
   return {
     selected: null,
     phase: "idle",
     outcomes: {},
+    runId: null,
+    runTestIds: [],
 
     select: (id) => set({ selected: id }),
 
@@ -120,7 +193,7 @@ export const useTests = create<TestsState>((set, get) => {
 
       const outcomes = { ...get().outcomes };
       for (const [i, t] of chosen.entries()) outcomes[t.id] = { state: i === 0 ? "running" : "queued", input: t.input };
-      set({ phase: "starting", outcomes, compileError: undefined, error: undefined });
+      set({ phase: "starting", outcomes, compileError: undefined, error: undefined, watchedBy: undefined });
       const mine = ++generation;
 
       let created: { id: string; controlToken: string };
@@ -148,68 +221,13 @@ export const useTests = create<TestsState>((set, get) => {
         void api.cancelExecution(created.id).catch(() => {});
         return;
       }
-      executionId = created.id;
       useWorkspace.getState().markRun();
-      let compileOutput = "";
-
-      const finish = (r: ExecutionResult) => {
-        const files = project.files.map((f) => f.path);
-        // Compiler errors also show in the editor and the Problems tool window.
-        if (r.status === "COMPILATION_ERROR") useExecution.setState({ diagnostics: parseDiagnostics(r.language, r.compileOutput, files) });
-        // Results carried by the final result as well, in case a live event was missed.
-        const done = Object.fromEntries(
-          (r.tests ?? []).flatMap((t) => {
-            const test = chosen[t.index];
-            return test ? [[test.id, { state: "done" as const, result: t, input: test.input }]] : [];
-          }),
-        );
-        set((st) => ({ outcomes: { ...st.outcomes, ...done } }));
-        end({
-          ...(r.status === "COMPILATION_ERROR" ? { compileError: (r.compileOutput || compileOutput).trim() || r.message || "The program did not compile." } : {}),
-          ...(r.status !== "SUCCESS" && r.status !== "COMPILATION_ERROR" && r.status !== "CANCELLED" ? { error: r.message ?? "The tests could not finish." } : {}),
-          ...(r.status === "SUCCESS" && r.message ? { error: r.message } : {}),
-        });
-      };
-
-      stream = streamExecution(created.id, created.controlToken, {
-        onEvent: (event) => {
-          if (executionId !== created.id) return;
-          switch (event.type) {
-            case "status":
-              if (event.status === "COMPILING") set({ phase: "compiling" });
-              else if (event.status === "RUNNING") set({ phase: "running" });
-              break;
-            case "compile":
-              compileOutput += event.chunk;
-              break;
-            case "test": {
-              const test = chosen[event.test.index];
-              const next = chosen[event.test.index + 1];
-              if (!test) break;
-              set((s) => ({
-                outcomes: {
-                  ...s.outcomes,
-                  [test.id]: { ...s.outcomes[test.id]!, state: "done", result: event.test },
-                  ...(next ? { [next.id]: { ...s.outcomes[next.id]!, state: "running" } } : {}),
-                },
-              }));
-              break;
-            }
-            case "result":
-              finish(event.result);
-              break;
-          }
-        },
-        onError: async () => {
-          // The connection dropped; the tests keep running on the server. Wait for their result.
-          const r = await waitForResult(created.id, () => executionId === created.id);
-          if (r && executionId === created.id) return finish(r);
-          if (executionId === created.id) end({ error: "Lost the connection and the tests did not finish within a minute. Run them again." });
-        },
-      });
+      follow(created.id, created.controlToken, chosen, project);
     },
 
     async cancel() {
+      // Someone else's run: stop showing it; it goes on for them.
+      if (get().watchedBy) return end({ watchedBy: undefined });
       // Not accepted by the server yet: abandon it; run() cancels it once it has an id.
       if (!executionId) return end();
       try {
@@ -222,11 +240,26 @@ export const useTests = create<TestsState>((set, get) => {
     reset: () => {
       generation++;
       // Tests of the project being left would otherwise keep a worker busy until they finish.
-      if (executionId) void api.cancelExecution(executionId).catch(() => {});
+      if (executionId && !get().watchedBy) void api.cancelExecution(executionId).catch(() => {});
       stream?.close();
       stream = null;
       executionId = null;
-      set({ selected: null, phase: "idle", outcomes: {}, compileError: undefined, error: undefined });
+      set({ selected: null, phase: "idle", outcomes: {}, compileError: undefined, error: undefined, runId: null, watchedBy: undefined });
+    },
+
+    watch({ executionId: id, testIds, by }) {
+      const project = useWorkspace.getState().project;
+      if (!project || (get().phase !== "idle" && !get().watchedBy) || executionId === id) return;
+      generation++;
+      stream?.close();
+      stream = null;
+      // Results line up with the tests in the order the runner chose them.
+      const list = tests();
+      const chosen = testIds.map((tid) => list.find((t) => t.id === tid) ?? { id: tid, input: "", expected: "" });
+      const outcomes = { ...get().outcomes };
+      for (const [i, t] of chosen.entries()) outcomes[t.id] = { state: i === 0 ? "running" : "queued", input: t.input };
+      set({ phase: "starting", outcomes, compileError: undefined, error: undefined, watchedBy: by });
+      follow(id, "", chosen, project);
     },
   };
 });

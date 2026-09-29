@@ -28,10 +28,10 @@ async function freshPage(browser: Browser): Promise<Page> {
   return page;
 }
 
-/** Owner: a Java project shared as "Teacher"; returns the invite link. */
-async function startSession(page: Page): Promise<string> {
-  await page.getByRole("button", { name: /New Java project/ }).click();
-  await expect(editor(page)).toContainText("Hello World");
+/** Owner: a new project shared as "Teacher"; returns the invite link. */
+async function startSession(page: Page, language: "Java" | "Python" = "Java"): Promise<string> {
+  await page.getByRole("button", { name: new RegExp(`New ${language} project`) }).click();
+  await expect(editor(page)).toContainText(language === "Java" ? "Hello World" : "Hello");
   await page.getByRole("button", { name: "Share live session" }).click();
   const dialog = page.getByRole("dialog", { name: "Code together, live" });
   await dialog.getByPlaceholder("e.g. Ravi").fill("Teacher");
@@ -44,12 +44,19 @@ async function startSession(page: Page): Promise<string> {
   return link;
 }
 
-async function joinSession(page: Page, link: string, name: string) {
+async function joinSession(page: Page, link: string, name: string, shows = "Hello") {
   await page.goto(link);
   const join = page.getByRole("dialog", { name: "Join live session" });
   await join.getByPlaceholder("e.g. Priya").fill(name);
   await join.getByRole("button", { name: "Join" }).click();
-  await expect(editor(page)).toContainText("Hello World");
+  await expect(editor(page)).toContainText(shows);
+}
+
+async function setCode(page: Page, code: string) {
+  await page.evaluate((text) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue(text);
+  }, code);
 }
 
 async function typeAtEnd(page: Page, text: string) {
@@ -187,4 +194,54 @@ test("when the owner's debugger pauses, everyone sees the line; the guest can st
   await ravi.getByRole("button", { name: "Run program" }).click();
   await expect(output(ravi)).toContainText("Hello World", { timeout: 120_000 });
   await expect(ravi.getByRole("note")).toHaveCount(0);
+});
+
+test("anyone who can edit can type the input of a program someone else runs", async ({ browser }) => {
+  const teacher = await freshPage(browser);
+  const link = await startSession(teacher, "Python");
+  await setCode(teacher, 'name = input("name? ")\nprint("hi " + name)\n');
+  const ravi = await freshPage(browser);
+  await joinSession(ravi, link, "Ravi", "input(");
+
+  await teacher.getByRole("button", { name: "Run program" }).click();
+  // Ravi sees the program waiting and answers it.
+  const box = ravi.getByRole("textbox", { name: "Program input" });
+  await expect(box).toBeVisible({ timeout: 120_000 });
+  await box.fill("Ravi");
+  await ravi.keyboard.press("Enter");
+  await expect(output(teacher)).toContainText("hi Ravi", { timeout: 30_000 });
+  await expect(output(ravi)).toContainText("hi Ravi");
+});
+
+test("test cases are shared, and a test run shows its results for everyone", async ({ browser }) => {
+  const teacher = await freshPage(browser);
+  const link = await startSession(teacher, "Python");
+  await setCode(teacher, 'name = input()\nprint("hi " + name)\n');
+  const ravi = await freshPage(browser);
+  await joinSession(ravi, link, "Ravi", "input(");
+
+  await teacher.getByRole("button", { name: "Tests", exact: true }).click();
+  const tPanel = teacher.getByRole("region", { name: "Tests" });
+  await tPanel.getByRole("button", { name: /Add a test/ }).click();
+  await tPanel.getByRole("textbox", { name: /^Input/ }).fill("Ada");
+  await tPanel.getByRole("textbox", { name: /^Expected output/ }).fill("hi Ada");
+
+  await ravi.getByRole("button", { name: "Tests", exact: true }).click();
+  const rPanel = ravi.getByRole("region", { name: "Tests" });
+  await expect(rPanel.getByRole("textbox", { name: /^Expected output/ })).toHaveValue("hi Ada");
+  await rPanel.getByRole("button", { name: "Run all" }).click();
+  await expect(rPanel.getByText("1 / 1 passed")).toBeVisible({ timeout: 90_000 });
+  await expect(tPanel.getByText("1 / 1 passed")).toBeVisible({ timeout: 30_000 });
+});
+
+test("inviting by email checks the addresses; WhatsApp gets the link", async ({ browser }) => {
+  const teacher = await freshPage(browser);
+  const link = await startSession(teacher);
+  await teacher.getByRole("button", { name: /Live session: 1 person/ }).click();
+  const panel = teacher.getByRole("dialog", { name: "Live session" });
+  await panel.getByRole("textbox", { name: "Invite by email" }).fill("friend@gmail.com, not-an-email");
+  await panel.getByRole("button", { name: "Email" }).click();
+  await expect(panel.getByText("Check this address: not-an-email")).toBeVisible();
+  const whatsapp = await panel.getByRole("link", { name: "WhatsApp" }).getAttribute("href");
+  expect(decodeURIComponent(whatsapp!.split("text=")[1]!)).toContain(link);
 });

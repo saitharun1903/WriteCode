@@ -36,7 +36,8 @@ export class RedisLiveStore implements LiveStore {
 
   async openRooms(client: string): Promise<number> {
     const key = clientKey(client);
-    await this.redis.zremrangebyscore(key, 0, Date.now() - TTL * 1000);
+    // Only sessions in use recently count; one left open in a closed tab stops counting after a while.
+    await this.redis.zremrangebyscore(key, 0, Date.now() - LIVE_LIMITS.activeWindowSeconds * 1000);
     return this.redis.zcard(key);
   }
 
