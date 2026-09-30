@@ -19,6 +19,8 @@ interface VisualizeState {
   speed: Speed;
   /** Draw functions and classes as their own boxes instead of inline. */
   showCallables: boolean;
+  /** Structures: each data structure drawn as its concept. Memory: frames, objects and references. Null: chosen per trace. */
+  view: "structures" | "memory" | null;
   setTrace: (executionId: string, trace: Trace) => void;
   clear: () => void;
   go: (step: number) => void;
@@ -29,6 +31,7 @@ interface VisualizeState {
   pause: () => void;
   setSpeed: (speed: Speed) => void;
   setShowCallables: (show: boolean) => void;
+  setView: (view: "structures" | "memory") => void;
 }
 
 export const useVisualize = create<VisualizeState>((set, get) => ({
@@ -38,6 +41,7 @@ export const useVisualize = create<VisualizeState>((set, get) => ({
   playing: false,
   speed: 1,
   showCallables: false,
+  view: null,
   setTrace: (executionId, trace) => set({ executionId, trace: withSourceTypeNames(trace), step: 0, playing: false }),
   clear: () => set({ executionId: null, trace: null, step: 0, playing: false }),
   go: (step) => {
@@ -55,6 +59,7 @@ export const useVisualize = create<VisualizeState>((set, get) => ({
   pause: () => set({ playing: false }),
   setSpeed: (speed) => set({ speed }),
   setShowCallables: (showCallables) => set({ showCallables }),
+  setView: (view) => set({ view }),
 }));
 
 /** Where the current step is: its innermost frame. */

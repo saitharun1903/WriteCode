@@ -276,6 +276,14 @@
   --viz-map: #a571e6;
   --viz-obj: #2aacb8;
   --viz-ran-line: rgb(95 184 101 / 0.1);
+  /* One colour per kind of structure, as in textbook diagrams. */
+  --viz-stack: #e8a33d;
+  --viz-queue: #4cc38a;
+  --viz-list: #f0883e;
+  --viz-tree: #5b9cf5;
+  --viz-graph: #2fbfb0;
+  --viz-hash: #b083f0;
+  --viz-array: #6b9eff;
 }
 [data-theme="light"] {
   --viz-num: #1750eb;
@@ -285,6 +293,13 @@
   --viz-map: #7a3ec8;
   --viz-obj: #00787a;
   --viz-ran-line: rgb(32 138 60 / 0.08);
+  --viz-stack: #c27803;
+  --viz-queue: #1f9d63;
+  --viz-list: #d9630f;
+  --viz-tree: #2f6fdb;
+  --viz-graph: #0e8f84;
+  --viz-hash: #7a3ec8;
+  --viz-array: #3565d8;
 }
 /* A value that the line just ran changed: flashes, then settles. */
 @keyframes cw-viz-flash {
@@ -299,6 +314,21 @@
 }
 .cw-viz-changed {
   animation: cw-viz-flash 0.9s ease-out both;
+}
+/* The node a traversal is at: a slow pulse. */
+@keyframes cw-viz-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.9;
+    stroke-width: 3px;
+  }
+  50% {
+    stroke-opacity: 0.35;
+    stroke-width: 7px;
+  }
+}
+.cw-viz-pulse {
+  animation: cw-viz-pulse 1.4s ease-in-out infinite;
 }
 @keyframes cw-viz-output {
   from {

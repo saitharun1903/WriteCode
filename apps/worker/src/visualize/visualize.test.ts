@@ -203,6 +203,36 @@ public class Main {
     expect(at17.stdoutLength).toBe("total=9 1\n".length);
   });
 
+  it("Java: ArrayDeque head to tail, and PriorityQueue in heap order", { timeout: T }, async () => {
+    const code = [
+      "import java.util.*;",
+      "",
+      "public class Main {",
+      "    public static void main(String[] args) {",
+      "        Deque<Integer> stack = new ArrayDeque<>();",
+      "        for (int i = 1; i <= 20; i++) stack.push(i);",
+      "        for (int i = 0; i < 17; i++) stack.pop();",
+      "        stack.addLast(99);",
+      "        PriorityQueue<Integer> pq = new PriorityQueue<>(List.of(5, 1, 4, 2));",
+      "        System.out.println(stack.peek() + \" \" + pq.peek());",
+      "    }",
+      "}",
+      "",
+    ].join("\n");
+    const { result, trace } = await visualize("java", { "Main.java": code });
+    expect(result.status).toBe("SUCCESS");
+    const last = trace.steps.filter((s) => local(s, "pq")).at(-1)!;
+    const items = (name: string) => {
+      const v = local(last, name);
+      return v?.kind === "ref" ? last.heap[v.id]!.items!.map(text) : [];
+    };
+    // The buffer wrapped around after 20 pushes and 17 pops: still head (top) first.
+    expect(items("stack")).toEqual(["3", "2", "1", "99"]);
+    const pq = items("pq");
+    expect(pq[0]).toBe("1");
+    expect([...pq].sort()).toEqual(["1", "2", "4", "5"]);
+  });
+
   it("Java: typed input reaches the traced program", { timeout: T }, async () => {
     const code = "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        int n = new Scanner(System.in).nextInt();\n        int doubled = n * 2;\n        System.out.println(doubled);\n    }\n}\n";
     const { result, trace, statuses } = await visualize("java", { "Main.java": code }, { typed: ["25\n"] });

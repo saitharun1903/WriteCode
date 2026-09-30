@@ -28,6 +28,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
 import { diffSteps, frameIds, indexPointers, isCallable, layoutHeap, timeline, valueKey, type Change, type StepDiff, type Tone } from "./model";
 import { BASE_STEP_MS, SPEEDS, stepLocation, useVisualize } from "./store";
+import { ConceptView, hasStructures } from "./ConceptView";
 
 const SPRING = {
   type: "spring",
@@ -771,6 +772,7 @@ export function VisualizerPanel() {
   const playing = useVisualize((s) => s.playing);
   const speed = useVisualize((s) => s.speed);
   const showCallables = useVisualize((s) => s.showCallables);
+  const chosenView = useVisualize((s) => s.view);
   const { go, next, prev, togglePlay, pause, setSpeed, setShowCallables } = useVisualize.getState();
   const run = useExecution((s) => s.run);
   const language = useWorkspace((s) => (s.project ? getLanguage(s.project.language) : undefined));
@@ -783,6 +785,8 @@ export function VisualizerPanel() {
   const hasCallables = useMemo(() => !!trace?.steps.some((s) => Object.values(s.heap).some(isCallable)), [trace]);
   const total = trace?.steps.length ?? 0;
   const diff = useMemo(() => (trace && stepIndex < trace.steps.length ? diffSteps(trace, stepIndex) : null), [trace, stepIndex]);
+  const structured = useMemo(() => (trace ? hasStructures(trace) : false), [trace]);
+  const view = chosenView ?? (structured ? "structures" : "memory");
 
   // Follow the current step in the editor without taking focus from the panel.
   useEffect(() => {
@@ -869,7 +873,21 @@ export function VisualizerPanel() {
               </button>
             ))}
           </div>
-          {hasCallables && (
+          <div role="group" aria-label="View" className="ml-2 flex rounded-md border border-line-strong p-0.5">
+            {(["structures", "memory"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                title={v === "structures" ? "Each data structure drawn as its concept: stacks, queues, lists, trees, graphs, maps" : "Frames, objects and the references between them"}
+                onClick={() => useVisualize.getState().setView(v)}
+                className={cn("rounded px-2 text-xs capitalize leading-5", view === v ? "bg-accent text-accent-fg" : "text-fg-subtle hover:text-fg")}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          {hasCallables && view === "memory" && (
             <IconButton label="Show functions and classes as objects" active={showCallables} onClick={() => setShowCallables(!showCallables)} className="ml-1">
               <SquareFunction />
             </IconButton>
@@ -884,7 +902,11 @@ export function VisualizerPanel() {
         <Narration trace={trace} stepIndex={stepIndex} diff={diff} />
         <div className="flex min-h-0 flex-1">
           <LayoutGroup>
-            <Diagram trace={trace} stepIndex={stepIndex} diff={diff} ids={ids[stepIndex] ?? []} showCallables={showCallables} />
+            {view === "structures" ? (
+              <ConceptView trace={trace} stepIndex={stepIndex} diff={diff} />
+            ) : (
+              <Diagram trace={trace} stepIndex={stepIndex} diff={diff} ids={ids[stepIndex] ?? []} showCallables={showCallables} />
+            )}
           </LayoutGroup>
           <Output trace={trace} stepIndex={stepIndex} printed={diff.printed} />
         </div>

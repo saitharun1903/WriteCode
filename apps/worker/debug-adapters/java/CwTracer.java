@@ -417,6 +417,10 @@ public final class CwTracer {
                     return arrayList(o, name);
                 case "java.util.LinkedList":
                     return linkedList(o);
+                case "java.util.ArrayDeque":
+                    return arrayDeque(o);
+                case "java.util.PriorityQueue":
+                    return priorityQueue(o);
                 case "java.util.HashMap":
                 case "java.util.LinkedHashMap":
                     return hashMap(o, name);
@@ -463,6 +467,35 @@ public final class CwTracer {
                 node = field((ObjectReference) node, "next");
             }
             return trim(CwDebugAdapter.obj("kind", "sequence", "type", "LinkedList", "items", items), n, items.size());
+        }
+
+        /** Head to tail, following the circular buffer. */
+        private Map<String, Object> arrayDeque(ObjectReference o) {
+            List<Object> items = new ArrayList<>();
+            Value data = field(o, "elements");
+            Value head = field(o, "head");
+            Value tail = field(o, "tail");
+            int n = 0;
+            if (data instanceof ArrayReference && head instanceof IntegerValue && tail instanceof IntegerValue) {
+                ArrayReference a = (ArrayReference) data;
+                int cap = a.length();
+                int h = ((IntegerValue) head).value();
+                int t = ((IntegerValue) tail).value();
+                n = cap == 0 ? 0 : ((t - h) % cap + cap) % cap;
+                for (int i = 0; i < n && items.size() < maxItems; i++) items.add(value(a.getValue((h + i) % cap)));
+            }
+            return trim(CwDebugAdapter.obj("kind", "sequence", "type", "ArrayDeque", "items", items), n, items.size());
+        }
+
+        /** The backing array in heap order: the smallest (by the ordering) first, children of i at 2i+1 and 2i+2. */
+        private Map<String, Object> priorityQueue(ObjectReference o) {
+            List<Object> items = new ArrayList<>();
+            Value data = field(o, "queue");
+            Value size = field(o, "size");
+            int n = size instanceof IntegerValue ? ((IntegerValue) size).value() : 0;
+            int shown = (int) Math.min(n, maxItems);
+            if (data instanceof ArrayReference && shown > 0) for (Value x : ((ArrayReference) data).getValues(0, shown)) items.add(value(x));
+            return trim(CwDebugAdapter.obj("kind", "sequence", "type", "PriorityQueue", "items", items), n, shown);
         }
 
         private Map<String, Object> hashMap(ObjectReference o, String name) {

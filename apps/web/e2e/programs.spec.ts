@@ -406,6 +406,7 @@ test("visualizer: steps through a recorded Python run with frames, objects and o
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "memory" }).click();
   const frames = viz.getByRole("region", { name: "Frames" });
   const objects = viz.getByRole("region", { name: "Objects" });
   await expect(frames.getByRole("group", { name: "Frame <module>" })).toBeVisible();
@@ -471,6 +472,7 @@ test("visualizer: animates a swap, index pointers and a linked list", async ({ p
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "memory" }).click();
   const happened = viz.getByLabel("What happened");
   const next = viz.getByRole("button", { name: "Next step" });
   while (!((await happened.textContent()) ?? "").includes("Swapped")) await next.click();
@@ -501,6 +503,7 @@ test("visualizer: records a Java run across classes", async ({ page }) => {
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "memory" }).click();
   await viz.getByRole("button", { name: "Last step" }).click();
   await expect(viz.getByLabel("Output so far")).toHaveText("1");
   const objects = viz.getByRole("region", { name: "Objects" });
@@ -579,4 +582,56 @@ test("errors and output belong to their project: opening another project starts 
   await page.getByRole("button", { name: "Run program" }).click();
   await expect(output(page)).toContainText("Hello", { timeout: 120_000 });
   await expect(output(page)).not.toContainText("already defined");
+});
+
+test("visualizer: draws each data structure as its concept", async ({ page }) => {
+  await freshProject(page, "Python");
+  await setCode(
+    page,
+    [
+      "from collections import deque",
+      "",
+      "class Node:",
+      "    def __init__(self, val):",
+      "        self.val = val",
+      "        self.left = None",
+      "        self.right = None",
+      "",
+      "def insert(root, val):",
+      "    if root is None:",
+      "        return Node(val)",
+      "    if val < root.val:",
+      "        root.left = insert(root.left, val)",
+      "    else:",
+      "        root.right = insert(root.right, val)",
+      "    return root",
+      "",
+      "root = None",
+      "for v in [8, 3, 10]:",
+      "    root = insert(root, v)",
+      "stack = [1, 2]",
+      "stack.append(3)",
+      "queue = deque([4, 5])",
+      "queue.popleft()",
+      "graph = {0: [1], 1: [0, 2], 2: [1]}",
+      "visited = [True, False, False]",
+      "freq = {'a': 1}",
+      "print('done')",
+      "",
+    ].join("\n"),
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  const viz = page.getByRole("region", { name: "Visualize" });
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await expect(viz.getByRole("button", { name: "structures" })).toHaveAttribute("aria-pressed", "true");
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByRole("region", { name: "Binary search tree root" })).toContainText("10");
+  await expect(viz.getByRole("region", { name: "Stack stack" })).toContainText("Top");
+  await expect(viz.getByRole("region", { name: "Queue queue" })).toContainText("5");
+  await expect(viz.getByRole("region", { name: "Queue queue" })).not.toContainText("4");
+  await expect(viz.getByRole("region", { name: "Graph graph" })).toContainText("visited (1)");
+  await expect(viz.getByRole("region", { name: "Hash map freq" })).toContainText("'a'");
+  // The memory view is one click away.
+  await viz.getByRole("button", { name: "memory" }).click();
+  await expect(viz.getByRole("region", { name: "Objects" })).toBeVisible();
 });
