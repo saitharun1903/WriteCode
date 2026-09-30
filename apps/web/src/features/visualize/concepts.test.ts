@@ -56,6 +56,15 @@ describe("hash maps and sets", () => {
     expect(structureTitle(one(step({ seen: ref("1") }, { "1": seq("HashSet", [int(1)]) }), "set"))).toBe("Hash set");
     expect(structureTitle(one(step({ m: ref("1") }, { "1": { kind: "map", type: "TreeMap", entries: [] } }), "hash"))).toBe("Sorted map");
   });
+
+  it("C++ containers by their names, whatever the template arguments", () => {
+    expect(structureTitle(one(step({ m: ref("1") }, { "1": { kind: "map", type: "map<string, int>", entries: [] } }), "hash"))).toBe("Sorted map");
+    expect(structureTitle(one(step({ m: ref("1") }, { "1": { kind: "map", type: "unordered_map<string, int>", entries: [] } }), "hash"))).toBe("Hash map");
+    expect(structureTitle(one(step({ s: ref("1") }, { "1": seq("set<int>", [int(1)]) }), "set"))).toBe("Sorted set");
+    expect(structureTitle(one(step({ s: ref("1") }, { "1": seq("unordered_set<int>", [int(1)]) }), "set"))).toBe("Hash set");
+    expect(one(step({ st: ref("1") }, { "1": seq("stack<int>", [int(1), int(2)]) }), "stack")).toBeTruthy();
+    expect(one(step({ q: ref("1") }, { "1": seq("queue<int>", [int(1)]) }), "queue")).toBeTruthy();
+  });
 });
 
 describe("linked lists", () => {

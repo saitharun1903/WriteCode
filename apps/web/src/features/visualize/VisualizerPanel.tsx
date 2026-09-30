@@ -43,9 +43,10 @@ function reducedMotion(): boolean {
 
 // -- Values
 
-const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|number|bigint)$/;
+const NUMBER_TYPES =
+  /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|number|bigint|unsigned( int| long| long long| short| char)?|long (long|int|double)|long long int|short int|size_t|u?int(8|16|32|64)_t)$/;
 const STRING_TYPES = /^(str|String|char|Character|bytes|string)$/;
-const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined"]);
+const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined", "nullptr", "NULL"]);
 
 function valueColor(v: { text: string; type: string }): string {
   if (KEYWORDS.has(v.text) || v.type === "NoneType" || v.type === "null") return "var(--viz-kw)";
@@ -207,7 +208,9 @@ function FrameCard({
   const returnValue = frame.name === "<module>" ? undefined : frame.returnValue;
   const locals = frame.locals.filter(([n, v]) => !hide(n, v));
   const returning = current && step.event === "return";
-  const status = returning ? "Returning" : current ? "Running" : callee ? `Waiting for ${callee}()` : "Waiting";
+  // C and C++ globals come as a frame without a line: they belong to no call.
+  const globals = frame.line === 0;
+  const status = globals ? "Global" : returning ? "Returning" : current ? "Running" : callee ? `Waiting for ${callee}()` : "Waiting";
   return (
     <div
       data-card
@@ -233,7 +236,7 @@ function FrameCard({
             returning ? "bg-success-soft text-success" : current ? "bg-accent-soft text-fg" : "bg-hover text-fg-subtle",
           )}
         >
-          {status} · line {frame.line}
+          {globals ? status : `${status} · line ${frame.line}`}
         </span>
       </div>
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5 px-3 py-2">

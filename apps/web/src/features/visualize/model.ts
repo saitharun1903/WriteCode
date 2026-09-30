@@ -331,7 +331,7 @@ export function frameIds(trace: Trace): string[][] {
 // -- Index pointers
 
 const INDEX_NAME = /^(i|j|k|l|r|lo|low|hi|high|mid|left|right|start|end|begin|pos|idx|index|ptr|p|q|slow|fast|front|rear|top)$|(Index|Idx|_idx|_index|_pos)$/;
-const INT_TYPES = new Set(["int", "long", "short", "byte", "Integer", "Long", "Short", "number"]);
+const INT_TYPES = new Set(["int", "long", "short", "byte", "Integer", "Long", "Short", "number", "unsigned int", "long long", "size_t", "unsigned long"]);
 
 /**
  * Integer variables with index-like names (`i`, `j`, `lo`, `mid`…) that are a

@@ -91,9 +91,11 @@ export type Structure =
 
 // -- Values
 
-const isNull = (v: TraceValue | undefined) => !v || (v.kind === "value" && (v.text === "null" || v.text === "None" || v.text === "undefined"));
+const isNull = (v: TraceValue | undefined) =>
+  !v || (v.kind === "value" && (v.text === "null" || v.text === "None" || v.text === "undefined" || v.text === "nullptr" || v.text === "NULL"));
 const refId = (v: TraceValue | undefined) => (v?.kind === "ref" ? v.id : null);
-const NUMERIC = /^(int|float|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|char|Character|BigInteger|bool|boolean|Boolean|number)$/;
+const NUMERIC =
+  /^(int|float|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|char|Character|BigInteger|bool|boolean|Boolean|number|unsigned( int| long| long long| short| char)?|long (long|int|double)|long long int|short int|signed char|size_t|u?int(8|16|32|64)_t|ll)$/;
 const STRINGS = /^(str|String|string)$/;
 
 /**
@@ -456,7 +458,7 @@ function indexPointersFor(step: TraceStep, length: number, frameHint: number): M
   const frames = [frameHint, step.frames.length - 1].filter((f, i, a) => f >= 0 && a.indexOf(f) === i);
   for (const f of frames) {
     for (const [n, v] of step.frames[f]!.locals) {
-      if (v.kind !== "value" || !INDEX_NAME.test(n) || !/^-?\d+$/.test(v.text) || !/^(int|long|short|byte|Integer|Long|Short|number)$/.test(v.type)) continue;
+      if (v.kind !== "value" || !INDEX_NAME.test(n) || !/^-?\d+$/.test(v.text) || !/^(int|long|short|byte|Integer|Long|Short|number|unsigned int|long long|size_t|unsigned long)$/.test(v.type)) continue;
       const i = Number(v.text);
       if (i < 0 || i > length) continue;
       if (![...at.values()].some((names) => names.includes(n))) at.set(i, [...(at.get(i) ?? []), n]);
@@ -713,12 +715,18 @@ function nodeStructures(step: TraceStep, consumed: Set<string>, hints?: TraceHin
   return out;
 }
 
-const QUEUE_TYPES = /^(deque|ArrayDeque|LinkedList|Queue|SimpleQueue|LinkedBlockingQueue|ArrayBlockingQueue|ConcurrentLinkedQueue|LinkedBlockingDeque)$/;
-const STACK_TYPES = /^(Stack|LifoQueue)$/;
-const HEAP_TYPES = /^(PriorityQueue|PriorityBlockingQueue)$/;
-const MAP_TYPES = /^(dict|defaultdict|OrderedDict|Counter|HashMap|LinkedHashMap|TreeMap|Hashtable|ConcurrentHashMap|WeakHashMap|IdentityHashMap|Map|Object)$/;
-const SET_TYPES = /^(set|frozenset|HashSet|LinkedHashSet|TreeSet|Set)$/;
-const ORDERED = /^(TreeMap|TreeSet)$/;
+/** Matches a type by its name without template arguments: C++'s `stack<int>` is a `stack`. */
+function byBase(re: RegExp): { test: (type: string) => boolean } {
+  return { test: (type) => re.test(type.replace(/<[\s\S]*$/, "").trim()) };
+}
+const QUEUE_TYPES = byBase(/^(deque|ArrayDeque|LinkedList|Queue|SimpleQueue|LinkedBlockingQueue|ArrayBlockingQueue|ConcurrentLinkedQueue|LinkedBlockingDeque|queue)$/);
+const STACK_TYPES = byBase(/^(Stack|LifoQueue|stack)$/);
+const HEAP_TYPES = byBase(/^(PriorityQueue|PriorityBlockingQueue|priority_queue)$/);
+const MAP_TYPES = byBase(
+  /^(dict|defaultdict|OrderedDict|Counter|HashMap|LinkedHashMap|TreeMap|Hashtable|ConcurrentHashMap|WeakHashMap|IdentityHashMap|Map|Object|map|unordered_map|multimap|unordered_multimap)$/,
+);
+const SET_TYPES = byBase(/^(set|frozenset|HashSet|LinkedHashSet|TreeSet|Set|unordered_set|multiset|unordered_multiset)$/);
+const ORDERED = byBase(/^(TreeMap|TreeSet|map|set|multimap|multiset)$/);
 
 /** A dict or map, a list of lists, or an adjacency matrix read as a graph. */
 function graphFrom(step: TraceStep, id: string, name: string, hints?: TraceHints, obj?: HeapObject): Structure | null {
@@ -1030,9 +1038,9 @@ export function structureTitle(s: Structure): string {
     case "queue":
       return s.deque ? "Deque" : "Queue";
     case "hash":
-      return s.type === "Object" ? "Object" : s.ordered && /Tree/.test(s.type) ? "Sorted map" : "Hash map";
+      return s.type === "Object" ? "Object" : s.ordered && /Tree|^(map|multimap)</.test(s.type) ? "Sorted map" : "Hash map";
     case "set":
-      return s.ordered && /Tree/.test(s.type) ? "Sorted set" : "Hash set";
+      return s.ordered && /Tree|^(set|multiset)</.test(s.type) ? "Sorted set" : "Hash set";
     case "list":
       return { singly: "Singly linked list", doubly: "Doubly linked list", circular: "Circular linked list", "circular-doubly": "Circular doubly linked list" }[s.variant];
     case "tree":

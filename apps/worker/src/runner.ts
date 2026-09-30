@@ -63,7 +63,8 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
   });
 
   const sandbox = new Sandbox(ctx.docker, {
-    image: lang.runtime.image,
+    // Tracing uses the debugger's toolchain where the runtime image lacks it (gdb for C/C++).
+    image: (tracer && lang.debugger?.image) || lang.runtime.image,
     executionId: ctx.executionId,
     limits,
     runtime: ctx.runtime,
@@ -86,7 +87,7 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     let compileTime: number | undefined;
     if (lang.compiler) {
       events.status("COMPILING");
-      const argv = expandCommand(lang.compiler.command, {
+      const argv = expandCommand((tracer && lang.debugger?.compiler) || lang.compiler.command, {
         entry: request.entry,
         files: request.files,
         sourceExtensions: lang.compiler.sourceExtensions,

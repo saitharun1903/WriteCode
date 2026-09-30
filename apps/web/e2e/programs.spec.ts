@@ -827,3 +827,78 @@ test("visualizer: JavaScript and TypeScript are drawn as their structures too", 
   // Lines are the lines as written: the last step is on the console.log line.
   await expect(viz.getByText(/main\.ts:7/)).toBeVisible();
 });
+
+test("visualizer: C and C++ are drawn as their structures too", async ({ page }) => {
+  await freshProject(page, "C++");
+  await setCode(
+    page,
+    [
+      "#include <iostream>",
+      "#include <map>",
+      "#include <queue>",
+      "#include <stack>",
+      "#include <vector>",
+      "",
+      "struct Node {",
+      "    int val;",
+      "    Node *next;",
+      "};",
+      "",
+      "int main() {",
+      "    Node *head = new Node{1, new Node{2, nullptr}};",
+      "    std::stack<int> st;",
+      "    st.push(4);",
+      "    st.push(5);",
+      "    st.pop();",
+      "    std::queue<int> q;",
+      "    q.push(7);",
+      "    std::map<std::string, int> ages = {{\"ada\", 36}};",
+      "    std::vector<std::vector<int>> adj = {{1}, {0, 2}, {1}};",
+      "    std::cout << head->val << \" \" << st.top() << std::endl;",
+      "    return 0;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  const viz = page.getByRole("region", { name: "Visualize" });
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByRole("region", { name: "Singly linked list head" })).toContainText("2");
+  await expect(viz.getByRole("region", { name: "Stack st" })).toContainText("4");
+  await expect(viz.getByRole("region", { name: "Queue q" })).toContainText("7");
+  await expect(viz.getByRole("region", { name: "Sorted map ages" })).toContainText("ada");
+  await expect(viz.getByRole("region", { name: "Graph adj" })).toBeVisible();
+  await expect(viz.getByLabel("Output so far")).toHaveText("1 4");
+
+  await freshProject(page, "C");
+  await setCode(
+    page,
+    [
+      "#include <stdio.h>",
+      "",
+      "int stack[5];",
+      "int top = -1;",
+      "",
+      "void push(int x) {",
+      "    stack[++top] = x;",
+      "}",
+      "",
+      "int main(void) {",
+      "    int arr[4] = {4, 3, 2, 1};",
+      "    push(10);",
+      "    push(20);",
+      '    printf("%d\\n", stack[top] + arr[0]);',
+      "    return 0;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByRole("region", { name: "Stack stack" })).toContainText("20");
+  await expect(viz.getByLabel("Output so far")).toHaveText("24");
+  await viz.getByRole("button", { name: "memory" }).click();
+  await expect(viz.getByRole("region", { name: "Frames" }).getByRole("group", { name: "Frame <module>" })).toContainText("Global");
+});
