@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -343,6 +343,90 @@ test("debugging TypeScript: exact lines across files, with an enum above", async
   await expect(callStack(page).getByRole("button", { name: "(top level):9, main.ts" })).toBeVisible();
   await page.keyboard.press("F5");
   await expect(output(page)).toContainText("pushed", { timeout: 30_000 });
+});
+
+test("debugging C++: breakpoint in a class, vector and map values, step, safe watches", async ({ page }) => {
+  await freshProject(page, "C++");
+  await setCode(
+    page,
+    `#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
+
+struct Stack {
+    std::vector<int> items;
+    void push(int x) {
+        items.push_back(x);
+    }
+};
+
+int main() {
+    Stack s;
+    s.push(3);
+    s.push(4);
+    std::map<std::string, int> ages = {{"ada", 36}};
+    int total = s.items[0] + s.items[1];
+    std::cout << "total " << total << std::endl;
+    return 0;
+}
+`,
+  );
+  await breakpointAt(page, 18);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("18:1");
+  await expect(variables(page).getByRole("treeitem", { name: "s = {items: [3, 4]}" })).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: 'ages = {"ada": 36}' })).toBeVisible();
+  // Not declared yet on this line: no garbage value.
+  await expect(variables(page).getByRole("treeitem", { name: /^total = / })).toHaveCount(0);
+  await page.keyboard.press("F10");
+  await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "total = 7" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total 7", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("debugging C: input typed while it runs, step into a function, a crash stops with the reason", async ({ page }) => {
+  await freshProject(page, "C");
+  await setCode(
+    page,
+    `#include <stdio.h>
+
+int twice(int x) {
+    int r = x * 2;
+    return r;
+}
+
+int main(void) {
+    int n;
+    scanf("%d", &n);
+    int d = twice(n);
+    printf("d=%d\\n", d);
+    int *p = NULL;
+    printf("%d\\n", *p);
+    return 0;
+}
+`,
+  );
+  await breakpointAt(page, 11);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 120_000 });
+  await page.getByRole("textbox", { name: "Program input" }).fill("21");
+  await page.keyboard.press("Enter");
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "n = 21" })).toBeVisible();
+  await page.keyboard.press("F11");
+  await expect(callStack(page).getByRole("button", { name: "twice:4, main.c" })).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "x = 21" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(debugPanel(page).getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(debugPanel(page).getByText(/Segmentation fault/)).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "p = NULL" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(output(page)).toContainText("d=42");
 });
 
 test("several main classes: asks which to run and remembers the choice", async ({ page }) => {

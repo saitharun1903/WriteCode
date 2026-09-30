@@ -6,7 +6,8 @@
   "files": [
     "dist",
     "debug-adapters",
-    "tracers"
+    "tracers",
+    "sandbox-images"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

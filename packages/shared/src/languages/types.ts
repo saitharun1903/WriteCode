@@ -22,8 +22,12 @@ export interface RuntimeConfig {
 }
 
 export interface DebuggerConfig {
-  protocol: "jdwp" | "dap" | "settrace" | "inspector";
+  protocol: "jdwp" | "dap" | "settrace" | "inspector" | "gdb";
   supportLevel: SupportLevel;
+  /** Image with the debugger's tools, when the runtime image lacks them. Used by the visualizer too. */
+  image?: string;
+  /** Compile command for debugging and visualizing (no optimisation, full debug info). */
+  compiler?: string[];
 }
 
 export interface VisualizerConfig {

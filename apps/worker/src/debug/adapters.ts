@@ -26,11 +26,14 @@ const STDIN_PATH = "/tmp/cw-stdin";
 const JAVA_WRAPPER_HOME = "/tmp/cwdbg/jvm";
 const PYTHON_ADAPTER_URL = new URL("../../debug-adapters/python/cw_debug_adapter.py", import.meta.url);
 const PYTHON_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.py";
+const GDB_ADAPTER_URL = new URL("../../debug-adapters/gdb/cw_gdb_adapter.py", import.meta.url);
+const GDB_ADAPTER_PATH = "/tmp/cwdbg/cw_gdb_adapter.py";
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 
 let pythonSource: Promise<string> | null = null;
 let nodeSource: Promise<string> | null = null;
+let gdbSource: Promise<string> | null = null;
 
 /** Reads an adapter's source once; a failed read is retried next time. */
 function source(url: URL, cached: Promise<string> | null, set: (p: Promise<string> | null) => void): Promise<string> {
@@ -96,6 +99,16 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         monitorInput: true,
       };
     }
+    case "c":
+    case "cpp":
+      return {
+        files: [{ path: GDB_ADAPTER_PATH, content: await source(GDB_ADAPTER_URL, gdbSource, (p) => (gdbSource = p)) }],
+        // gdb runs the adapter; the program is gdb's child, reading its stdin as in a normal run.
+        argv: ["gdb", "-q", "-nx", "-batch", "-x", GDB_ADAPTER_PATH],
+        launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main", language: request.language },
+        setup: [],
+        monitorInput: true,
+      };
     default:
       throw new Error(`no debug adapter for ${request.language}`);
   }

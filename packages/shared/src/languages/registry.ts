@@ -60,6 +60,9 @@ if __name__ == "__main__":
   visualizer: { supportLevel: "beta" },
 };
 
+/** gcc:14 with gdb added (deploy/sandbox/gcc-gdb.Dockerfile), for debugging and visualizing C and C++. */
+export const GDB_IMAGE = "writecode/gcc-gdb:14";
+
 const cpp: LanguageDefinition = {
   id: "cpp",
   name: "C++",
@@ -88,7 +91,13 @@ int main() {
     image: "gcc:14",
     command: ["./out/main"],
   },
-  visualizer: { supportLevel: "planned" },
+  debugger: {
+    protocol: "gdb",
+    supportLevel: "beta",
+    image: GDB_IMAGE,
+    compiler: ["g++", "-std=c++20", "-O0", "-g3", "-Wall", "-o", "out/main", "{sources}"],
+  },
+  visualizer: { supportLevel: "beta" },
 };
 
 const c: LanguageDefinition = {
@@ -119,6 +128,13 @@ int main(void) {
     image: "gcc:14",
     command: ["./out/main"],
   },
+  debugger: {
+    protocol: "gdb",
+    supportLevel: "beta",
+    image: GDB_IMAGE,
+    compiler: ["gcc", "-std=c17", "-O0", "-g3", "-Wall", "-o", "out/main", "{sources}", "-lm"],
+  },
+  visualizer: { supportLevel: "beta" },
 };
 
 const javascript: LanguageDefinition = {

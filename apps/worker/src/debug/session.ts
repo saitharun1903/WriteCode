@@ -91,7 +91,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
   });
 
   const sandbox = new Sandbox(ctx.docker, {
-    image: lang.runtime.image,
+    image: lang.debugger?.image ?? lang.runtime.image,
     executionId: ctx.executionId,
     limits,
     runtime: ctx.runtime,
@@ -114,7 +114,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
     if (lang.compiler) {
       events.status("COMPILING");
       const compile = await sandbox.runStep({
-        argv: expandCommand(lang.compiler.command, { entry: request.entry, files: request.files, sourceExtensions: lang.compiler.sourceExtensions }),
+        argv: expandCommand(lang.debugger?.compiler ?? lang.compiler.command, { entry: request.entry, files: request.files, sourceExtensions: lang.compiler.sourceExtensions }),
         timeoutMs: limits.compileTimeoutMs,
         maxOutputBytes: limits.maxOutputBytes,
         onStdout: (c) => {
