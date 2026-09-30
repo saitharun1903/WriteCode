@@ -54,10 +54,12 @@ export function inviteEmail(opts: { from: string; link: string; kind: "live" | "
     : [`${from} is sharing a project live on WriteCode.`, "Open the link to see the code, everyone's cursors and the program's output as they happen. No sign-up needed: just type your name."];
   const button = interview ? "Open the interview" : "Join the live session";
   const text = [...lines, "", opts.link, "", "WriteCode · writecode.in"].join("\n");
+  // The mark, from the same site the link opens.
+  const logo = new URL("/logo.png", opts.link).href;
   const html = `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2328">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:12px;border:1px solid #e3e5e8">
-<tr><td style="padding:28px 32px 8px;font-size:18px;font-weight:700"><span style="display:inline-block;width:22px;height:22px;border-radius:5px;background:#3574f0;color:#fff;text-align:center;line-height:22px;font-size:13px;vertical-align:-4px;margin-right:8px">&lt;</span>WriteCode</td></tr>
+<tr><td style="padding:28px 32px 8px;font-size:18px;font-weight:700"><img src="${escape(logo)}" width="22" height="22" alt="" style="display:inline-block;width:22px;height:22px;border-radius:5px;vertical-align:-4px;margin-right:8px;border:0">WriteCode</td></tr>
 <tr><td style="padding:12px 32px 0;font-size:20px;font-weight:700;line-height:1.3">${escape(subject)}</td></tr>
 ${lines.map((l) => `<tr><td style="padding:12px 32px 0;font-size:15px;line-height:1.55;color:#3d434b">${escape(l)}</td></tr>`).join("")}
 <tr><td style="padding:24px 32px 8px"><a href="${escape(opts.link)}" style="display:inline-block;background:#1f8f4e;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:8px">${button}</a></td></tr>
