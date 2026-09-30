@@ -115,7 +115,9 @@ function frameName(cf) {
 /** The module wrapper of a CommonJS file, or an ES module's body. */
 function isTopLevel(cf) {
   if (cf.functionName) return false;
-  if (cf.scopeChain.some((s) => s.type === "module")) return true;
+  // An ES module's body: its own scope is the module scope (a callback inside it has a local scope first).
+  const own = cf.scopeChain.find((s) => s.type !== "block" && s.type !== "catch");
+  if (own && own.type === "module") return true;
   // CommonJS: Node wraps the file in a function that starts at its very first character.
   const at = cf.functionLocation;
   return !!at && at.lineNumber === 0 && at.columnNumber === 0;
