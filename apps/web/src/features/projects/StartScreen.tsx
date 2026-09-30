@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowRight, Check, ClipboardList, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { DropdownMenu } from "@/components/ui/menu";
-import { Input, Spinner } from "@/components/ui/primitives";
+import { Input } from "@/components/ui/primitives";
 import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
@@ -72,144 +72,100 @@ export function StartScreen() {
   };
 
   return (
-    <div className="relative h-full overflow-y-auto bg-surface-2">
-      {/* A soft wash of the brand colour behind the heading. */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(60%_100%_at_30%_0%,rgb(53_116_240/0.13),transparent)]" />
-      <div className="relative mx-auto max-w-6xl px-5 pb-12 pt-10 sm:px-8 sm:pt-14">
-        <header className="mb-10 max-w-2xl">
-          <h1 className="text-[34px] font-bold leading-tight tracking-tight text-fg sm:text-[40px]">{PRODUCT.name}</h1>
-          <p className="mt-2 text-base leading-relaxed text-fg-muted sm:text-[17px]">
-            Write, run, debug and visualize code right in your browser. Java, Python, C, C++, JavaScript and TypeScript, free and without signing up.
+    <div className="h-full overflow-y-auto bg-surface-2">
+      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+        <header className="mb-9">
+          <h1 className="text-[28px] font-bold tracking-tight text-fg">{PRODUCT.name}</h1>
+          <p className="mt-1.5 text-[15px] text-fg-muted">
+            Free online compiler, debugger and visualizer for Java, Python, C, C++, JavaScript and TypeScript.
           </p>
         </header>
-
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-8">
-          <div className="min-w-0">
-            <section aria-labelledby="new-heading">
-              <div className="flex items-center justify-between gap-4">
-                <h2 id="new-heading" className="text-lg font-semibold tracking-tight text-fg">
-                  New project
-                </h2>
-                <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
-                  Custom…
-                </Button>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {LANGUAGES.map((lang) => (
-                  <button
-                    key={lang.id}
-                    aria-label={`New ${lang.name} project`}
-                    disabled={!!busy}
-                    onClick={() => create(lang.id)}
-                    className={cn(
-                      "group relative flex items-center gap-3.5 overflow-hidden rounded-2xl border border-line-strong/70 bg-surface p-4 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all duration-150",
-                      "hover:-translate-y-0.5 hover:border-accent/70 hover:shadow-[0_10px_28px_-14px_rgb(53_116_240/0.55)] disabled:opacity-60",
-                    )}
-                  >
-                    <LanguageMark id={lang.id} size={44} className="rounded-xl" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[15px] font-semibold text-fg">{lang.name}</span>
-                      <span className="block text-[13px] leading-snug text-fg-subtle">{lang.version}</span>
-                    </span>
-                    {busy === lang.id ? (
-                      <Spinner className="size-4" />
-                    ) : (
-                      <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {status === "error" && (
-              <p className="mt-10 rounded-lg border border-danger/40 bg-danger-soft p-3 text-sm text-fg">
-                Browser storage is unavailable, so projects can’t be saved. Private browsing or blocked site data can cause this.
-              </p>
-            )}
-
-            {projects.length > 0 ? (
-              <section aria-labelledby="recent-heading" className="mt-12">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 id="recent-heading" className="text-lg font-semibold tracking-tight text-fg">
-                    Recent projects <span className="ml-1 text-sm font-normal text-fg-subtle">{projects.length}</span>
-                  </h2>
-                  {projects.length > 3 && (
-                    <div className="relative w-full sm:w-60">
-                      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
-                      <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 rounded-lg pl-8" />
-                    </div>
-                  )}
-                </div>
-                <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {filtered.map((p) => (
-                    <ProjectCard key={p.id} project={p} />
-                  ))}
-                </ul>
-                {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
-              </section>
-            ) : (
-              <p className="mt-10 flex items-center gap-2 text-sm text-fg-subtle">
-                <FolderOpen className="size-4" />
-                Your projects are saved in this browser and show up here.
-              </p>
-            )}
+        <section aria-labelledby="new-heading">
+          <div className="flex items-end justify-between gap-4">
+            <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
+              New project
+            </h2>
+            <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+              Custom…
+            </Button>
           </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {LANGUAGES.map((lang) => (
+              <button
+                key={lang.id}
+                aria-label={`New ${lang.name} project`}
+                disabled={!!busy}
+                onClick={() => create(lang.id)}
+                className={cn(
+                  "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
+                  "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_6px_20px_-10px_rgb(53_116_240/0.5)] disabled:opacity-60",
+                )}
+              >
+                <LanguageMark id={lang.id} size={44} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold text-fg">{lang.name}</span>
+                  <span className="block truncate text-sm text-fg-subtle">{lang.version}</span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-            <InterviewCard />
-            <nav aria-label="Compilers and tools" className="rounded-2xl border border-line-strong/70 bg-surface p-5">
-              <h2 className="text-[13px] font-semibold text-fg">Compilers and tools</h2>
-              <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] lg:grid-cols-1">
-                {LANDING_PAGES.map((p) => (
-                  <li key={p.slug}>
-                    <a href={`/${p.slug}`} className="text-fg-subtle transition-colors hover:text-accent">
-                      {p.kind === "language" ? `Online ${p.label}` : p.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          </aside>
-        </div>
+        <button
+          type="button"
+          onClick={() => useInterviewUI.getState().openSetup("create")}
+          className="group mt-3 flex w-full items-center gap-4 rounded-xl border border-dashed border-line-strong bg-surface/60 p-4 text-left transition-colors hover:border-accent"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <ClipboardList className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold text-fg">Start a coding interview</span>
+            <span className="block text-sm text-fg-subtle">The candidate gets the compiler and Run only. You see their code, runs, tab switches and pastes live, with hidden tests, replay and a report.</span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+        </button>
+
+        {status === "error" && (
+          <p className="mt-10 rounded-lg border border-danger/40 bg-danger-soft p-3 text-sm text-fg">
+            Browser storage is unavailable, so projects can’t be saved. Private browsing or blocked site data can cause this.
+          </p>
+        )}
+
+        {projects.length > 0 && (
+          <section aria-labelledby="recent-heading" className="mt-12">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <h2 id="recent-heading" className="text-lg font-semibold tracking-tight text-fg">
+                Recent projects <span className="ml-1 text-sm font-normal text-fg-subtle">{projects.length}</span>
+              </h2>
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
+              </div>
+            </div>
+            <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((p) => (
+                <ProjectCard key={p.id} project={p} />
+              ))}
+            </ul>
+            {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
+          </section>
+        )}
+
+        <nav aria-label="Compilers and tools" className="mt-14 border-t border-line-strong/60 pt-6 text-[13px] text-fg-subtle">
+          <ul className="flex flex-wrap gap-x-4 gap-y-2">
+            {LANDING_PAGES.map((p) => (
+              <li key={p.slug}>
+                <a href={`/${p.slug}`} className="hover:text-fg hover:underline">
+                  {p.kind === "language" ? `Online ${p.label}` : p.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
     </div>
-  );
-}
-
-const INTERVIEW_POINTS = [
-  "Type a topic and get the problem, sample tests and tricky hidden tests",
-  "Watch the candidate's code, runs, pastes and tab switches live",
-  "Hidden tests show correctness and how the code scales",
-  "Replay the coding and download a report",
-];
-
-/** Interviews live beside the everyday tools, not among them. */
-function InterviewCard() {
-  return (
-    <section aria-labelledby="interview-heading" className="overflow-hidden rounded-2xl border border-line-strong/70 bg-surface">
-      <div className="border-b border-line-strong/50 bg-[linear-gradient(135deg,rgb(53_116_240/0.14),transparent_70%)] p-5 pb-4">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-white shadow-[0_6px_16px_-6px_rgb(53_116_240/0.8)]">
-          <ClipboardList className="size-5" />
-        </span>
-        <h2 id="interview-heading" className="mt-3 text-base font-semibold text-fg">
-          Coding interviews
-        </h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">Interview a candidate in the same editor, with only the compiler and Run on their side.</p>
-      </div>
-      <div className="p-5 pt-4">
-        <ul className="space-y-2.5">
-          {INTERVIEW_POINTS.map((t) => (
-            <li key={t} className="flex gap-2 text-[13px] leading-snug text-fg-muted">
-              <Check className="mt-0.5 size-3.5 shrink-0 text-accent" />
-              {t}
-            </li>
-          ))}
-        </ul>
-        <Button variant="primary" className="mt-5 h-9 w-full rounded-lg text-[13px]" onClick={() => useInterviewUI.getState().openSetup("create")}>
-          Start a coding interview
-        </Button>
-      </div>
-    </section>
   );
 }
 
@@ -221,7 +177,7 @@ function ProjectCard({ project }: { project: ProjectSummary }) {
   const lang = getLanguage(project.language);
 
   return (
-    <li className="group relative rounded-2xl border border-line-strong/70 bg-surface transition-colors hover:border-fg-faint">
+    <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
       {renaming ? (
         <form
           className="p-4"

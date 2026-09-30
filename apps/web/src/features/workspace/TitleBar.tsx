@@ -259,6 +259,17 @@ export function TitleBar({ compact }: { compact: boolean }) {
             <AssistantButton />
           </span>
         )}
+        {!interviewActive && !restricted && (
+          <button
+            type="button"
+            aria-label="Interview mode"
+            onClick={() => runCommand("interview.start")}
+            className="mr-1 flex h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-3 text-[13px] font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg"
+          >
+            <ClipboardList className="size-3.5 text-accent" />
+            <span className={cn(compact && "hidden sm:inline")}>Interview</span>
+          </button>
+        )}
         {compact && (
           <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand("workbench.commandPalette")}>
             <Search />
