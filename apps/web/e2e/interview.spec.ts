@@ -30,6 +30,8 @@ async function freshPage(browser: Browser): Promise<Page> {
 }
 
 async function setCode(page: Page, code: string) {
+  // Monaco loads in the background; wait until the editor exists.
+  await page.waitForFunction(() => ((window as unknown as { monaco?: { editor: { getEditors(): unknown[] } } }).monaco?.editor.getEditors().length ?? 0) > 0, null, { timeout: 30_000 });
   await page.evaluate((text) => {
     const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
     m.editor.getEditors()[0]!.getModel().setValue(text);
