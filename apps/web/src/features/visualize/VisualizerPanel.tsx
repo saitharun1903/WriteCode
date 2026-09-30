@@ -26,7 +26,7 @@ import { showLocation } from "@/features/editor/navigate";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
-import { diffSteps, frameIds, indexPointers, isCallable, layoutHeap, timeline, valueKey, type Change, type StepDiff, type Tone } from "./model";
+import { diffSteps, frameIds, indexPointers, isCallable, layoutHeap, nameOf, timeline, valueKey, type Change, type StepDiff, type Tone } from "./model";
 import { BASE_STEP_MS, SPEEDS, stepLocation, useVisualize } from "./store";
 import { ConceptView, hasStructures } from "./ConceptView";
 
@@ -69,25 +69,48 @@ interface ValProps {
   changed: boolean;
   stepIndex: number;
   showCallables: boolean;
+  /** Drawn as a box, the way a variable holds its value. */
+  boxed?: boolean;
+  /** The value before this step, shown struck through beside a changed value. */
+  before?: string;
 }
 
 /** A value slot: inline text, a function chip, or a dot an arrow starts from. Changed values flash. */
-function Val({ step, value, src, changed, stepIndex, showCallables }: ValProps) {
+function Val({ step, value, src, changed, stepIndex, showCallables, boxed, before }: ValProps) {
   if (!value) return null;
   const pop = changed && !reducedMotion() ? { scale: 1.35, y: -4 } : false;
+  const was =
+    changed && before !== undefined && before !== "" ? (
+      <motion.span
+        key={`w${stepIndex}`}
+        initial={reducedMotion() ? false : { opacity: 0, x: -6 }}
+        animate={{ opacity: 1, x: 0 }}
+        title="Value before this step"
+        className="ml-2 inline-block max-w-[9rem] truncate align-middle text-[11px] text-fg-subtle"
+      >
+        was <span className="font-mono">{before}</span>
+      </motion.span>
+    ) : null;
   if (value.kind === "value") {
     return (
-      <motion.span
-        key={changed ? `c${stepIndex}` : "s"}
-        initial={pop}
-        animate={{ scale: 1, y: 0 }}
-        transition={SPRING}
-        title={value.type}
-        style={{ color: valueColor(value) }}
-        className={cn("inline-block max-w-[16rem] truncate rounded-[4px] px-1 font-mono text-[12.5px] leading-5", changed && "cw-viz-changed")}
-      >
-        {value.text}
-      </motion.span>
+      <>
+        <motion.span
+          key={changed ? `c${stepIndex}` : "s"}
+          initial={pop}
+          animate={{ scale: 1, y: 0 }}
+          transition={SPRING}
+          title={value.type}
+          style={{ color: valueColor(value) }}
+          className={cn(
+            "inline-block max-w-[16rem] truncate rounded-[4px] px-1 align-middle font-mono text-[12.5px] leading-5",
+            boxed && "min-w-8 border border-line-strong bg-surface px-1.5 text-center leading-6",
+            changed && "cw-viz-changed",
+          )}
+        >
+          {value.text}
+        </motion.span>
+        {was}
+      </>
     );
   }
   const o = step.heap[value.id];
@@ -104,7 +127,7 @@ function Val({ step, value, src, changed, stepIndex, showCallables }: ValProps) 
       </span>
     );
   }
-  return (
+  const dot = (
     <span data-ref={value.id} data-src={src} aria-label="reference" className="inline-flex size-5 items-center justify-center">
       <motion.span
         key={changed ? `c${stepIndex}` : "s"}
@@ -115,9 +138,47 @@ function Val({ step, value, src, changed, stepIndex, showCallables }: ValProps) 
       />
     </span>
   );
+  if (!boxed) return dot;
+  // A reference is a box too: what it holds is an arrow to the object, not the object.
+  return (
+    <span
+      title={`Refers to ${o?.type ?? "an object"} (follow the arrow)`}
+      className={cn(
+        "inline-flex h-6 min-w-8 items-center justify-center rounded-[4px] border border-line-strong bg-surface align-middle",
+        changed && "cw-viz-changed",
+      )}
+    >
+      {dot}
+    </span>
+  );
 }
 
 // -- Frames
+
+/** `search` → `search()`; Python's top level reads as the global variables it holds. */
+function frameLabel(name: string): string {
+  return name === "<module>" ? "Global variables" : `${name}()`;
+}
+
+/** The name a call is known by in the source: `Candies.search` → `search`. */
+function shortName(name: string): string {
+  return name.slice(name.lastIndexOf(".") + 1);
+}
+
+/** Marks something that did not exist before this step. */
+function NewTag({ stepIndex }: { stepIndex: number }) {
+  return (
+    <motion.span
+      key={stepIndex}
+      initial={reducedMotion() ? false : { opacity: 0, scale: 0.6 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={SPRING}
+      className="ml-1.5 rounded-full bg-success-soft px-1.5 text-[10px] font-semibold uppercase leading-4 tracking-wide text-success"
+    >
+      new
+    </motion.span>
+  );
+}
 
 function FrameCard({
   frame,
@@ -127,6 +188,8 @@ function FrameCard({
   current,
   stepIndex,
   showCallables,
+  callee,
+  hide,
 }: {
   frame: TraceFrame;
   index: number;
@@ -135,9 +198,16 @@ function FrameCard({
   current: boolean;
   stepIndex: number;
   showCallables: boolean;
+  /** The call this frame is waiting on (the next frame down), if any. */
+  callee?: string;
+  /** Variables not worth drawing (Java's empty `args`). */
+  hide: (name: string, value: TraceValue) => boolean;
 }) {
   // The top level "returns None" when the program ends; that is not the program's data.
   const returnValue = frame.name === "<module>" ? undefined : frame.returnValue;
+  const locals = frame.locals.filter(([n, v]) => !hide(n, v));
+  const returning = current && step.event === "return";
+  const status = returning ? "Returning" : current ? "Running" : callee ? `Waiting for ${callee}()` : "Waiting";
   return (
     <div
       data-card
@@ -145,26 +215,47 @@ function FrameCard({
       role="group"
       aria-label={`Frame ${frame.name}`}
       className={cn(
-        "rounded-lg border bg-surface-2 transition-[border-color,box-shadow] duration-300",
-        current ? "border-accent shadow-[0_0_0_1px_var(--accent),0_10px_30px_-14px_var(--accent)]" : "border-line-strong opacity-80",
+        "rounded-lg border bg-surface-2 transition-[border-color,box-shadow,opacity] duration-300",
+        current ? "border-accent shadow-[0_0_0_1px_var(--accent),0_10px_30px_-14px_var(--accent)]" : "border-line-strong opacity-75",
       )}
     >
-      <div className="flex items-baseline justify-between gap-3 border-b border-line-strong px-3 py-1.5">
+      <div className="flex items-center justify-between gap-3 border-b border-line-strong px-3 py-1.5">
         <span className="flex min-w-0 items-center gap-1.5">
           {current && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
-          <span className="truncate font-mono text-[13px] font-semibold text-fg">{frame.name}</span>
+          <span className="truncate font-mono text-[13px] font-semibold text-fg" title={frame.name}>
+            {frameLabel(frame.name)}
+          </span>
         </span>
-        <span className="shrink-0 text-xs tabular-nums text-fg-subtle">line {frame.line}</span>
+        <span
+          title={current ? `This call is running line ${frame.line} next` : `Paused on line ${frame.line} until ${callee ?? "the call below"} returns`}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-full px-2 py-px text-[11px] tabular-nums",
+            returning ? "bg-success-soft text-success" : current ? "bg-accent-soft text-fg" : "bg-hover text-fg-subtle",
+          )}
+        >
+          {status} · line {frame.line}
+        </span>
       </div>
-      <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1 px-3 py-2">
-        {frame.locals.length === 0 && !returnValue && <span className="col-span-2 text-xs text-fg-subtle">No variables yet</span>}
-        {frame.locals.map(([name, value]) => {
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5 px-3 py-2">
+        {locals.length === 0 && !returnValue && <span className="col-span-2 text-xs text-fg-subtle">No variables yet</span>}
+        {locals.map(([name, value]) => {
           const src = `var:${index}:${name}`;
+          const isNew = diff.highlights.has(src) && !diff.before.has(src) && !diff.newFrames.has(index);
           return (
             <div key={name} role="row" aria-label={`${name} = ${label(step, value, showCallables)}`} data-hover={`src:${src}`} className="contents">
               <span className="text-right font-mono text-[12.5px] text-fg-muted">{name}</span>
-              <span className="min-w-0">
-                <Val step={step} value={value} src={src} changed={diff.highlights.has(src)} stepIndex={stepIndex} showCallables={showCallables} />
+              <span className="flex min-w-0 items-center">
+                <Val
+                  step={step}
+                  value={value}
+                  src={src}
+                  changed={diff.highlights.has(src)}
+                  before={diff.before.get(src)}
+                  stepIndex={stepIndex}
+                  showCallables={showCallables}
+                  boxed={value.kind === "ref" ? !isCallable(step.heap[value.id]) || showCallables : true}
+                />
+                {isNew && <NewTag stepIndex={stepIndex} />}
               </span>
             </div>
           );
@@ -197,10 +288,68 @@ const KIND_COLOR: Record<HeapObject["kind"], string> = {
   other: "var(--fg-faint)",
 };
 
-function sizeOf(o: HeapObject): number | null {
-  if (o.kind === "sequence") return (o.items?.length ?? 0) + (o.omitted ?? 0);
-  if (o.kind === "map") return (o.entries?.length ?? 0) + (o.omitted ?? 0);
-  return null;
+function sizeOf(o: HeapObject): string | null {
+  const n = (o.kind === "sequence" ? (o.items?.length ?? 0) : o.kind === "map" ? (o.entries?.length ?? 0) : -1) + (o.omitted ?? 0);
+  if (n < 0) return null;
+  const unit = o.kind === "sequence" ? "item" : "entry";
+  return n === 0 ? "empty" : `${n} ${n === 1 ? unit : unit === "entry" ? "entries" : "items"}`;
+}
+
+/** A variable holding a reference to an object. */
+interface Holder {
+  name: string;
+  frame: string;
+  current: boolean;
+}
+
+/** Who points at each object directly from a variable, outermost call first. */
+function holdersOf(step: TraceStep, hide: (name: string, value: TraceValue) => boolean): Map<string, Holder[]> {
+  const out = new Map<string, Holder[]>();
+  step.frames.forEach((f, i) => {
+    for (const [name, v] of f.locals) {
+      if (v.kind !== "ref" || hide(name, v)) continue;
+      const list = out.get(v.id) ?? [];
+      list.push({
+        name,
+        frame: shortName(f.name),
+        current: i === step.frames.length - 1,
+      });
+      out.set(v.id, list);
+    }
+  });
+  return out;
+}
+
+/** Plain words for what kind of thing an object is. */
+function kindWord(o: HeapObject): string {
+  return o.kind === "sequence" ? "array" : o.kind === "map" ? "map" : "object";
+}
+
+/** "arr in main", and a note when several calls share one object. */
+function Holders({ holders, object, fallback }: { holders: Holder[]; object: HeapObject; fallback: string | null }) {
+  if (holders.length === 0) {
+    return fallback ? <span className="truncate font-mono text-[11px] text-fg-subtle">via {fallback}</span> : null;
+  }
+  const frames = [...new Set(holders.map((h) => h.frame))];
+  const shared = frames.length > 1;
+  return (
+    <span
+      className="flex min-w-0 flex-wrap items-center gap-1"
+      title={
+        shared
+          ? `The same ${kindWord(object)}: ${holders.map((h) => `${h.name} in ${h.frame}()`).join(" and ")} point to it, so a change through one is seen by all.`
+          : undefined
+      }
+    >
+      {holders.map((h, i) => (
+        <span key={i} className={cn("rounded px-1 font-mono text-[11px] leading-4", h.current ? "bg-accent-soft text-fg" : "bg-hover text-fg-subtle")}>
+          {h.name}
+          {shared && <span className="text-fg-muted"> in {h.frame}</span>}
+        </span>
+      ))}
+      {shared && <span className="text-[11px] text-fg-subtle">same {kindWord(object)}</span>}
+    </span>
+  );
 }
 
 function ObjectCard({
@@ -212,6 +361,7 @@ function ObjectCard({
   pointers,
   emphasized,
   showCallables,
+  holders,
 }: {
   id: string;
   object: HeapObject;
@@ -221,6 +371,7 @@ function ObjectCard({
   pointers: Map<number, string[]> | undefined;
   emphasized: boolean;
   showCallables: boolean;
+  holders: Holder[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const swap = diff.swaps.get(id);
@@ -261,7 +412,7 @@ function ObjectCard({
                 <span className="text-[10px] leading-4 tabular-nums text-fg-subtle">{i}</span>
                 <div
                   className={cn(
-                    "-ml-px flex h-9 min-w-10 items-center justify-center border border-line-strong bg-surface px-1 transition-colors duration-300",
+                    "relative -ml-px flex h-9 min-w-10 items-center justify-center border border-line-strong bg-surface px-1 transition-colors duration-300",
                     i === 0 && "ml-0 rounded-l-md",
                     i === items.length - 1 && !more && "rounded-r-md",
                     names.length > 0 && "border-accent/60 bg-accent-soft/40",
@@ -270,6 +421,17 @@ function ObjectCard({
                   <span data-cell={i} className="inline-flex">
                     <Val {...common} value={item} src={`cell:${id}:${i}`} changed={changed} />
                   </span>
+                  {changed && diff.before.has(`cell:${id}:${i}`) && !diff.swaps.has(id) && (
+                    <motion.span
+                      key={stepIndex}
+                      initial={reducedMotion() ? false : { opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      title="Value before this step"
+                      className="absolute -top-2 right-0 max-w-12 truncate rounded bg-surface-2 px-0.5 text-[9.5px] leading-3 text-fg-subtle"
+                    >
+                      was {diff.before.get(`cell:${id}:${i}`)}
+                    </motion.span>
+                  )}
                 </div>
                 {pointers && (
                   <div className="flex h-5 flex-col items-center">
@@ -315,7 +477,7 @@ function ObjectCard({
             <div key={i} className="contents" data-hover={`src:${hl}`}>
               <span className="text-right">{key}</span>
               <span>
-                <Val {...common} value={value} src={hl} changed={diff.highlights.has(hl)} />
+                <Val {...common} value={value} src={hl} changed={diff.highlights.has(hl)} before={diff.before.get(hl)} />
               </span>
             </div>
           ))}
@@ -342,11 +504,15 @@ function ObjectCard({
         emphasized && "shadow-[0_0_0_2px_var(--accent),0_10px_30px_-12px_var(--accent)]",
       )}
     >
-      <div className="flex items-baseline gap-1.5 px-3 pt-1.5 font-mono text-[11px]">
-        <span style={{ color: KIND_COLOR[object.kind] }} className="font-semibold">
-          {object.type}
+      <div className="flex max-w-[44rem] items-center gap-2 px-3 pt-1.5">
+        <span className="shrink-0 font-mono text-[11px]">
+          <span style={{ color: KIND_COLOR[object.kind] }} className="font-semibold">
+            {object.type}
+          </span>
+          {size !== null && <span className="text-fg-subtle"> · {size}</span>}
         </span>
-        {size !== null && <span className="text-fg-subtle">· {size}</span>}
+        <Holders holders={holders} object={object} fallback={holders.length === 0 ? nameOf(step, id) : null} />
+        {diff.highlights.has(`obj:${id}`) && <NewTag stepIndex={stepIndex} />}
       </div>
       {body}
     </div>
@@ -366,7 +532,17 @@ interface Arrow {
  * Draws an arrow from every reference dot to its object. Recomputed on every
  * animation frame while cards move after a step, so arrows follow them.
  */
-function Arrows({ root, trigger, hover }: { root: RefObject<HTMLDivElement | null>; trigger: unknown; hover: string | null }) {
+function Arrows({
+  root,
+  trigger,
+  hover,
+  currentFrame,
+}: {
+  root: RefObject<HTMLDivElement | null>;
+  trigger: unknown;
+  hover: string | null;
+  currentFrame: number;
+}) {
   const [arrows, setArrows] = useState<Arrow[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -426,18 +602,30 @@ function Arrows({ root, trigger, hover }: { root: RefObject<HTMLDivElement | nul
     loop();
     const observer = new ResizeObserver(compute);
     observer.observe(el);
+    // The objects column stays in place while the calls scroll: arrows follow.
+    const scroller = el.parentElement;
+    scroller?.addEventListener("scroll", compute, { passive: true });
     return () => {
       cancelAnimationFrame(raf);
       observer.disconnect();
+      scroller?.removeEventListener("scroll", compute);
     };
   }, [root, trigger]);
 
   const focused = (a: Arrow) => hover === `src:${a.src}` || hover === `obj:${a.target}`;
+  // Variables of calls that are waiting point too, but more quietly than the running call's.
+  const waiting = (a: Arrow) => {
+    const m = /^var:(\d+):/.exec(a.src);
+    return !!m && Number(m[1]) !== currentFrame && !focused(a);
+  };
   return (
     <svg aria-hidden className="pointer-events-none absolute left-0 top-0 overflow-visible" width={size.w} height={size.h}>
       <defs>
         <marker id="cw-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)" />
+        </marker>
+        <marker id="cw-arrow-quiet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--fg-faint)" />
         </marker>
       </defs>
       {arrows.map((a) => (
@@ -445,9 +633,10 @@ function Arrows({ root, trigger, hover }: { root: RefObject<HTMLDivElement | nul
           key={a.key}
           d={a.d}
           fill="none"
-          stroke="var(--accent)"
+          stroke={waiting(a) ? "var(--fg-faint)" : "var(--accent)"}
+          strokeDasharray={waiting(a) ? "4 4" : undefined}
           strokeLinecap="round"
-          markerEnd="url(#cw-arrow)"
+          markerEnd={waiting(a) ? "url(#cw-arrow-quiet)" : "url(#cw-arrow)"}
           initial={reducedMotion() ? false : { pathLength: 0, opacity: 0 }}
           animate={{
             pathLength: 1,
@@ -466,12 +655,104 @@ function Arrows({ root, trigger, hover }: { root: RefObject<HTMLDivElement | nul
 
 // -- Diagram
 
+function SectionTitle({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">{title}</h3>
+      {hint && <p className="mt-0.5 max-w-[34rem] text-[11.5px] leading-4 text-fg-faint">{hint}</p>}
+    </div>
+  );
+}
+
+const LEGEND_KEY = "cw.visualize.legend";
+
+/** Whether the how-to-read line is shown; remembered per browser once hidden. */
+function useLegend(): [boolean, (show: boolean) => void] {
+  const [shown, setShown] = useState(() => {
+    try {
+      return localStorage.getItem(LEGEND_KEY) !== "hidden";
+    } catch {
+      return true;
+    }
+  });
+  const set = (show: boolean) => {
+    setShown(show);
+    try {
+      if (show) localStorage.removeItem(LEGEND_KEY);
+      else localStorage.setItem(LEGEND_KEY, "hidden");
+    } catch {}
+  };
+  return [shown, set];
+}
+
+/** How to read the drawing, in one line. */
+function Legend({ onHide }: { onHide: () => void }) {
+  const item = "flex items-center gap-1.5 whitespace-nowrap";
+  const box = "inline-flex h-5 min-w-7 items-center justify-center rounded-[4px] border border-line-strong bg-surface px-1 font-mono text-[11px]";
+  return (
+    <div
+      role="note"
+      aria-label="How to read this view"
+      className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-line bg-surface-2/40 px-4 py-2 text-[11.5px] text-fg-subtle"
+    >
+      <span className={item}>
+        <span className={box} style={{ color: "var(--viz-num)" }}>
+          5
+        </span>
+        value kept in the variable
+      </span>
+      <span className={item}>
+        <span className={box}>
+          <span className="size-2 rounded-full bg-accent" />
+        </span>
+        <svg width="22" height="8" aria-hidden className="-ml-1">
+          <path d="M0 4 H17" stroke="var(--accent)" strokeWidth="1.6" />
+          <path d="M16 0.5 L21 4 L16 7.5 z" fill="var(--accent)" />
+        </svg>
+        points to an object
+      </span>
+      <span className={item}>
+        <svg width="22" height="8" aria-hidden>
+          <path d="M0 4 H22" stroke="var(--fg-faint)" strokeWidth="1.6" strokeDasharray="4 4" />
+        </svg>
+        from a waiting call
+      </span>
+      <span className={item}>
+        <span className={cn(box, "cw-viz-changed")} style={{ color: "var(--viz-num)" }}>
+          7
+        </span>
+        <span className="text-[11px]">
+          was <span className="font-mono">3</span>
+        </span>
+        changed in this step
+      </span>
+      <span className={item}>
+        <span className="rounded-full bg-accent px-1.5 font-mono text-[10px] font-semibold leading-4 text-accent-fg">i</span>
+        index into the array
+      </span>
+      <button type="button" onClick={onHide} className="ml-auto rounded px-1.5 text-[11px] text-fg-subtle hover:bg-hover hover:text-fg">
+        Hide guide
+      </button>
+    </div>
+  );
+}
+
 function Diagram({ trace, stepIndex, diff, ids, showCallables }: { trace: Trace; stepIndex: number; diff: StepDiff; ids: string[]; showCallables: boolean }) {
   const content = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [guide, setGuide] = useLegend();
   const step = trace.steps[stepIndex]!;
-  const hidden = (id: string) => !showCallables && isCallable(step.heap[id]);
+  // Java's `main(String[] args)` gets no arguments here: an empty `args` is only noise.
+  const hideLocal = (name: string, v: TraceValue) => {
+    if (name !== "args" || v.kind !== "ref") return false;
+    const o = step.heap[v.id];
+    return o?.kind === "sequence" && o.type === "String[]" && (o.items?.length ?? 0) === 0;
+  };
+  const noise = new Set(step.frames.flatMap((f) => f.locals.flatMap(([n, v]) => (v.kind === "ref" && hideLocal(n, v) ? [v.id] : []))));
+  const hidden = (id: string) => noise.has(id) || (!showCallables && isCallable(step.heap[id]));
   const placements = layoutHeap(step, hidden);
+  const holders = holdersOf(step, hideLocal);
+  const currentFrame = step.frames.length - 1;
   const pointers = indexPointers(step);
   const columns = Math.max(1, ...placements.map((p) => p.col + 1));
 
@@ -493,79 +774,115 @@ function Diagram({ trace, stepIndex, diff, ids, showCallables }: { trace: Trace;
     return () => clearTimeout(timer);
   }, [stepIndex]);
 
+  // While the objects fit the panel they stay in view as the calls scroll past.
+  const objects = useRef<HTMLElement>(null);
+  const [pinned, setPinned] = useState(true);
+  useLayoutEffect(() => {
+    const box = content.current?.parentElement;
+    const el = objects.current;
+    if (!box || !el) return;
+    const check = () => setPinned(el.offsetHeight <= box.clientHeight - 16);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <div
-        ref={content}
-        className="relative grid min-h-full grid-cols-[minmax(13rem,0.7fr)_minmax(16rem,1.3fr)] gap-x-20 p-4"
-        onPointerOver={(e) => setHover((e.target as HTMLElement).closest<HTMLElement>("[data-hover]")?.dataset.hover ?? null)}
-        onPointerLeave={() => setHover(null)}
-      >
-        <section aria-label="Frames" className="flex flex-col gap-2.5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Frames</h3>
-          <AnimatePresence initial={false} mode="popLayout">
-            {step.frames.map((f, i) => (
-              <motion.div
-                key={ids[i] ?? i}
-                layout="position"
-                initial={reducedMotion() ? false : { opacity: 0, x: -30, scale: 0.94 }}
-                animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{
-                  opacity: 0,
-                  x: -30,
-                  scale: 0.94,
-                  transition: { duration: 0.2 },
-                }}
-                transition={SPRING}
-              >
-                <FrameCard
-                  frame={f}
-                  index={i}
-                  step={step}
-                  diff={diff}
-                  current={i === step.frames.length - 1}
-                  stepIndex={stepIndex}
-                  showCallables={showCallables}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </section>
-        <section aria-label="Objects" className="flex min-w-0 flex-col gap-2.5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Objects</h3>
-          {placements.length === 0 && <p className="text-xs text-fg-subtle">No objects yet</p>}
-          <div className="grid items-start gap-x-14 gap-y-5" style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {guide && <Legend onHide={() => setGuide(false)} />}
+      <div className="relative min-h-0 flex-1 overflow-auto">
+        {!guide && (
+          <button
+            type="button"
+            onClick={() => setGuide(true)}
+            className="absolute right-3 top-3 z-10 rounded-full border border-line-strong bg-surface-2 px-2 py-0.5 text-[11px] text-fg-subtle hover:text-fg"
+          >
+            How to read this
+          </button>
+        )}
+        <div
+          ref={content}
+          className="relative grid min-h-full grid-cols-[minmax(13rem,0.7fr)_minmax(16rem,1.3fr)] content-start gap-x-20 p-4"
+          onPointerOver={(e) => setHover((e.target as HTMLElement).closest<HTMLElement>("[data-hover]")?.dataset.hover ?? null)}
+          onPointerLeave={() => setHover(null)}
+        >
+          <section aria-label="Frames" className="flex flex-col gap-2.5">
+            <SectionTitle
+              title="Function calls"
+              hint={guide ? "Each call keeps its own variables. The newest call is at the bottom; the calls above it wait until it returns." : undefined}
+            />
             <AnimatePresence initial={false} mode="popLayout">
-              {placements.map((p) => (
+              {step.frames.map((f, i) => (
                 <motion.div
-                  key={p.id}
+                  key={ids[i] ?? i}
                   layout="position"
-                  style={{ gridRow: p.row + 1, gridColumn: p.col + 1 }}
-                  initial={reducedMotion() ? false : { opacity: 0, scale: 0.8, y: 10 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  initial={reducedMotion() ? false : { opacity: 0, x: -30, scale: 0.94 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
                   exit={{
                     opacity: 0,
-                    scale: 0.8,
+                    x: -30,
+                    scale: 0.94,
                     transition: { duration: 0.2 },
                   }}
                   transition={SPRING}
                 >
-                  <ObjectCard
-                    id={p.id}
-                    object={step.heap[p.id]!}
+                  <FrameCard
+                    frame={f}
+                    index={i}
                     step={step}
                     diff={diff}
+                    current={i === currentFrame}
                     stepIndex={stepIndex}
-                    pointers={pointers.get(p.id)}
-                    emphasized={hover === `obj:${p.id}`}
                     showCallables={showCallables}
+                    callee={i < currentFrame ? shortName(step.frames[i + 1]!.name) : undefined}
+                    hide={hideLocal}
                   />
                 </motion.div>
               ))}
             </AnimatePresence>
-          </div>
-        </section>
-        <Arrows root={content} trigger={`${stepIndex}:${showCallables}`} hover={hover} />
+          </section>
+          <section ref={objects} aria-label="Objects" className={cn("flex min-w-0 flex-col gap-2.5 self-start", pinned && "sticky top-3")}>
+            <SectionTitle
+              title="Objects in memory"
+              hint={guide ? "Arrays, lists, maps and objects live here. A variable does not contain them, it points to them: follow the arrow." : undefined}
+            />
+            {placements.length === 0 && <p className="text-xs text-fg-subtle">No arrays or objects yet. Numbers and text stay inside their variable.</p>}
+            <div className="grid items-start gap-x-14 gap-y-5" style={{ gridTemplateColumns: `repeat(${columns}, max-content)` }}>
+              <AnimatePresence initial={false} mode="popLayout">
+                {placements.map((p) => (
+                  <motion.div
+                    key={p.id}
+                    layout="position"
+                    style={{ gridRow: p.row + 1, gridColumn: p.col + 1 }}
+                    initial={reducedMotion() ? false : { opacity: 0, scale: 0.8, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{
+                      opacity: 0,
+                      scale: 0.8,
+                      transition: { duration: 0.2 },
+                    }}
+                    transition={SPRING}
+                  >
+                    <ObjectCard
+                      id={p.id}
+                      object={step.heap[p.id]!}
+                      step={step}
+                      diff={diff}
+                      stepIndex={stepIndex}
+                      pointers={pointers.get(p.id)}
+                      emphasized={hover === `obj:${p.id}`}
+                      showCallables={showCallables}
+                      holders={holders.get(p.id) ?? []}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          </section>
+          <Arrows root={content} trigger={`${stepIndex}:${showCallables}:${guide}`} hover={hover} currentFrame={currentFrame} />
+        </div>
       </div>
     </div>
   );
@@ -879,7 +1196,11 @@ export function VisualizerPanel() {
                 key={v}
                 type="button"
                 aria-pressed={view === v}
-                title={v === "structures" ? "Each data structure drawn as its concept: stacks, queues, lists, trees, graphs, maps" : "Frames, objects and the references between them"}
+                title={
+                  v === "structures"
+                    ? "Each data structure drawn as its concept: stacks, queues, lists, trees, graphs, maps"
+                    : "Frames, objects and the references between them"
+                }
                 onClick={() => useVisualize.getState().setView(v)}
                 className={cn("rounded px-2 text-xs capitalize leading-5", view === v ? "bg-accent text-accent-fg" : "text-fg-subtle hover:text-fg")}
               >

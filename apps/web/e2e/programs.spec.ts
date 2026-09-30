@@ -513,6 +513,12 @@ test("visualizer: records a Java run across classes", async ({ page }) => {
   const objects = viz.getByRole("region", { name: "Objects" });
   await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("4");
   await expect(objects.getByRole("group", { name: "Box object" })).toContainText("items");
+  // The view explains itself: which call runs, who points at each object, and no empty `args`.
+  const frames = viz.getByRole("region", { name: "Frames" });
+  await expect(frames.getByRole("group", { name: "Frame Main.main" })).toContainText(/Running|Returning/);
+  await expect(frames.getByRole("row", { name: /^args/ })).toHaveCount(0);
+  await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("xs");
+  await expect(viz.getByRole("note", { name: "How to read this view" })).toBeVisible();
 });
 
 test("console shows only the program's output, not the sandbox's command line", async ({ page }) => {

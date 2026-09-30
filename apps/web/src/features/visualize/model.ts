@@ -143,6 +143,8 @@ export interface StepDiff {
   changes: Change[];
   /** Keys of things to highlight: `var:<frame>:<name>`, `cell:<id>:<index>`, `key:<id>:<key>`, `field:<id>:<name>`, `obj:<id>`. */
   highlights: Set<string>;
+  /** The previous value of a changed slot (same keys as `highlights`), as short text. */
+  before: Map<string, string>;
   /** Sequence elements that swapped places, by object id. */
   swaps: Map<string, [number, number]>;
   /** Frames (by index) that appeared with this step. */
@@ -188,6 +190,7 @@ function diffSequence(id: string, name: string, a: TraceValue[], b: TraceValue[]
       out.changes.push({ tone: "mutate", parts: ["Swapped ", code(`${name}[${i}]`), " and ", code(`${name}[${j}]`)] });
       return;
     }
+    changed.forEach((k) => out.before.set(`cell:${id}:${k}`, preview(prev, a[k], 1)));
     for (const k of changed.slice(0, 3)) {
       out.changes.push({ tone: "mutate", parts: [code(`${name}[${k}]`), " = ", code(preview(cur, b[k], 1)), ` (was ${preview(prev, a[k], 1)})`] });
     }
@@ -219,6 +222,7 @@ function diffObject(id: string, a: HeapObject, b: HeapObject, out: StepDiff, pre
       const old = before.get(kk);
       if (old && valueKey(old) === valueKey(v)) continue;
       out.highlights.add(`key:${id}:${kk}`);
+      if (old) out.before.set(`key:${id}:${kk}`, preview(prev, old, 1));
       out.changes.push({
         tone: "mutate",
         parts: [code(`${name}[${preview(cur, k, 1)}]`), " = ", code(preview(cur, v, 1)), ...(old ? [` (was ${preview(prev, old, 1)})`] : [])],
@@ -237,6 +241,7 @@ function diffObject(id: string, a: HeapObject, b: HeapObject, out: StepDiff, pre
       const old = before.get(f);
       if (old && valueKey(old) === valueKey(v)) continue;
       out.highlights.add(`field:${id}:${f}`);
+      if (old) out.before.set(`field:${id}:${f}`, preview(prev, old, 1));
       out.changes.push({ tone: "mutate", parts: [code(`${name}.${f}`), " = ", code(preview(cur, v, 1))] });
     }
   }
@@ -255,7 +260,7 @@ export function ranLine(prev: TraceStep): { file: string; line: number } | null 
 export function diffSteps(trace: Trace, index: number): StepDiff {
   const cur = trace.steps[index]!;
   const prev = index > 0 ? trace.steps[index - 1] : undefined;
-  const out: StepDiff = { changes: [], highlights: new Set(), swaps: new Map(), newFrames: new Set(), printed: "", ranLine: null };
+  const out: StepDiff = { changes: [], highlights: new Set(), before: new Map(), swaps: new Map(), newFrames: new Set(), printed: "", ranLine: null };
   const top = cur.frames[cur.frames.length - 1];
 
   if (cur.event === "exception") out.changes.push({ tone: "exception", parts: [cur.exception ?? "Exception raised"] });
@@ -283,6 +288,7 @@ export function diffSteps(trace: Trace, index: number): StepDiff {
       const old = before.get(n);
       if (old && valueKey(old) === valueKey(v)) continue;
       out.highlights.add(`var:${i}:${n}`);
+      if (old) out.before.set(`var:${i}:${n}`, preview(prev, old, 1));
       const obj = v.kind === "ref" ? cur.heap[v.id] : undefined;
       // Defining a function or class is noise next to the program's data.
       if (isCallable(obj) && !old) continue;
