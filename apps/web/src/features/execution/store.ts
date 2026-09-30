@@ -146,6 +146,19 @@ function snapshotFiles(project: Project) {
   return project.files.map((f) => ({ path: f.path, content: f.content }));
 }
 
+/**
+ * A program waiting for typed input must never wait unseen: when the bottom
+ * panel is closed, or shows a tab with no input box (Tests, Problems, Program
+ * Input, or another mode's tab), it switches to the run's own tab, where the
+ * input bar is.
+ */
+function showInputFor(run: { mode: string; interactive?: boolean; watchedBy?: string } | null) {
+  if (!run || !run.interactive) return;
+  const tab = run.mode === "debug" ? "debug" : run.mode === "visualize" ? "visualize" : "run";
+  const { layout, updateLayout } = useSettings.getState();
+  if (!layout.bottomOpen || layout.bottomTab !== tab) updateLayout({ bottomOpen: true, bottomTab: tab });
+}
+
 export const useExecution = create<ExecutionState>((set, get) => {
   const flushLog = () => {
     if (pendingTimer) clearTimeout(pendingTimer);
@@ -409,6 +422,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
             case "status":
               flushLog();
               set((s) => ({ run: s.run ? { ...s.run, status: event.status } : s.run }));
+              if (event.status === "WAITING_FOR_INPUT") showInputFor(get().run);
               break;
             case "stdout":
             case "stderr":

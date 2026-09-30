@@ -902,3 +902,47 @@ test("visualizer: C and C++ are drawn as their structures too", async ({ page })
   await viz.getByRole("button", { name: "memory" }).click();
   await expect(viz.getByRole("region", { name: "Frames" }).getByRole("group", { name: "Frame <module>" })).toContainText("Global");
 });
+
+test("visualizer: a program that asks for input can be answered right in the Visualize panel, in every language", async ({ page }) => {
+  const programs: [Parameters<typeof freshProject>[1], string][] = [
+    ["C", '#include <stdio.h>\n\nint main(void) {\n    int n;\n    printf("number? ");\n    scanf("%d", &n);\n    printf("%d\\n", n * 2);\n    return 0;\n}\n'],
+    ["C++", "#include <iostream>\n\nint main() {\n    int n;\n    std::cout << \"number? \";\n    std::cin >> n;\n    std::cout << n * 2 << std::endl;\n}\n"],
+    ["Python", 'n = int(input("number? "))\nprint(n * 2)\n'],
+    ["Java", 'import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner in = new Scanner(System.in);\n        System.out.print("number? ");\n        int n = in.nextInt();\n        System.out.println(n * 2);\n    }\n}\n'],
+    ["JavaScript", 'const n = Number(require("node:fs").readFileSync(0, "utf8").trim());\nconsole.log(n * 2);\n'],
+    ["TypeScript", 'import { readFileSync } from "node:fs";\nconst n: number = Number(readFileSync(0, "utf8").trim());\nconsole.log(n * 2);\n'],
+  ];
+  for (const [language, code] of programs) {
+    await freshProject(page, language);
+    await setCode(page, code);
+    // Start from another tab: the input must still be reachable.
+    await page.getByRole("button", { name: "Visualize execution" }).click();
+    const viz = page.getByRole("region", { name: "Visualize" });
+    await expect(viz.getByText(/waiting for your input/), language).toBeVisible({ timeout: 120_000 });
+    const input = viz.getByRole("textbox", { name: "Program input" });
+    await input.fill("21");
+    await page.keyboard.press("Enter");
+    // Node reads until the input ends.
+    if (language === "JavaScript" || language === "TypeScript") await viz.getByRole("button", { name: "Send EOF" }).click();
+    await expect(viz.getByText(/^Step 1 of \d+$/), language).toBeVisible({ timeout: 120_000 });
+    await viz.getByRole("button", { name: "Last step" }).click();
+    await expect(viz.getByLabel("Output so far"), language).toContainText("42");
+  }
+});
+
+test("a program asking for input brings its console back, even from another tab", async ({ page }) => {
+  await freshProject(page, "Python");
+  // The pause gives time to look at another tab before the second question.
+  await setCode(page, 'import time\n\na = input("first? ")\ntime.sleep(2)\nb = input("second? ")\nprint(a + b)\n');
+  await page.getByRole("button", { name: "Run program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 120_000 });
+  await input.fill("x");
+  await page.keyboard.press("Enter");
+  // Looking at the tests while it runs: the next question must not go unseen.
+  await page.getByRole("button", { name: "Tests", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Run" })).toBeVisible({ timeout: 30_000 });
+  await input.fill("y");
+  await page.keyboard.press("Enter");
+  await expect(output(page)).toContainText("xy", { timeout: 30_000 });
+});

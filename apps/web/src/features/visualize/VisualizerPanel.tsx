@@ -21,6 +21,7 @@ import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "motion/react
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { getLanguage, type HeapObject, type Trace, type TraceFrame, type TraceStep, type TraceValue } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
+import { ConsoleView } from "@/features/execution/OutputPanel";
 import { runCommand } from "@/features/commands/registry";
 import { showLocation } from "@/features/editor/navigate";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -1085,6 +1086,27 @@ function EmptyState({ recording, failed, message }: { recording: boolean; failed
   );
 }
 
+/**
+ * While the program is being recorded: its output so far and the input bar, so a
+ * program that asks for input can be answered right here.
+ */
+function Recording({ waiting }: { waiting: boolean }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div aria-live="polite" className={cn("flex h-10 shrink-0 items-center gap-2.5 border-b px-3 text-sm", waiting ? "border-warning/40 bg-warning-soft/60" : "border-line")}>
+        <span className="relative flex size-6 items-center justify-center rounded-lg bg-accent-soft/60">
+          <Workflow className="size-3.5 animate-pulse text-accent" />
+        </span>
+        <span className="text-fg">Recording every step of the program…</span>
+        {waiting && <span className="text-warning">It is waiting for your input: type it below and press Enter.</span>}
+      </div>
+      <div className="min-h-0 flex-1">
+        <ConsoleView />
+      </div>
+    </div>
+  );
+}
+
 /** Visualizer tool window: play or step through a recorded run and watch its frames and objects change. */
 export function VisualizerPanel() {
   const trace = useVisualize((s) => s.trace);
@@ -1123,7 +1145,8 @@ export function VisualizerPanel() {
   if (!supported) {
     return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java, Python, C, C++, JavaScript and TypeScript projects.</p>;
   }
-  if (!trace || recording) {
+  if (recording) return <Recording waiting={run?.status === "WAITING_FOR_INPUT"} />;
+  if (!trace) {
     const failed = run?.mode === "visualize" && !!run.result && !trace;
     return <EmptyState recording={recording} failed={failed} message={run?.result?.message} />;
   }
