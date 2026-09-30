@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
+import { Bug, ChevronDown, ClipboardList, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
 import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -14,6 +14,9 @@ import { useResolvedTheme, useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 import { LogoMark } from "./Logo";
 import { LiveButton } from "@/features/live/LiveUI";
+import { useRestriction } from "@/features/interview/restrict";
+import { InterviewClock } from "@/features/interview/Clock";
+import { useLive } from "@/features/live/store";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
 function fromCommands(ids: (string | "-")[]): MenuEntry[] {
@@ -36,8 +39,31 @@ const MENUS: { label: string; items: (string | "-")[] }[] = [
   { label: "Settings", items: ["prefs.open", "-", "prefs.toggleTheme", "prefs.wordWrap", "prefs.minimap", "-", "prefs.fontIncrease", "prefs.fontDecrease", "prefs.fontReset"] },
 ];
 
+/** In an interview the right-hand panel holds the interview (the interviewer's tools, or the candidate's problem). */
+function InterviewButton() {
+  const open = useSettings((s) => s.layout.assistantOpen);
+  const owner = useLive((s) => s.role === "owner");
+  return (
+    <button
+      type="button"
+      aria-pressed={open}
+      onClick={() => useSettings.getState().updateLayout({ assistantOpen: !open })}
+      className={cn(
+        "flex h-[30px] items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors",
+        open ? "border-accent/60 bg-accent/15 text-fg" : "border-line-strong/80 text-fg-muted hover:text-fg",
+      )}
+    >
+      <ClipboardList className="size-3.5 text-accent" />
+      {owner ? "Interview" : "Problem"}
+      <InterviewClock className="text-xs" />
+    </button>
+  );
+}
+
 function AssistantButton() {
   const open = useSettings((s) => s.layout.assistantOpen);
+  const interview = useLive((s) => !!s.interview);
+  if (interview) return <InterviewButton />;
   return (
     <Tooltip content="AI Assistant" shortcut="Mod+Shift+A">
       <button
@@ -147,6 +173,8 @@ function RunControls() {
 
 export function TitleBar({ compact }: { compact: boolean }) {
   const project = useWorkspace((s) => s.project);
+  const restricted = useRestriction((s) => s.restricted);
+  const interviewActive = useLive((s) => !!s.interview);
   const projects = useWorkspace((s) => s.projects);
   // Re-render menus when layout toggles so their enabled state is fresh.
   useSettings((s) => s.layout);
@@ -226,7 +254,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
             <LiveButton />
           </span>
         )}
-        {project && !compact && (
+        {project && !compact && (!restricted || interviewActive) && (
           <span className="ml-1.5 mr-1">
             <AssistantButton />
           </span>

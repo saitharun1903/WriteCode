@@ -14,3 +14,4 @@ export * from "./project/entry-points.js";
 export * from "./project/reads-input.js";
 export * from "./product.js";
 export * from "./live/protocol.js";
+export * from "./live/interview.js";

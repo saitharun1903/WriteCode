@@ -1,6 +1,9 @@
 "use client";
 
 import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/shared";
+import { blockedForCandidate, isRestricted } from "@/features/interview/restrict";
+import { useInterviewUI } from "@/features/interview/ui";
+import { useLive } from "@/features/live/store";
 import { toast } from "@/components/ui/toast";
 import { useAssistant } from "@/features/assistant/store";
 import { useDebug } from "@/features/debug/store";
@@ -28,6 +31,7 @@ const hasProject = () => !!useWorkspace.getState().project;
 
 /** True when the open project's language has a working debugger. */
 export function canDebug(): boolean {
+  if (isRestricted()) return false;
   const project = useWorkspace.getState().project;
   const dbg = project ? getLanguage(project.language)?.debugger : undefined;
   return !!dbg && dbg.supportLevel !== "planned";
@@ -62,6 +66,7 @@ function activeFileRunnable(): boolean {
 
 /** True when the open project's language has a working visualizer. */
 export function canVisualize(): boolean {
+  if (isRestricted()) return false;
   const project = useWorkspace.getState().project;
   const viz = project ? getLanguage(project.language)?.visualizer : undefined;
   return !!viz && viz.supportLevel !== "planned";
@@ -275,6 +280,13 @@ export const COMMANDS: Command[] = [
     shortcut: "Mod+P",
     enabled: hasProject,
     run: () => useUI.getState().openPalette("files"),
+  },
+  {
+    id: "interview.start",
+    title: "Start a Coding Interview…",
+    category: "Project",
+    enabled: () => !useLive.getState().interview && !isRestricted(),
+    run: () => useInterviewUI.getState().openSetup("create"),
   },
   {
     id: "project.new",
@@ -539,6 +551,8 @@ export function getCommand(id: string): Command | undefined {
 }
 
 export function isEnabled(cmd: Command): boolean {
+  // Interview candidates have the editor and Run only.
+  if (blockedForCandidate(cmd.id)) return false;
   return cmd.enabled ? cmd.enabled() : true;
 }
 

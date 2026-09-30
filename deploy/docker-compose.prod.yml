@@ -65,6 +65,9 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       GEMINI_MODELS: ${GEMINI_MODELS:-}
       GEMINI_FAST_MODELS: ${GEMINI_FAST_MODELS:-}
+      # Optional: email invitations through Resend (the key stays on the server).
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]

@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Spinner } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/toast";
+import { API_URL } from "@/features/execution/api";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
 import { liveLink, useLive } from "./store";
+import { InterviewClock } from "@/features/interview/Clock";
 
 const colorOf = (p: Pick<LiveParticipant, "color">) => LIVE_COLORS[p.color % LIVE_COLORS.length]!;
 const initials = (name: string) =>
@@ -97,23 +99,66 @@ function inviteText(link: string, from: string, project: string, canEdit: boolea
 }
 
 /** Invite people: opens your own email app with the invitation written, or WhatsApp, or the phone's share sheet. */
+/** Whether this server can send email (asked once). */
+let emailStatus: Promise<boolean> | null = null;
+const serverEmail = () =>
+  (emailStatus ??= fetch(`${API_URL}/api/v1/live/email-status`)
+    .then((r) => (r.ok ? (r.json() as Promise<{ available: boolean }>) : { available: false }))
+    .then((r) => r.available)
+    .catch(() => false));
+
+/**
+ * Invite people: the owner's invitations are emailed by WriteCode when the
+ * server can send email; otherwise (or for guests) your own email app opens
+ * with the invitation written. WhatsApp and the phone's share sheet too.
+ */
 function Invite({ roomId }: { roomId: string }) {
   const [emails, setEmails] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [fallback, setFallback] = useState(false);
   const me = useLive((s) => s.me);
+  const owner = useLive((s) => s.role === "owner");
+  const interview = useLive((s) => s.interview);
   const defaultRole = useLive((s) => s.defaultRole);
   const project = useWorkspace((s) => s.project?.name ?? "project");
-  const text = inviteText(liveLink(roomId), me?.name ?? "Someone", project, defaultRole === "editor");
+  const text = interview
+    ? {
+        subject: `${me?.name ?? "Someone"} invited you to a coding interview on ${PRODUCT.name}`,
+        body: [
+          "Hi!",
+          `${me?.name ?? "Someone"} has invited you to a coding interview: "${interview.title}". You will have ${interview.durationMin} minutes; the clock starts when you open the link and agree to the rules.`,
+          liveLink(roomId),
+        ].join("\n\n"),
+      }
+    : inviteText(liveLink(roomId), me?.name ?? "Someone", project, defaultRole === "editor");
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const mailto = (list: string[]) =>
+    `mailto:${list.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent(text.subject)}&body=${encodeURIComponent(text.body)}`;
 
-  const sendEmail = () => {
+  const sendEmail = async () => {
     const list = emails.split(/[\s,;]+/).filter(Boolean);
     const bad = list.filter((e) => !EMAIL.test(e));
     if (!list.length) return setProblem("Type at least one email address.");
     if (bad.length) return setProblem(`Check ${bad.length === 1 ? "this address" : "these addresses"}: ${bad.join(", ")}`);
     setProblem(null);
-    // Your own email app sends it, from your address: nothing goes through our server.
-    window.location.href = `mailto:${list.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent(text.subject)}&body=${encodeURIComponent(text.body)}`;
+    setFallback(false);
+    if (!owner || !(await serverEmail())) {
+      // Your own email app sends it, from your address.
+      window.location.href = mailto(list);
+      return;
+    }
+    setSending(true);
+    try {
+      const { sent, failed } = await useLive.getState().emailInvites(list);
+      toast.success(`Invitation sent to ${sent} ${sent === 1 ? "person" : "people"}`, failed.length ? `Not sent to: ${failed.join(", ")}` : "They will get an email with the link.");
+      setEmails(failed.join(", "));
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+      setFallback(true);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -122,7 +167,7 @@ function Invite({ roomId }: { roomId: string }) {
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          sendEmail();
+          void sendEmail();
         }}
       >
         <Input
@@ -135,11 +180,23 @@ function Invite({ roomId }: { roomId: string }) {
           placeholder="Invite by email: friend@gmail.com, …"
           className="min-w-0 flex-1"
         />
-        <Button type="submit" variant="secondary" icon={<Mail className="size-3.5" />}>
-          Email
+        <Button type="submit" variant="secondary" disabled={sending} icon={sending ? <Spinner /> : <Mail className="size-3.5" />}>
+          {sending ? "Sending" : "Send"}
         </Button>
       </form>
-      {problem && <p className="text-xs text-danger">{problem}</p>}
+      {problem && (
+        <p className="text-xs text-danger">
+          {problem}
+          {fallback && (
+            <>
+              {" "}
+              <a className="font-medium underline" href={mailto(emails.split(/[\s,;]+/).filter(Boolean))}>
+                Send from my email app instead
+              </a>
+            </>
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-subtle">
         <span>or send it with</span>
         <a
@@ -160,6 +217,16 @@ function Invite({ roomId }: { roomId: string }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The session link with Copy, and invitations by email, WhatsApp or other apps. */
+export function InviteBox({ roomId }: { roomId: string }) {
+  return (
+    <div className="space-y-3">
+      <CopyLink roomId={roomId} />
+      <Invite roomId={roomId} />
     </div>
   );
 }
@@ -314,8 +381,7 @@ export function LivePanel() {
       ) : (
         <div className="space-y-4">
           {status === "reconnecting" && <p className="rounded-md bg-warning-soft px-2.5 py-1.5 text-xs text-warning">Connection lost. Reconnecting… your changes are kept and sent when you are back.</p>}
-          <CopyLink roomId={roomId!} />
-          <Invite roomId={roomId!} />
+          <InviteBox roomId={roomId!} />
           {owner && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-fg-muted">People who join with the link</span>
@@ -430,6 +496,11 @@ export function SessionEndedDialog() {
   );
 }
 
+function LiveClock() {
+  const interview = useLive((s) => !!s.interview);
+  return interview ? <InterviewClock className="text-xs" /> : null;
+}
+
 /** Slim bar under the title bar while in a session: role, following, connection. */
 export function LiveStrip() {
   const status = useLive((s) => s.status);
@@ -452,6 +523,7 @@ export function LiveStrip() {
           <Eye className="size-3.5" /> View only{owner ? ` · ${owner.name} is presenting` : ""}
         </span>
       )}
+      <LiveClock />
       {status === "waiting" && (
         <span className="flex items-center gap-1.5">
           <Spinner /> Waiting for the owner to share the project…

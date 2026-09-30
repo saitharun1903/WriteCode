@@ -240,7 +240,7 @@ test("inviting by email checks the addresses; WhatsApp gets the link", async ({ 
   await teacher.getByRole("button", { name: /Live session: 1 person/ }).click();
   const panel = teacher.getByRole("dialog", { name: "Live session" });
   await panel.getByRole("textbox", { name: "Invite by email" }).fill("friend@gmail.com, not-an-email");
-  await panel.getByRole("button", { name: "Email" }).click();
+  await panel.getByRole("button", { name: "Send" }).click();
   await expect(panel.getByText("Check this address: not-an-email")).toBeVisible();
   const whatsapp = await panel.getByRole("link", { name: "WhatsApp" }).getAttribute("href");
   expect(decodeURIComponent(whatsapp!.split("text=")[1]!)).toContain(link);

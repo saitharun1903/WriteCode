@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as awarenessProtocol from "y-protocols/awareness";
@@ -35,6 +35,13 @@ class MemoryStore implements LiveStore {
   }
   async removeRoom(client: string, id: string) {
     this.clients.get(client)?.delete(id);
+  }
+  history = new Map<string, [number, Uint8Array][]>();
+  async getHistory(id: string) {
+    return this.history.get(id) ?? null;
+  }
+  async putHistory(id: string, h: [number, Uint8Array][]) {
+    this.history.set(id, [...h]);
   }
 }
 
@@ -279,5 +286,104 @@ describe("live rooms", () => {
     await owner.conn.control({ type: "run", executionId: "0b8f6f1e-5d3c-4c9a-9f5e-1a2b3c4d5e6f", mode: "test", entry: "Main.java", tests: ["t1", "t2", "bad id!"] });
     expect(ravi.last("run")?.run).toMatchObject({ mode: "test", tests: ["t1", "t2"] });
     expect(ravi.last("run")?.run.interactive).toBeUndefined();
+  });
+
+  describe("interview mode", () => {
+    const SETUP = {
+      title: "Two sum",
+      statement: "Read n numbers and a target...",
+      durationMin: 30,
+      hiddenTests: [{ id: "h1", input: "4\n1 2 3 4\n7", expected: "2 3" }],
+    };
+
+    async function interview() {
+      const store = new MemoryStore();
+      const rooms = new LiveRooms(store);
+      const { id, ownerToken } = await rooms.create("c", SETUP);
+      const hr = await new Client().join(rooms, id, "Interviewer", KEY_A, ownerToken);
+      hr.doc.transact(() => {
+        const t = new Y.Text();
+        t.insert(0, "class Main {}\n");
+        hr.doc.getMap("files").set("Main.java", t);
+        hr.doc.getMap("meta").set("ready", true);
+      });
+      const cand = await new Client().join(rooms, id, "Asha", KEY_B);
+      return { store, rooms, id, ownerToken, hr, cand };
+    }
+
+    it("the candidate sees the problem but never the hidden tests, notes or activity", async () => {
+      const { hr, cand } = await interview();
+      expect(cand.last("welcome")?.interview).toMatchObject({ title: "Two sum", durationMin: 30, candidate: "Asha" });
+      expect(cand.last("welcome")?.interviewPrivate).toBeUndefined();
+      expect(JSON.stringify(cand.messages)).not.toContain("1 2 3 4");
+      expect(hr.last("welcome")?.interviewPrivate?.hiddenTests).toHaveLength(1);
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "joined", who: "Asha" });
+    });
+
+    it("the clock starts when the candidate agrees, and at the end the code locks", async () => {
+      const { hr, cand } = await interview();
+      expect(cand.last("welcome")?.interview?.startedAt).toBeUndefined();
+      await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+      const state = cand.last("interview")!.state;
+      expect(state.endsAt! - state.startedAt!).toBe(30 * 60_000);
+      await hr.conn.control({ type: "interview-extend", minutes: 5 });
+      expect(cand.last("interview")!.state.endsAt! - state.startedAt!).toBe(35 * 60_000);
+
+      await cand.conn.control({ type: "interview-end" });
+      expect(cand.last("role")?.role).toBe("viewer");
+      expect(cand.last("interview")?.state.endedAt).toBeDefined();
+      cand.doc.getMap<Y.Text>("files").get("Main.java")!.insert(0, "late ");
+      expect(hr.text("Main.java")).toBe("class Main {}\n");
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "ended", detail: "Asha finished" });
+    });
+
+    it("time running out locks the candidate by itself", async () => {
+      vi.useFakeTimers();
+      try {
+        const { cand } = await interview();
+        await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+        vi.advanceTimersByTime(30 * 60_000 + 100);
+        expect(cand.last("role")?.role).toBe("viewer");
+        expect(cand.last("interview")?.state.endedAt).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("tab switches, pastes and blocked tools are reported to the interviewer only", async () => {
+      const { hr, cand } = await interview();
+      await cand.conn.control({ type: "interview-event", event: { kind: "tab-hidden" } });
+      await cand.conn.control({ type: "interview-event", event: { kind: "tab-visible" } });
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "tab-visible", who: "Asha" });
+      expect(hr.last("interview-event")?.event.awayMs).toBeGreaterThanOrEqual(0);
+      await cand.conn.control({ type: "interview-event", event: { kind: "paste", chars: 250, detail: "for (int i..." } });
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "paste", chars: 250 });
+      await cand.conn.control({ type: "run", executionId: "0b8f6f1e-5d3c-4c9a-9f5e-1a2b3c4d5e6f", mode: "debug", entry: "Main.java" });
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "blocked", detail: "debugger" });
+      expect(hr.last("run")).toBeUndefined();
+      // A candidate cannot write in the log as someone else, or use interviewer-only kinds.
+      await cand.conn.control({ type: "interview-event", event: { kind: "run-result", detail: "SUCCESS" } });
+      expect(hr.last("interview-event")?.event.kind).toBe("blocked");
+      expect(cand.messages.some((m) => m.type === "interview-event")).toBe(false);
+    });
+
+    it("notes, rating and hidden tests are the interviewer's; the typing history can be replayed", async () => {
+      const { hr, cand, rooms, store, id, ownerToken } = await interview();
+      await cand.conn.control({ type: "interview-notes", notes: "hacked", rating: 5 });
+      await hr.conn.control({ type: "interview-notes", notes: "Clear thinking", rating: 4 });
+      cand.doc.getMap<Y.Text>("files").get("Main.java")!.insert(0, "// hello\n");
+      await hr.conn.control({ type: "interview-history" });
+      const updates = hr.last("interview-history")!.updates;
+      expect(updates.length).toBeGreaterThanOrEqual(2);
+      const replay = new Y.Doc();
+      for (const [, u] of updates) Y.applyUpdate(replay, Buffer.from(u, "base64"));
+      expect(replay.getMap<Y.Text>("files").get("Main.java")!.toString()).toBe("// hello\nclass Main {}\n");
+      // Survives a restart.
+      await rooms.saveAll();
+      const again = await new Client().join(new LiveRooms(store), id, "Interviewer", KEY_A, ownerToken);
+      expect(again.last("welcome")?.interviewPrivate).toMatchObject({ notes: "Clear thinking", rating: 4 });
+      await again.conn.control({ type: "interview-history" });
+      expect(again.last("interview-history")!.updates.length).toBe(updates.length);
+    });
   });
 });

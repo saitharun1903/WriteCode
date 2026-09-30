@@ -18,6 +18,8 @@
  * - `testOrder` (Y.Array<string>): the order tests are listed in
  */
 
+import type { InterviewEvent, InterviewPrivate, InterviewPublic, InterviewSetup } from "./interview.js";
+
 export type LiveRole = "owner" | "editor" | "viewer";
 /** What people who open the link can do. */
 export type LiveJoinRole = Exclude<LiveRole, "owner">;
@@ -83,15 +85,42 @@ export type LiveClientMessage =
   | { type: "end" }
   | { type: "run"; executionId: string; mode: LiveRunNotice["mode"]; entry: string; interactive?: boolean; tests?: string[] }
   /** Typed input for a run someone in the session started. */
-  | { type: "input"; executionId: string; data: string; eof?: boolean };
+  | { type: "input"; executionId: string; data: string; eof?: boolean }
+  // ---- Interview mode (see ./interview.ts).
+  /** Interviewer: the problem, duration and hidden tests (hidden tests may change during the interview). */
+  | { type: "interview-setup"; setup: InterviewSetup }
+  /** Interviewer: add minutes to the clock. */
+  | { type: "interview-extend"; minutes: number }
+  /** Interviewer ends the interview, or the candidate finishes early. */
+  | { type: "interview-end" }
+  | { type: "interview-notes"; notes: string; rating: number }
+  /** Candidate: what happened in their browser (tab switch, paste…). Interviewer: a run's outcome. */
+  | { type: "interview-event"; event: Pick<InterviewEvent, "kind" | "detail" | "chars"> }
+  /** Interviewer: the typing history, for replay. */
+  | { type: "interview-history" };
 
 export type LiveServerMessage =
-  | { type: "welcome"; you: LiveParticipant; defaultRole: LiveJoinRole; participants: LiveParticipant[]; run?: LiveRunNotice }
+  | {
+      type: "welcome";
+      you: LiveParticipant;
+      defaultRole: LiveJoinRole;
+      participants: LiveParticipant[];
+      run?: LiveRunNotice;
+      /** Interview sessions: the problem and clock, for everyone. */
+      interview?: InterviewPublic;
+      /** Interview sessions, owner only: hidden tests, notes, the activity log. */
+      interviewPrivate?: InterviewPrivate;
+    }
   | { type: "participants"; participants: LiveParticipant[] }
   | { type: "role"; role: LiveRole }
   | { type: "default-role"; role: LiveJoinRole }
   | { type: "run"; run: LiveRunNotice }
   | { type: "input-error"; executionId: string; message: string }
+  | { type: "interview"; state: InterviewPublic }
+  | { type: "interview-private"; state: InterviewPrivate }
+  | { type: "interview-event"; event: InterviewEvent }
+  /** Every document update with its time (ms), base64, from the start of the session. */
+  | { type: "interview-history"; updates: [number, string][] }
   | { type: "ended" }
   | { type: "removed" }
   | { type: "error"; code: "not-found" | "full" | "removed" | "invalid" | "too-large" | "rate"; message: string };

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Monaco } from "@monaco-editor/react";
+import { isRestricted } from "@/features/interview/restrict";
 import type { editor, languages } from "monaco-editor";
 import { askAssistant } from "@/features/commands/registry";
 
@@ -21,7 +22,7 @@ export function installAiQuickFix(monaco: Monaco) {
     monaco.languages.registerCodeActionProvider(language, {
       provideCodeActions(model: editor.ITextModel, _range: unknown, context: languages.CodeActionContext) {
         const marker = context.markers.find((m: editor.IMarkerData) => m.severity >= monaco.MarkerSeverity.Warning);
-        if (!marker) return { actions: [], dispose() {} };
+        if (!marker || isRestricted()) return { actions: [], dispose() {} };
         const file = decodeURIComponent(model.uri.path.split("/").slice(2).join("/"));
         return {
           actions: [

@@ -31,7 +31,12 @@ import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
 import { JoinDialog, LivePanel, LiveStrip, SessionEndedDialog } from "@/features/live/LiveUI";
-import { promptJoin } from "@/features/live/store";
+import { promptJoin, useLive } from "@/features/live/store";
+import { InterviewPanel } from "@/features/interview/InterviewPanel";
+import { InterviewSetupDialog } from "@/features/interview/InterviewSetupDialog";
+import { ReplayDialog } from "@/features/interview/ReplayDialog";
+import { CandidateGate } from "@/features/interview/CandidateGate";
+import "@/features/interview/interviewer";
 import { getLanguage, isLiveRoomId } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 
@@ -56,6 +61,7 @@ const separatorClass =
 /** Desktop: resizable, collapsible panels whose sizes persist per browser. */
 function DesktopWorkbench() {
   const layout = useSettings((s) => s.layout);
+  const interview = useLive((s) => !!s.interview);
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
@@ -157,7 +163,7 @@ function DesktopWorkbench() {
             if (open !== useSettings.getState().layout.assistantOpen) updateLayout({ assistantOpen: open });
           }}
         >
-          {layout.assistantOpen && <AssistantPanel onClose={() => updateLayout({ assistantOpen: false })} />}
+          {layout.assistantOpen && (interview ? <InterviewPanel onClose={() => updateLayout({ assistantOpen: false })} /> : <AssistantPanel onClose={() => updateLayout({ assistantOpen: false })} />)}
         </Panel>
       </Group>
     </div>
@@ -178,6 +184,7 @@ const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: Sid
 /** Tablet/phone: editor fills the screen; sidebar and panel open as drawers. */
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
+  const interview = useLive((s) => !!s.interview);
   const setDrawer = useUI((s) => s.setDrawer);
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideView = useSettings((s) => s.layout.sideView);
@@ -232,7 +239,7 @@ function CompactWorkbench() {
       )}
       {drawer === "assistant" && (
         <div className="absolute inset-x-0 bottom-[52px] top-0 z-30 border-t border-line shadow-float animate-slide-up">
-          <AssistantPanel onClose={() => setDrawer("none")} />
+          {interview ? <InterviewPanel onClose={() => setDrawer("none")} /> : <AssistantPanel onClose={() => setDrawer("none")} />}
         </div>
       )}
     </div>
@@ -354,6 +361,9 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
       <EntryPointDialog />
       <LivePanel />
       <JoinDialog />
+      <InterviewSetupDialog />
+      <ReplayDialog />
+      <CandidateGate />
       <SessionEndedDialog />
       <Toaster />
     </TooltipProvider>

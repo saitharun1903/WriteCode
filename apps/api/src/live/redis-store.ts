@@ -5,6 +5,7 @@ import type { LiveStore, RoomMeta } from "./rooms.js";
 const TTL = LIVE_LIMITS.idleTtlSeconds;
 const metaKey = (id: string) => `live:${id}:meta`;
 const docKey = (id: string) => `live:${id}:doc`;
+const historyKey = (id: string) => `live:${id}:history`;
 const clientKey = (client: string) => `live:client:${client}`;
 
 /** Sessions in Redis. Every save renews the expiry, so a session lives until a day after its last use. */
@@ -43,6 +44,17 @@ export class RedisLiveStore implements LiveStore {
 
   async addRoom(client: string, id: string): Promise<void> {
     await this.redis.multi().zadd(clientKey(client), Date.now(), id).expire(clientKey(client), TTL).exec();
+  }
+
+  async getHistory(id: string): Promise<[number, Uint8Array][] | null> {
+    const raw = await this.redis.get(historyKey(id));
+    if (!raw) return null;
+    return (JSON.parse(raw) as [number, string][]).map(([t, u]) => [t, new Uint8Array(Buffer.from(u, "base64"))]);
+  }
+
+  async putHistory(id: string, history: [number, Uint8Array][]): Promise<void> {
+    const json = JSON.stringify(history.map(([t, u]) => [t, Buffer.from(u).toString("base64")]));
+    await this.redis.set(historyKey(id), json, "EX", TTL);
   }
 
   async removeRoom(client: string, id: string): Promise<void> {

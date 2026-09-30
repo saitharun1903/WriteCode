@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Get, HttpException, Inject, Post, Req, Res, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, Inject, Post, Req, Res, ServiceUnavailableException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import type { Redis } from "ioredis";
-import { ASSISTANT_LIMITS, redisKeys, validateAssistantRequest, type AssistantEvent } from "@cw/shared";
+import { ASSISTANT_LIMITS, getLanguage, redisKeys, validateAssistantRequest, type AssistantEvent, type ComplexityEstimate } from "@cw/shared";
 import { clientHash } from "../common/request-context.js";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
@@ -90,6 +90,57 @@ export class AssistantController {
         }) + "\n",
       );
       res.end();
+    }
+  }
+
+  /**
+   * Estimates the time and space complexity of a program, for an interviewer.
+   * Always an estimate: no tool can determine it exactly for every program.
+   */
+  @Post("assistant/complexity")
+  @HttpCode(200)
+  async complexity(@Body() body: unknown, @Req() req: Request): Promise<ComplexityEstimate> {
+    if (!config.assistant.apiKey || config.assistant.models.length === 0) throw new ServiceUnavailableException("The assistant isn't available on this server.");
+    const b = (body && typeof body === "object" ? body : {}) as { language?: unknown; files?: unknown };
+    const language = typeof b.language === "string" ? getLanguage(b.language) : undefined;
+    const files = Array.isArray(b.files)
+      ? b.files.filter((f): f is { path: string; content: string } => !!f && typeof f.path === "string" && typeof f.content === "string").slice(0, 20)
+      : [];
+    const size = files.reduce((n, f) => n + f.content.length + f.path.length, 0);
+    if (!language || !files.length || size > 200_000) throw new BadRequestException("Send the language and the program's files (up to 200 KB).");
+    await this.checkLimits(clientHash(req.ip));
+
+    const code = files.map((f) => `--- ${f.path.slice(0, 200)}\n${f.content}`).join("\n\n");
+    const systemInstruction = {
+      parts: [
+        {
+          text: [
+            "You analyse the algorithmic complexity of programs for a technical interviewer.",
+            'Reply with ONLY one JSON object and nothing else: {"time": "O(...)", "space": "O(...)", "explanation": "..."}.',
+            "Use n for the size of the input (name other variables, e.g. m, when there are several).",
+            "Give the worst case. Space means extra memory beyond the input.",
+            "The explanation is 2 to 4 plain sentences naming the loops, calls or data structures that decide it, with line numbers when clear. No LaTeX, no markdown.",
+          ].join(" "),
+        },
+      ],
+    };
+    const contents = [{ role: "user" as const, parts: [{ text: `Language: ${language.name}\n\n${code}` }] }];
+    let text = "";
+    const abort = new AbortController();
+    req.on("close", () => abort.abort());
+    try {
+      await this.router.answer({ question: "review the complexity", effort: "medium", systemInstruction, contents, signal: abort.signal, onChunk: (c) => c.kind === "text" && (text += c.text) });
+    } catch (e) {
+      const err = e instanceof AssistantError ? e : new AssistantError("The assistant is temporarily unavailable. Please try again.", String(e));
+      throw new HttpException(err.userMessage, 502);
+    }
+    const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+    try {
+      const r = JSON.parse(json) as Partial<ComplexityEstimate>;
+      if (typeof r.time !== "string" || typeof r.space !== "string") throw new Error("shape");
+      return { time: r.time.slice(0, 60), space: r.space.slice(0, 60), explanation: String(r.explanation ?? "").slice(0, 1200) };
+    } catch {
+      throw new HttpException("The assistant's answer could not be read. Try again.", 502);
     }
   }
 

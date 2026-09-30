@@ -1,7 +1,21 @@
 "use client";
 
 import { create } from "zustand";
-import type { LiveJoinRole, LiveParticipant, LivePresence, LiveRole, LiveRunNotice, LiveServerMessage, Project } from "@cw/shared";
+import type {
+  InterviewEvent,
+  InterviewPrivate,
+  InterviewPublic,
+  InterviewSetup,
+  LiveClientMessage,
+  LiveJoinRole,
+  LiveParticipant,
+  LivePresence,
+  LiveRole,
+  LiveRunNotice,
+  LiveServerMessage,
+  Project,
+} from "@cw/shared";
+import { useRestriction } from "@/features/interview/restrict";
 import { useSettings } from "@/features/settings/store";
 import { useTests } from "@/features/tests/store";
 import { toast } from "@/components/ui/toast";
@@ -52,6 +66,19 @@ interface LiveState {
   dismiss: () => void;
   /** Reconnects as owner to the session of a project this browser shared earlier. */
   resumeOwned: (projectId: string) => void;
+
+  /** Interview sessions: the problem and clock (everyone). */
+  interview: InterviewPublic | null;
+  /** Interview sessions, interviewer only: hidden tests, notes, rating, activity. */
+  interviewPrivate: InterviewPrivate | null;
+  /** Starts an interview on the open project (the interviewer owns it). */
+  startInterview: (name: string, setup: InterviewSetup) => Promise<boolean>;
+  /** Sends an interview message (setup, extend, end, notes, events). */
+  sendInterview: (message: Extract<LiveClientMessage, { type: `interview-${string}` }>) => boolean;
+  /** Interviewer: the typing history for replay (document updates with their times). */
+  requestHistory: () => Promise<[number, string][]>;
+  /** Owner: emails the link through the server. */
+  emailInvites: (emails: string[]) => Promise<{ sent: number; failed: string[] }>;
 }
 
 const NAME_KEY = "cw:live:name";
@@ -92,6 +119,7 @@ export function liveLink(roomId: string): string {
 interface Session {
   client: LiveClient;
   roomId: string;
+  ownerToken?: string;
   projectId: string | null;
   owner: boolean;
   binding: Binding | null;
@@ -101,6 +129,16 @@ interface Session {
 }
 
 let session: Session | null = null;
+/** Waiting for the interview history the interviewer asked for. */
+let historyWaiters: ((updates: [number, string][]) => void)[] = [];
+
+const ALERT: Partial<Record<InterviewEvent["kind"], (e: InterviewEvent) => string>> = {
+  "tab-hidden": (e) => `${e.who ?? "The candidate"} left the tab`,
+  blur: (e) => `${e.who ?? "The candidate"} switched to another window`,
+  "fullscreen-exit": (e) => `${e.who ?? "The candidate"} left full screen`,
+  paste: (e) => `${e.who ?? "The candidate"} pasted ${e.chars ?? 0} characters`,
+  blocked: (e) => `${e.who ?? "The candidate"} tried to use the ${e.detail ?? "a blocked tool"}`,
+};
 
 export const useLive = create<LiveState>((set, get) => {
   const teardown = () => {
@@ -111,6 +149,8 @@ export const useLive = create<LiveState>((set, get) => {
     s.stopPresence?.();
     s.client.destroy();
     useWorkspace.getState().setReadOnly(false);
+    useRestriction.setState({ restricted: false });
+    set({ interview: null, interviewPrivate: null });
   };
 
   const applyRole = (role: LiveRole) => {
@@ -199,7 +239,11 @@ export const useLive = create<LiveState>((set, get) => {
   const onMessage = (msg: LiveServerMessage) => {
     switch (msg.type) {
       case "welcome":
-        set({ me: msg.you, role: msg.you.role, participants: msg.participants, defaultRole: msg.defaultRole, error: null });
+        set({ me: msg.you, role: msg.you.role, participants: msg.participants, defaultRole: msg.defaultRole, error: null, interview: msg.interview ?? null, interviewPrivate: msg.interviewPrivate ?? null });
+        // In an interview, everyone but the interviewer is a candidate: editor and Run only.
+        useRestriction.setState({ restricted: !!msg.interview && msg.you.role !== "owner" });
+        // The interview panel (tools, or the problem) opens on the right.
+        if (msg.interview) useSettings.getState().updateLayout({ assistantOpen: true });
         applyRole(msg.you.role);
         if (msg.run && session && !session.owner && session.synced) watchRun(msg.run);
         return;
@@ -228,6 +272,25 @@ export const useLive = create<LiveState>((set, get) => {
       case "input-error":
         useExecution.setState((s) => ({ run: s.run && s.run.id === msg.executionId ? { ...s.run, inputError: msg.message } : s.run }));
         return;
+      case "interview":
+        set({ interview: msg.state });
+        return;
+      case "interview-private":
+        set({ interviewPrivate: msg.state });
+        return;
+      case "interview-event": {
+        const priv = get().interviewPrivate;
+        if (priv) set({ interviewPrivate: { ...priv, events: [...priv.events, msg.event] } });
+        const alert = ALERT[msg.event.kind];
+        if (alert) toast.info(alert(msg.event), msg.event.kind === "paste" && msg.event.detail ? msg.event.detail.slice(0, 120) : undefined);
+        return;
+      }
+      case "interview-history": {
+        const waiters = historyWaiters;
+        historyWaiters = [];
+        for (const w of waiters) w(msg.updates);
+        return;
+      }
       case "ended":
         set({ status: "ended" });
         return;
@@ -246,6 +309,7 @@ export const useLive = create<LiveState>((set, get) => {
     set({ roomId, owner: !!ownerToken, status: "connecting", error: null, participants: [], presence: {}, following: null, me: null, role: null, name });
     const s: Session = {
       roomId,
+      ownerToken,
       projectId,
       owner: !!ownerToken,
       binding: null,
@@ -286,6 +350,33 @@ export const useLive = create<LiveState>((set, get) => {
     if (readOnly) useWorkspace.getState().setReadOnly(false);
   };
 
+  /** Creates a session (or an interview) for the open project and connects as its owner. */
+  const createRoom = async (name: string, body: { interview?: InterviewSetup }): Promise<boolean> => {
+    const ws = useWorkspace.getState();
+    const project = ws.project;
+    if (!project || ws.sharedId) return false;
+    const clean = name.trim().slice(0, 40) || "Owner";
+    write(NAME_KEY, clean);
+    set({ status: "starting", error: null, name: clean });
+    let created: { id: string; ownerToken: string };
+    try {
+      const res = await fetch(`${API_URL}/api/v1/live`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(data.message ?? `Request failed (${res.status})`);
+      }
+      created = (await res.json()) as { id: string; ownerToken: string };
+    } catch (e) {
+      set({ status: "idle", error: e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Could not reach the server. Check your connection and try again." });
+      return false;
+    }
+    const owned = read<Owned>(OWNED_KEY, {});
+    owned[project.id] = { roomId: created.id, ownerToken: created.ownerToken };
+    write(OWNED_KEY, owned);
+    connect(created.id, clean, project.id, created.ownerToken);
+    return true;
+  };
+
   const forgetOwned = (projectId: string | null) => {
     if (!projectId) return;
     const owned = read<Owned>(OWNED_KEY, {});
@@ -310,31 +401,40 @@ export const useLive = create<LiveState>((set, get) => {
 
     setPanelOpen: (panelOpen) => set({ panelOpen }),
 
-    async start(name) {
-      const ws = useWorkspace.getState();
-      const project = ws.project;
-      if (!project || ws.sharedId) return;
-      const clean = name.trim().slice(0, 40) || "Owner";
-      write(NAME_KEY, clean);
-      set({ status: "starting", error: null, name: clean });
-      let created: { id: string; ownerToken: string };
-      try {
-        const res = await fetch(`${API_URL}/api/v1/live`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { message?: string };
-          throw new Error(body.message ?? `Request failed (${res.status})`);
-        }
-        created = (await res.json()) as { id: string; ownerToken: string };
-      } catch (e) {
-        set({ status: "idle", error: e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Could not reach the server. Check your connection and try again." });
-        return;
-      }
-      const owned = read<Owned>(OWNED_KEY, {});
-      owned[project.id] = { roomId: created.id, ownerToken: created.ownerToken };
-      write(OWNED_KEY, owned);
-      connect(created.id, clean, project.id, created.ownerToken);
+    start: async (name) => {
+      await createRoom(name, {});
     },
 
+    startInterview: (name, setup) => createRoom(name, { interview: setup }),
+
+    sendInterview: (message) => session?.client.send(message) ?? false,
+
+    requestHistory() {
+      if (!session?.owner) return Promise.resolve([]);
+      return new Promise((resolve) => {
+        historyWaiters.push(resolve);
+        if (!session!.client.send({ type: "interview-history" })) {
+          historyWaiters = historyWaiters.filter((w) => w !== resolve);
+          resolve([]);
+        }
+      });
+    },
+
+    async emailInvites(emails) {
+      if (!session?.ownerToken) throw new Error("Only the person who started the session can email invitations.");
+      const res = await fetch(`${API_URL}/api/v1/live/invite`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ room: session.roomId, ownerToken: session.ownerToken, emails, from: get().name }),
+      }).catch(() => null);
+      if (!res) throw new Error("Could not reach the server. Check your connection and try again.");
+      const body = (await res.json().catch(() => ({}))) as { message?: string | string[]; sent?: number; failed?: string[] };
+      if (!res.ok) throw new Error(Array.isArray(body.message) ? body.message.join(", ") : (body.message ?? `Request failed (${res.status})`));
+      return { sent: body.sent ?? 0, failed: body.failed ?? [] };
+    },
+
+    interview: null,
+    interviewPrivate: null,
     join(roomId, name) {
       const clean = name.trim().slice(0, 40) || "Guest";
       write(NAME_KEY, clean);

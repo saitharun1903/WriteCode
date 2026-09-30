@@ -52,6 +52,15 @@ export const config = {
   },
   /** Live sessions one client may have going at once (development machines run many test sessions). */
   liveMaxRoomsPerClient: int("LIVE_MAX_ROOMS_PER_CLIENT", production ? LIVE_LIMITS.maxRoomsPerClient : 100),
+  /**
+   * Email (Resend) for invitations. Optional: without a key, invitations open
+   * the user's own email app instead. The key never leaves the server.
+   */
+  email: {
+    apiKey: process.env.RESEND_API_KEY?.trim() ?? "",
+    /** Must be an address on a domain verified in Resend. */
+    from: process.env.EMAIL_FROM?.trim() || "WriteCode <invites@writecode.in>",
+  },
   /** WebSocket subscriptions allowed per connection. */
   maxSubscriptionsPerSocket: 8,
   /**

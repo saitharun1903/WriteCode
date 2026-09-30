@@ -13,6 +13,13 @@ import {
   TEST_LIMITS,
   utf8ByteLength,
   isLiveRoomId,
+  CANDIDATE_EVENTS,
+  INTERVIEW_LIMITS,
+  cleanInterviewSetup,
+  type InterviewEvent,
+  type InterviewPrivate,
+  type InterviewPublic,
+  type InterviewSetup,
   type LiveClientMessage,
   type LiveJoinRole,
   type LiveParticipant,
@@ -33,6 +40,8 @@ export interface RoomMeta {
   /** Browser keys of people the owner removed; they cannot rejoin. */
   removed: string[];
   ended?: boolean;
+  /** Interview sessions: the problem and clock (public), and what only the interviewer sees. */
+  interview?: { public: InterviewPublic; private: InterviewPrivate };
 }
 
 export interface LiveStore {
@@ -45,6 +54,9 @@ export interface LiveStore {
   openRooms(client: string): Promise<number>;
   addRoom(client: string, id: string): Promise<void>;
   removeRoom(client: string, id: string): Promise<void>;
+  /** Interview typing history: each document update with its time. */
+  getHistory(id: string): Promise<[number, Uint8Array][] | null>;
+  putHistory(id: string, history: [number, Uint8Array][]): Promise<void>;
 }
 
 /** One WebSocket, as the rooms see it. */
@@ -73,6 +85,8 @@ interface Member {
   clientKey: string;
   /** Presence entries this connection publishes; only it may change or remove them. */
   awarenessIds: Set<number>;
+  /** Interview: when this candidate left the tab / window, to report how long they were away. */
+  awaySince?: { tab?: number; window?: number };
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest();
@@ -96,6 +110,11 @@ class Room {
   private approxBytes = 0;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   unloadTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Interview: every document update with its time, for replay. */
+  history: [number, Uint8Array][] = [];
+  private historyBytes = 0;
+  private historyDirty = false;
+  private clockTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     public meta: RoomMeta,
@@ -111,6 +130,11 @@ class Room {
       this.broadcast(encoding.toUint8Array(encoder), origin as Member | undefined);
       this.approxBytes += update.length;
       if (this.approxBytes > LIVE_LIMITS.maxDocBytes) this.checkSize();
+      if (this.meta.interview && origin !== "storage" && this.historyBytes + update.length <= INTERVIEW_LIMITS.maxHistoryBytes) {
+        this.history.push([Date.now(), update]);
+        this.historyBytes += update.length;
+        this.historyDirty = true;
+      }
       this.scheduleSave();
     });
     this.awareness.on("update", ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
@@ -127,6 +151,85 @@ class Room {
   load(state: Uint8Array) {
     Y.applyUpdate(this.doc, state, "storage");
     this.approxBytes = state.length;
+  }
+
+  loadHistory(history: [number, Uint8Array][]) {
+    this.history = history;
+    this.historyBytes = history.reduce((n, [, u]) => n + u.length, 0);
+  }
+
+  // ---- Interview.
+
+  get owners(): Member[] {
+    return [...this.members.values()].filter((m) => m.role === "owner");
+  }
+
+  /** Sends the interviewer-only state to the interviewer's connections. */
+  sendPrivate() {
+    const iv = this.meta.interview;
+    if (!iv) return;
+    for (const m of this.owners) m.peer.send(JSON.stringify({ type: "interview-private", state: iv.private } satisfies LiveServerMessage));
+  }
+
+  sendPublic() {
+    if (this.meta.interview) this.sendAll({ type: "interview", state: this.meta.interview.public });
+  }
+
+  /** Adds an entry to the activity log and shows it to the interviewer as it happens. */
+  log(event: Omit<InterviewEvent, "t">) {
+    const iv = this.meta.interview;
+    if (!iv) return;
+    const entry: InterviewEvent = { t: Date.now(), ...event };
+    iv.private.events.push(entry);
+    if (iv.private.events.length > INTERVIEW_LIMITS.maxEvents) iv.private.events.splice(0, iv.private.events.length - INTERVIEW_LIMITS.maxEvents);
+    for (const m of this.owners) m.peer.send(JSON.stringify({ type: "interview-event", event: entry } satisfies LiveServerMessage));
+    this.scheduleSave();
+  }
+
+  /** Starts the clock (the candidate agreed to the rules). */
+  startClock() {
+    const pub = this.meta.interview?.public;
+    if (!pub || pub.startedAt) return;
+    pub.startedAt = Date.now();
+    pub.endsAt = pub.startedAt + pub.durationMin * 60_000;
+    this.log({ kind: "started", detail: `${pub.durationMin} minutes` });
+    this.scheduleClock();
+    this.sendPublic();
+  }
+
+  /** Ends the interview when its time is up (also after a server restart). */
+  scheduleClock() {
+    if (this.clockTimer) clearTimeout(this.clockTimer);
+    this.clockTimer = null;
+    const pub = this.meta.interview?.public;
+    if (!pub?.endsAt || pub.endedAt) return;
+    const wait = pub.endsAt - Date.now();
+    if (wait <= 0) return this.endInterview("Time is up");
+    // Long timers are capped by Node; check again later if needed.
+    this.clockTimer = setTimeout(() => this.scheduleClock(), Math.min(wait + 50, 2 ** 30));
+  }
+
+  /** The interview is over: candidates keep watching but can no longer change the code. */
+  endInterview(reason: string) {
+    const pub = this.meta.interview?.public;
+    if (!pub || pub.endedAt) return;
+    pub.endedAt = Date.now();
+    if (this.clockTimer) clearTimeout(this.clockTimer);
+    this.clockTimer = null;
+    this.meta.defaultRole = "viewer";
+    for (const key of Object.keys(this.meta.roles)) this.meta.roles[key] = "viewer";
+    for (const m of this.members.values()) {
+      if (m.role === "owner") continue;
+      this.meta.roles[m.clientKey] = "viewer";
+      if (m.role !== "viewer") {
+        m.role = "viewer";
+        m.peer.send(JSON.stringify({ type: "role", role: "viewer" } satisfies LiveServerMessage));
+      }
+    }
+    this.log({ kind: "ended", detail: reason });
+    this.sendPublic();
+    this.sendAll({ type: "participants", participants: this.participants() });
+    this.scheduleSave();
   }
 
   private checkSize() {
@@ -159,6 +262,10 @@ class Room {
     try {
       await this.store.putDoc(this.meta.id, Y.encodeStateAsUpdate(this.doc));
       await this.store.putMeta(this.meta);
+      if (this.historyDirty) {
+        this.historyDirty = false;
+        await this.store.putHistory(this.meta.id, this.history);
+      }
       // Still in use: keeps counting toward its owner's limit of open sessions.
       await this.store.addRoom(this.meta.client, this.meta.id);
     } catch (e) {
@@ -168,6 +275,7 @@ class Room {
 
   destroy() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
+    if (this.clockTimer) clearTimeout(this.clockTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.awareness.destroy();
     this.doc.destroy();
@@ -193,13 +301,19 @@ export class LiveRooms {
   ) {}
 
   /** Starts a session. The owner token is returned once and only its hash is kept. */
-  async create(client: string): Promise<{ id: string; ownerToken: string }> {
+  async create(client: string, interview?: InterviewSetup | null): Promise<{ id: string; ownerToken: string }> {
     if ((await this.store.openRooms(client)) >= this.maxRoomsPerClient) {
       throw new LiveError("rate", `You can have ${this.maxRoomsPerClient} live sessions going at once. End one to start another.`);
     }
     const id = randomBytes(18).toString("base64url");
     const ownerToken = randomBytes(24).toString("base64url");
     const meta: RoomMeta = { id, ownerTokenHash: sha256(ownerToken).toString("hex"), client, createdAt: Date.now(), defaultRole: "editor", roles: {}, removed: [] };
+    if (interview) {
+      meta.interview = {
+        public: { title: interview.title, statement: interview.statement, durationMin: interview.durationMin },
+        private: { hiddenTests: interview.hiddenTests, notes: "", rating: 0, events: [] },
+      };
+    }
     await this.store.putMeta(meta);
     await this.store.addRoom(client, id);
     return { id, ownerToken };
@@ -216,6 +330,10 @@ export class LiveRooms {
         const room = new Room(meta, this.store, this.log);
         const state = await this.store.getDoc(id);
         if (state) room.load(state);
+        if (meta.interview) {
+          room.loadHistory((await this.store.getHistory(id)) ?? []);
+          room.scheduleClock();
+        }
         this.rooms.set(id, room);
         return room;
       })().finally(() => this.loading.delete(id));
@@ -256,7 +374,23 @@ export class LiveRooms {
     room.members.set(member.id, member);
 
     const send = (m: LiveServerMessage) => peer.send(JSON.stringify(m));
-    send({ type: "welcome", you: { id: member.id, name: member.name, role: member.role, color }, defaultRole: room.meta.defaultRole, participants: room.participants(), run: room.lastRun });
+    const iv = room.meta.interview;
+    const firstCandidate = !!iv && !owner && !iv.public.candidate;
+    if (firstCandidate) iv!.public.candidate = member.name;
+    send({
+      type: "welcome",
+      you: { id: member.id, name: member.name, role: member.role, color },
+      defaultRole: room.meta.defaultRole,
+      participants: room.participants(),
+      // In an interview the candidate does not get the interviewer's runs (they may use hidden tests).
+      run: iv && !owner ? undefined : room.lastRun,
+      ...(iv ? { interview: iv.public } : {}),
+      ...(iv && owner ? { interviewPrivate: iv.private } : {}),
+    });
+    if (iv && !owner) {
+      if (firstCandidate) room.sendPublic();
+      room.log({ kind: "joined", who: member.name });
+    }
     room.sendAll({ type: "participants", participants: room.participants() });
     // The document: our state vector (the client answers with what we lack) and everything we have.
     const step1 = encoding.createEncoder();
@@ -280,6 +414,7 @@ export class LiveRooms {
   /** Called when a connection closes. */
   leave(room: Room, member: Member) {
     if (!room.members.delete(member.id)) return;
+    if (room.meta.interview && member.role !== "owner") room.log({ kind: "left", who: member.name });
     if (member.awarenessIds.size) awarenessProtocol.removeAwarenessStates(room.awareness, [...member.awarenessIds], null);
     room.sendAll({ type: "participants", participants: room.participants() });
     if (room.members.size === 0 && !room.meta.ended) {
@@ -304,6 +439,14 @@ export class LiveRooms {
     await this.store.putMeta(room.meta);
     await this.store.deleteDoc(room.meta.id);
     await this.store.removeRoom(room.meta.client, room.meta.id);
+  }
+
+  /** The session's details when `token` is its owner token (for owner-only HTTP requests), else null. */
+  async verifyOwner(roomId: unknown, token: unknown): Promise<RoomMeta | null> {
+    if (!isLiveRoomId(roomId) || typeof token !== 'string' || token.length === 0 || token.length > 64) return null;
+    const meta = this.rooms.get(roomId)?.meta ?? (await this.store.getMeta(roomId));
+    if (!meta || meta.ended) return null;
+    return timingSafeEqual(sha256(token), Buffer.from(meta.ownerTokenHash, 'hex')) ? meta : null;
   }
 
   /** Saves every open session (on shutdown). */
@@ -396,6 +539,11 @@ export class LiveConnection {
         return;
       case "run": {
         if (me.role === "viewer" || !EXECUTION_ID.test(String(msg.executionId)) || !RUN_MODES.has(msg.mode)) return;
+        if (room.meta.interview && !owner) {
+          // Candidates have the compiler and Run only.
+          if (msg.mode === "debug" || msg.mode === "visualize") return void room.log({ kind: "blocked", who: me.name, detail: msg.mode === "debug" ? "debugger" : "visualizer" });
+          room.log({ kind: "run", who: me.name, detail: msg.mode === "test" ? "sample tests" : String(msg.entry ?? "").slice(0, 200) });
+        }
         const entry = typeof msg.entry === "string" ? msg.entry.slice(0, 200) : "";
         const interactive = msg.interactive === true && msg.mode !== "test";
         const tests =
@@ -457,6 +605,79 @@ export class LiveConnection {
       case "end":
         if (owner) await this.rooms.end(room);
         return;
+      case "interview-setup": {
+        const iv = room.meta.interview;
+        const setup = cleanInterviewSetup(msg.setup);
+        if (!owner || !iv || !setup) return;
+        iv.public.title = setup.title;
+        iv.public.statement = setup.statement;
+        // The duration can change until the clock starts; after that, extend it.
+        if (!iv.public.startedAt) iv.public.durationMin = setup.durationMin;
+        iv.private.hiddenTests = setup.hiddenTests;
+        room.sendPublic();
+        room.sendPrivate();
+        room.scheduleSave();
+        return;
+      }
+      case "interview-extend": {
+        const pub = room.meta.interview?.public;
+        const minutes = Math.round(Number(msg.minutes));
+        if (!owner || !pub?.endsAt || pub.endedAt || !(minutes >= 1 && minutes <= INTERVIEW_LIMITS.maxExtendMinutes)) return;
+        pub.endsAt += minutes * 60_000;
+        pub.durationMin += minutes;
+        room.log({ kind: "extended", detail: `+${minutes} min` });
+        room.scheduleClock();
+        room.sendPublic();
+        return;
+      }
+      case "interview-end":
+        if (!room.meta.interview || me.role === "viewer") return;
+        room.endInterview(owner ? "Ended by the interviewer" : `${me.name} finished`);
+        return;
+      case "interview-notes": {
+        const iv = room.meta.interview;
+        if (!owner || !iv) return;
+        if (typeof msg.notes === "string") iv.private.notes = msg.notes.slice(0, INTERVIEW_LIMITS.maxNotesChars);
+        const rating = Math.round(Number(msg.rating));
+        if (rating >= 0 && rating <= 5) iv.private.rating = rating;
+        // Other tabs of the interviewer stay in step.
+        for (const m of room.owners) if (m !== me) m.peer.send(JSON.stringify({ type: "interview-private", state: iv.private } satisfies LiveServerMessage));
+        room.scheduleSave();
+        return;
+      }
+      case "interview-event": {
+        const iv = room.meta.interview;
+        const kind = msg.event?.kind;
+        if (!iv || typeof kind !== "string") return;
+        const detail = typeof msg.event.detail === "string" ? msg.event.detail.slice(0, INTERVIEW_LIMITS.pastePreviewChars) : undefined;
+        if (owner) {
+          // The interviewer's browser reports how the candidate's runs ended.
+          if (kind === "run-result") room.log({ kind, ...(detail ? { detail } : {}) });
+          return;
+        }
+        if (!CANDIDATE_EVENTS.has(kind)) return;
+        if (kind === "consent") {
+          room.log({ kind, who: me.name });
+          room.startClock();
+          return;
+        }
+        const now = Date.now();
+        const away = (me.awaySince ??= {});
+        if (kind === "tab-hidden") away.tab = now;
+        if (kind === "blur") away.window = now;
+        const awayMs = kind === "tab-visible" && away.tab ? now - away.tab : kind === "focus" && away.window ? now - away.window : undefined;
+        if (kind === "tab-visible") away.tab = undefined;
+        if (kind === "focus") away.window = undefined;
+        const chars = kind === "paste" && Number.isFinite(Number(msg.event.chars)) ? Math.max(0, Math.round(Number(msg.event.chars))) : undefined;
+        room.log({ kind, who: me.name, ...(detail ? { detail } : {}), ...(chars !== undefined ? { chars } : {}), ...(awayMs !== undefined ? { awayMs } : {}) });
+        return;
+      }
+      case "interview-history": {
+        if (!owner || !room.meta.interview) return;
+        const updates = room.history.map(([t, u]) => [t, Buffer.from(u).toString("base64")] as [number, string]);
+        this.send({ type: "interview-history", updates });
+        return;
+      }
       default:
         this.send({ type: "error", code: "invalid", message: "Unknown message." });
     }

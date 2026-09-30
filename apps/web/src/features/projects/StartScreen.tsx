@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
 import { LANDING_PAGES } from "@/features/seo/pages";
+import { useInterviewUI } from "@/features/interview/ui";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -110,6 +111,21 @@ export function StartScreen() {
             ))}
           </div>
         </section>
+
+        <button
+          type="button"
+          onClick={() => useInterviewUI.getState().openSetup("create")}
+          className="group mt-3 flex w-full items-center gap-4 rounded-xl border border-dashed border-line-strong bg-surface/60 p-4 text-left transition-colors hover:border-accent"
+        >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <ClipboardList className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold text-fg">Start a coding interview</span>
+            <span className="block text-sm text-fg-subtle">The candidate gets the compiler and Run only. You see their code, runs, tab switches and pastes live, with hidden tests, replay and a report.</span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+        </button>
 
         {status === "error" && (
           <p className="mt-10 rounded-lg border border-danger/40 bg-danger-soft p-3 text-sm text-fg">
