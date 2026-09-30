@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -638,4 +638,45 @@ test("visualizer: draws each data structure as its concept", async ({ page }) =>
   // The memory view is one click away.
   await viz.getByRole("button", { name: "memory" }).click();
   await expect(viz.getByRole("region", { name: "Objects" })).toBeVisible();
+});
+
+test("visualizer: JavaScript and TypeScript are drawn as their structures too", async ({ page }) => {
+  await freshProject(page, "JavaScript");
+  await setCode(
+    page,
+    [
+      "class ListNode {",
+      "  constructor(val, next = null) {",
+      "    this.val = val;",
+      "    this.next = next;",
+      "  }",
+      "}",
+      "const head = new ListNode(1, new ListNode(2));",
+      "const graph = new Map([[0, [1]], [1, [0, 2]], [2, [1]]]);",
+      "const stack = [4, 5];",
+      "stack.pop();",
+      "const freq = {};",
+      "freq.a = 1;",
+      "console.log(head.val, stack.length);",
+      "",
+    ].join("\n"),
+  );
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  const viz = page.getByRole("region", { name: "Visualize" });
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByRole("region", { name: "Singly linked list head" })).toContainText("2");
+  await expect(viz.getByRole("region", { name: "Graph graph" })).toBeVisible();
+  await expect(viz.getByRole("region", { name: "Stack stack" })).toContainText("4");
+  await expect(viz.getByRole("region", { name: "Object freq" })).toContainText('"a"');
+  await expect(viz.getByLabel("Output so far")).toHaveText("1 1");
+
+  await freshProject(page, "TypeScript");
+  await setCode(page, ["enum Dir {", "  Up,", "  Down,", "}", "const moves: Dir[] = [Dir.Up, Dir.Down];", "const last: Dir = moves[1];", "console.log(last);", ""].join("\n"));
+  await page.getByRole("button", { name: "Visualize execution" }).click();
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
+  await viz.getByRole("button", { name: "Last step" }).click();
+  await expect(viz.getByLabel("Output so far")).toHaveText("1");
+  // Lines are the lines as written: the last step is on the console.log line.
+  await expect(viz.getByText(/main\.ts:7/)).toBeVisible();
 });

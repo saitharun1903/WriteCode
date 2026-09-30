@@ -14,7 +14,7 @@ import { diffSteps, isCallable, withSourceTypeNames } from "./model";
  * every object a variable holds must be drawn somewhere.
  */
 const dir = process.env.VIZ_CORPUS;
-const traces = dir ? readdirSync(join(dir, "traces")).filter((f) => f.endsWith(".json")) : [];
+const traces = dir ? readdirSync(join(dir, "traces")).filter((f) => f.endsWith(".json") && !f.endsWith(".result.json")) : [];
 
 function treeKeys(n: TreeNode | null, out: string[] = []): string[] {
   if (!n) return out;

@@ -43,9 +43,9 @@ function reducedMotion(): boolean {
 
 // -- Values
 
-const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal)$/;
-const STRING_TYPES = /^(str|String|char|Character|bytes)$/;
-const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false"]);
+const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|number|bigint)$/;
+const STRING_TYPES = /^(str|String|char|Character|bytes|string)$/;
+const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined"]);
 
 function valueColor(v: { text: string; type: string }): string {
   if (KEYWORDS.has(v.text) || v.type === "NoneType" || v.type === "null") return "var(--viz-kw)";
@@ -801,7 +801,7 @@ export function VisualizerPanel() {
   }, [playing, stepIndex, speed, total, next, pause]);
 
   if (!supported) {
-    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java and Python projects.</p>;
+    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java, Python, JavaScript and TypeScript projects.</p>;
   }
   if (!trace || recording) {
     const failed = run?.mode === "visualize" && !!run.result && !trace;

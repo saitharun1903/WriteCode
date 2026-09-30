@@ -233,6 +233,63 @@ public class Main {
     expect([...pq].sort()).toEqual(["1", "2", "4", "5"]);
   });
 
+  it("JavaScript: frames, values, objects and output, exactly as a normal run", { timeout: T }, async () => {
+    const code = [
+      "class Node {",
+      "  constructor(val) {",
+      "    this.val = val;",
+      "    this.next = null;",
+      "  }",
+      "}",
+      "const head = new Node(1);",
+      "head.next = new Node(2);",
+      'const seen = new Map([["a", 1]]);',
+      "function double(x) {",
+      "  return x * 2;",
+      "}",
+      "const d = double(21);",
+      "console.log(d);",
+      "",
+    ].join("\n");
+    const { result, trace } = await visualize("javascript", { "main.js": code });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("42\n");
+    expect(trace.language).toBe("javascript");
+    expect(trace.steps[0]!.frames.map((f) => [f.name, f.line])).toEqual([["(top level)", 7]]);
+    const ctor = trace.steps.find((s) => top(s).name === "new Node")!;
+    expect(ctor.frames.map((f) => f.name)).toEqual(["(top level)", "new Node"]);
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "double")!;
+    expect(ret.frames.at(-1)!.returnValue).toEqual({ kind: "value", text: "42", type: "number" });
+    const last = trace.steps.at(-1)!;
+    const headRef = local(last, "head", 0);
+    const node = last.heap[(headRef as { id: string }).id]!;
+    expect(node).toMatchObject({ kind: "object", type: "Node" });
+    expect(node.fields!.map(([n]) => n)).toEqual(["val", "next"]);
+    expect(last.heap[(local(last, "seen", 0) as { id: string }).id]).toMatchObject({ kind: "map", type: "Map" });
+    expect(trace.stdout).toBe("42\n");
+  });
+
+  it("TypeScript: lines are the lines as written, even when enums are transformed", { timeout: T }, async () => {
+    const code = ["enum Color {", "  Red,", "  Green,", "}", "", "function pick(c: Color): number {", "  const n: number = c + 1;", "  return n;", "}", "", "const r: number = pick(Color.Green);", "console.log(r);", ""].join("\n");
+    const { result, trace } = await visualize("typescript", { "main.ts": code });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("2\n");
+    const inPick = trace.steps.filter((s) => top(s).name === "pick").map((s) => top(s).line);
+    expect(inPick).toContain(7);
+    expect(inPick).toContain(8);
+    expect(trace.steps.some((s) => s.frames.length === 1 && top(s).line === 11)).toBe(true);
+  });
+
+  it("JavaScript: an uncaught error is recorded and reported as Node reports it", { timeout: T }, async () => {
+    const code = ["const a = [1];", "function f(x) {", '  if (x > 0) throw new Error("boom");', "}", "f(1);", ""].join("\n");
+    const { result, trace } = await visualize("javascript", { "main.js": code });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.stderr).toContain("main.js:3");
+    expect(result.stderr).toContain("Error: boom");
+    expect(result.stderr).not.toContain("cw_trace");
+    expect(trace.steps.some((s) => s.event === "exception" && /boom/.test(s.exception ?? ""))).toBe(true);
+  });
+
   it("Java: typed input reaches the traced program", { timeout: T }, async () => {
     const code = "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        int n = new Scanner(System.in).nextInt();\n        int doubled = n * 2;\n        System.out.println(doubled);\n    }\n}\n";
     const { result, trace, statuses } = await visualize("java", { "Main.java": code }, { typed: ["25\n"] });

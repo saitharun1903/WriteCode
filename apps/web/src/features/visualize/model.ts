@@ -81,10 +81,12 @@ export function preview(step: TraceStep, v: TraceValue | undefined, depth = 0): 
   const o = step.heap[v.id];
   if (!o) return "…";
   if (o.kind === "other") return isCallable(o) ? `${o.type} ${o.text?.replace(/^(class|bound method) /, "") ?? ""}`.trim() : (o.text ?? o.type);
-  if (depth > 0) return o.kind === "object" ? o.type : o.kind === "map" ? "{…}" : "[…]";
+  if (depth > 0) return o.kind === "object" ? (o.type === "Object" ? "{…}" : o.type) : o.kind === "map" ? "{…}" : "[…]";
   const more = o.omitted ? ", …" : "";
   if (o.kind === "sequence") return clip(`[${(o.items ?? []).map((x) => preview(step, x, 1)).join(", ")}${more}]`);
   if (o.kind === "map") return clip(`{${(o.entries ?? []).map(([k, x]) => `${preview(step, k, 1)}: ${preview(step, x, 1)}`).join(", ")}${more}}`);
+  // JavaScript's plain objects read as literals: {id: 2, tags: […]}.
+  if (o.type === "Object") return clip(`{${(o.fields ?? []).map(([n, x]) => `${n}: ${preview(step, x, 1)}`).join(", ")}${more}}`);
   return clip(`${o.type}(${(o.fields ?? []).map(([n, x]) => `${n}=${preview(step, x, 1)}`).join(", ")}${more})`);
 }
 
@@ -323,7 +325,7 @@ export function frameIds(trace: Trace): string[][] {
 // -- Index pointers
 
 const INDEX_NAME = /^(i|j|k|l|r|lo|low|hi|high|mid|left|right|start|end|begin|pos|idx|index|ptr|p|q|slow|fast|front|rear|top)$|(Index|Idx|_idx|_index|_pos)$/;
-const INT_TYPES = new Set(["int", "long", "short", "byte", "Integer", "Long", "Short"]);
+const INT_TYPES = new Set(["int", "long", "short", "byte", "Integer", "Long", "Short", "number"]);
 
 /**
  * Integer variables with index-like names (`i`, `j`, `lo`, `mid`…) that are a

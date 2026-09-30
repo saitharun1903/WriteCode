@@ -91,10 +91,18 @@ export type Structure =
 
 // -- Values
 
-const isNull = (v: TraceValue | undefined) => !v || (v.kind === "value" && (v.text === "null" || v.text === "None"));
+const isNull = (v: TraceValue | undefined) => !v || (v.kind === "value" && (v.text === "null" || v.text === "None" || v.text === "undefined"));
 const refId = (v: TraceValue | undefined) => (v?.kind === "ref" ? v.id : null);
-const NUMERIC = /^(int|float|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|char|Character|BigInteger|bool|boolean|Boolean)$/;
-const STRINGS = /^(str|String)$/;
+const NUMERIC = /^(int|float|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|char|Character|BigInteger|bool|boolean|Boolean|number)$/;
+const STRINGS = /^(str|String|string)$/;
+
+/**
+ * The class a node belongs to. JavaScript's plain objects all say `Object`,
+ * so they are told apart by their fields: `{val, next}` nodes are one kind.
+ */
+export function groupOf(o: HeapObject): string {
+  return o.type === "Object" ? `Object{${(o.fields ?? []).map(([n]) => n).sort().join(",")}}` : o.type;
+}
 
 /** Plain text of a scalar: numbers as written, strings without quotes. */
 export function scalarText(v: TraceValue | undefined): string | null {
@@ -183,7 +191,7 @@ interface Sample {
 function shapeOf(type: string, samples: Sample[]): Shape | null {
   const objects = samples.map((x) => x.o);
   const names = fieldNames(objects);
-  const sameType = (v: TraceValue | undefined, heap: Record<string, HeapObject>) => isNull(v) || (v?.kind === "ref" && heap[v.id]?.type === type);
+  const sameType = (v: TraceValue | undefined, heap: Record<string, HeapObject>) => isNull(v) || (v?.kind === "ref" && !!heap[v.id] && groupOf(heap[v.id]!) === type);
   const every = (n: string) => samples.every(({ o, heap }) => sameType(fieldOf(o, n), heap));
   // A field that only ever holds null or another node of this class (and holds one at least once).
   const link = (re: RegExp) => names.find((n) => re.test(n) && every(n) && objects.some((o) => fieldOf(o, n)?.kind === "ref"));
@@ -270,9 +278,9 @@ export function analyzeTrace(trace: Trace): TraceHints {
   for (const step of steps)
     for (const o of Object.values(step.heap)) {
       if (o.kind !== "object") continue;
-      const list = samples.get(o.type) ?? [];
+      const list = samples.get(groupOf(o)) ?? [];
       if (list.length < 400) list.push({ o, heap: step.heap });
-      samples.set(o.type, list);
+      samples.set(groupOf(o), list);
     }
   const shapes = new Map<string, Shape>();
   for (const [type, list] of samples) {
@@ -448,7 +456,7 @@ function indexPointersFor(step: TraceStep, length: number, frameHint: number): M
   const frames = [frameHint, step.frames.length - 1].filter((f, i, a) => f >= 0 && a.indexOf(f) === i);
   for (const f of frames) {
     for (const [n, v] of step.frames[f]!.locals) {
-      if (v.kind !== "value" || !INDEX_NAME.test(n) || !/^-?\d+$/.test(v.text) || !/^(int|long|short|byte|Integer|Long|Short)$/.test(v.type)) continue;
+      if (v.kind !== "value" || !INDEX_NAME.test(n) || !/^-?\d+$/.test(v.text) || !/^(int|long|short|byte|Integer|Long|Short|number)$/.test(v.type)) continue;
       const i = Number(v.text);
       if (i < 0 || i > length) continue;
       if (![...at.values()].some((names) => names.includes(n))) at.set(i, [...(at.get(i) ?? []), n]);
@@ -464,7 +472,7 @@ function frameOf(step: TraceStep, id: string): number {
 
 function heapOrder(items: TraceValue[]): "min" | "max" | undefined {
   const nums = items.map(asNumber);
-  if (nums.length < 2 || nums.some((x) => x === null)) return undefined;
+  if (nums.length < 3 || nums.some((x) => x === null)) return undefined;
   const ok = (cmp: (a: number, b: number) => boolean) => nums.every((x, i) => i === 0 || cmp(nums[(i - 1) >> 1]!, x!));
   if (ok((p, c) => p <= c)) return "min";
   if (ok((p, c) => p >= c)) return "max";
@@ -511,7 +519,7 @@ function truthy(v: TraceValue | undefined): boolean {
 
 function nodeStructures(step: TraceStep, consumed: Set<string>, hints?: TraceHints): Structure[] {
   const byType = new Map<string, [string, HeapObject][]>();
-  for (const [id, o] of Object.entries(step.heap)) if (o.kind === "object") byType.set(o.type, [...(byType.get(o.type) ?? []), [id, o]]);
+  for (const [id, o] of Object.entries(step.heap)) if (o.kind === "object") byType.set(groupOf(o), [...(byType.get(groupOf(o)) ?? []), [id, o]]);
   const out: Structure[] = [];
   for (const [type, list] of byType) {
     const shape = hints?.shapes.has(type) ? hints.shapes.get(type)! : shapeOf(type, list.map(([, o]) => ({ o, heap: step.heap })));
@@ -559,7 +567,9 @@ function nodeStructures(step: TraceStep, consumed: Set<string>, hints?: TraceHin
       }
     }
     // Orphans with no variable pointing at them are garbage waiting to be collected: leave them out.
-    roots = roots.filter((id) => pointers.has(id) || links(id).some(Boolean) || [...Object.values(step.heap)].some((o) => o.kind !== "object" && (o.items ?? []).some((v) => refId(v) === id)));
+    // (Any frame counts: a recursive call's `root = null` must not hide the caller's `root`.)
+    const held = (id: string) => step.frames.some((f) => f.locals.some(([, v]) => v.kind === "ref" && v.id === id));
+    roots = roots.filter((id) => pointers.has(id) || held(id) || links(id).some(Boolean) || [...Object.values(step.heap)].some((o) => o.kind !== "object" && (o.items ?? []).some((v) => refId(v) === id)));
 
     if (shape.kind === "graph") {
       const nodes: GraphNode[] = [];
@@ -706,14 +716,14 @@ function nodeStructures(step: TraceStep, consumed: Set<string>, hints?: TraceHin
 const QUEUE_TYPES = /^(deque|ArrayDeque|LinkedList|Queue|SimpleQueue|LinkedBlockingQueue|ArrayBlockingQueue|ConcurrentLinkedQueue|LinkedBlockingDeque)$/;
 const STACK_TYPES = /^(Stack|LifoQueue)$/;
 const HEAP_TYPES = /^(PriorityQueue|PriorityBlockingQueue)$/;
-const MAP_TYPES = /^(dict|defaultdict|OrderedDict|Counter|HashMap|LinkedHashMap|TreeMap|Hashtable|ConcurrentHashMap|WeakHashMap|IdentityHashMap)$/;
-const SET_TYPES = /^(set|frozenset|HashSet|LinkedHashSet|TreeSet)$/;
+const MAP_TYPES = /^(dict|defaultdict|OrderedDict|Counter|HashMap|LinkedHashMap|TreeMap|Hashtable|ConcurrentHashMap|WeakHashMap|IdentityHashMap|Map|Object)$/;
+const SET_TYPES = /^(set|frozenset|HashSet|LinkedHashSet|TreeSet|Set)$/;
 const ORDERED = /^(TreeMap|TreeSet)$/;
 
 /** A dict or map, a list of lists, or an adjacency matrix read as a graph. */
-function graphFrom(step: TraceStep, id: string, name: string, hints?: TraceHints): Structure | null {
+function graphFrom(step: TraceStep, id: string, name: string, hints?: TraceHints, obj?: HeapObject): Structure | null {
   const known = hints?.graphs.has(id) ?? false;
-  const o = step.heap[id]!;
+  const o = obj ?? step.heap[id]!;
   const edges: GraphEdge[] = [];
   const keys: string[] = [];
   // One adjacency entry: neighbours as scalars, or [neighbour, weight] pairs.
@@ -826,12 +836,19 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
   const out: Structure[] = [];
   const named: Named[] = [];
   const seen = new Set<string>();
+  const conceptOf = (type: string) => (/stack/i.test(type) ? "stack" : /heap|priority/i.test(type) ? "heap" : /queue|deque/i.test(type) ? "queue" : undefined);
+  const owned = new Map<string, "stack" | "queue" | "heap">();
+  for (const o of Object.values(step.heap)) {
+    const c = o.kind === "object" ? conceptOf(o.type) : undefined;
+    if (c) for (const [field, v] of o.fields ?? []) if (v.kind === "ref" && !field.startsWith("_") && step.heap[v.id]?.kind === "sequence") owned.set(v.id, c);
+  }
   // Collections in the order variables (then fields) reach them, outermost frame first.
   for (const f of step.frames) {
     for (const [, v] of f.locals) {
       if (v.kind === "ref" && !seen.has(v.id)) {
         seen.add(v.id);
-        named.push({ id: v.id, name: nameOf(step, v.id) });
+        const c = owned.get(v.id);
+        named.push({ id: v.id, name: nameOf(step, v.id), ...(c ? { concept: c } : {}) });
       }
     }
   }
@@ -841,7 +858,7 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
   for (const id of held) {
     const o = step.heap[id];
     if (!o || o.kind !== "object" || consumed.has(id)) continue;
-    const concept = /stack/i.test(o.type) ? "stack" : /heap|priority/i.test(o.type) ? "heap" : /queue|deque/i.test(o.type) ? "queue" : undefined;
+    const concept = conceptOf(o.type);
     for (const [field, v] of o.fields ?? []) {
       if (v.kind !== "ref" || seen.has(v.id) || field.startsWith("_")) continue;
       seen.add(v.id);
@@ -851,8 +868,12 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
 
   for (const { id, name, fromField, concept } of named) {
     if (consumed.has(id)) continue;
-    const o = step.heap[id];
-    if (!o) continue;
+    const found = step.heap[id];
+    if (!found) continue;
+    const o: HeapObject =
+      found.kind === "object" && found.type === "Object"
+        ? { kind: "map", type: "Object", entries: (found.fields ?? []).map(([k, v]): [TraceValue, TraceValue] => [{ kind: "value", text: JSON.stringify(k), type: "string" }, v]), ...(found.omitted ? { omitted: found.omitted } : {}) }
+        : found;
     const n = base(name);
     const items = o.items ?? [];
     const omitted = o.omitted ?? 0;
@@ -874,9 +895,9 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
       continue;
     }
     if (o.kind === "map") {
-      const g = GRAPH_NAME.test(n) || !MAP_TYPES.test(o.type) ? null : graphFrom(step, id, name, hints);
+      const g = GRAPH_NAME.test(n) || !MAP_TYPES.test(o.type) ? null : graphFrom(step, id, name, hints, o);
       if (g || GRAPH_NAME.test(n)) {
-        const graph = g ?? graphFrom(step, id, name, hints);
+        const graph = g ?? graphFrom(step, id, name, hints, o);
         if (graph) {
           consumed.add(id);
           (o.entries ?? []).forEach(([, v]) => refId(v) && consumed.add(refId(v)!));
@@ -885,7 +906,7 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
         }
       }
       consumed.add(id);
-      out.push({ kind: "hash", id, name, type: o.type, entries: o.entries ?? [], omitted, ordered: ORDERED.test(o.type) || o.type === "LinkedHashMap" });
+      out.push({ kind: "hash", id, name, type: o.type, entries: o.entries ?? [], omitted, ordered: ORDERED.test(o.type) || o.type === "LinkedHashMap" || o.type === "Object" });
       continue;
     }
     if (o.kind === "object") {
@@ -923,7 +944,7 @@ export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { struc
     // Lists of lists: a graph, a matrix, or neither.
     const rows = items.map((x) => step.heap[refId(x) ?? ""]);
     if (items.length > 0 && rows.every((r) => r?.kind === "sequence")) {
-      const g = graphFrom(step, id, name, hints);
+      const g = graphFrom(step, id, name, hints, o);
       if (g) {
         consumed.add(id);
         items.forEach((x) => consumed.add(refId(x)!));
@@ -1009,7 +1030,7 @@ export function structureTitle(s: Structure): string {
     case "queue":
       return s.deque ? "Deque" : "Queue";
     case "hash":
-      return s.ordered && /Tree/.test(s.type) ? "Sorted map" : "Hash map";
+      return s.type === "Object" ? "Object" : s.ordered && /Tree/.test(s.type) ? "Sorted map" : "Hash map";
     case "set":
       return s.ordered && /Tree/.test(s.type) ? "Sorted set" : "Hash set";
     case "list":

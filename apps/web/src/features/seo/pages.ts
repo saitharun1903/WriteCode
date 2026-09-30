@@ -134,6 +134,8 @@ const langPage = (p: {
   label: string;
   sample: LandingPage["sample"];
   debugs: boolean;
+  /** Visualized step by step (defaults to `debugs`). */
+  visualizes?: boolean;
   intro: string;
   extraFaqs: Faq[];
 }): LandingPage => ({
@@ -141,13 +143,17 @@ const langPage = (p: {
   kind: "language",
   label: p.label,
   language: p.language,
-  title: `Online ${p.name} Compiler: run${p.debugs ? ", debug and visualize" : " and test"} ${p.name} code`,
-  description: `Free online ${p.name} compiler (${p.version}). Write, run${p.debugs ? ", debug with breakpoints, visualize step by step" : ""} and test ${p.name} programs with input in your browser. No sign-up, no install.`,
+  title: `Online ${p.name} Compiler: run${p.debugs ? ", debug and visualize" : (p.visualizes ?? p.debugs) ? ", visualize and test" : " and test"} ${p.name} code`,
+  description: `Free online ${p.name} compiler (${p.version}). Write, run${p.debugs ? ", debug with breakpoints, visualize step by step" : (p.visualizes ?? p.debugs) ? ", visualize step by step (stacks, queues, linked lists, trees, graphs)" : ""} and test ${p.name} programs with input in your browser. No sign-up, no install.`,
   h1: `Online ${p.name} compiler`,
   intro: p.intro,
   cta: `Open the ${p.name} compiler`,
   sample: p.sample,
-  features: [...RUN_FEATURES(p.name, p.version).slice(0, 2), ...(p.debugs ? DEBUG_FEATURES : []), ...RUN_FEATURES(p.name, p.version).slice(2)],
+  features: [
+    ...RUN_FEATURES(p.name, p.version).slice(0, 2),
+    ...(p.debugs ? DEBUG_FEATURES : (p.visualizes ?? p.debugs) ? DEBUG_FEATURES.slice(1) : []),
+    ...RUN_FEATURES(p.name, p.version).slice(2),
+  ],
   steps: [
     `Click "Open the ${p.name} compiler". A project with a ready-to-run ${p.sample.file} opens.`,
     "Write your code. Files save automatically in your browser as you type.",
@@ -228,7 +234,8 @@ export const LANDING_PAGES: LandingPage[] = [
     label: "JavaScript runner",
     sample: { file: "main.js", code: JS },
     debugs: false,
-    intro: "Run JavaScript online on Node.js 22. Read input from the console, split code into modules, and test your functions against expected outputs.",
+    visualizes: true,
+    intro: "Run JavaScript online on Node.js 22. Read input from the console, split code into modules, test your functions against expected outputs, and watch arrays, objects, linked lists, trees and graphs change step by step in the visualizer.",
     extraFaqs: [{ q: "Is this browser JavaScript or Node.js?", a: "Node.js 22, so require, modules and process.stdin work as they do on your computer." }],
   }),
   langPage({
@@ -239,7 +246,8 @@ export const LANDING_PAGES: LandingPage[] = [
     label: "TypeScript runner",
     sample: { file: "main.ts", code: TS },
     debugs: false,
-    intro: "Run TypeScript online without any setup: write .ts files and run them directly on Node.js 22, with input, several files and test cases.",
+    visualizes: true,
+    intro: "Run TypeScript online without any setup: write .ts files and run them directly on Node.js 22, with input, several files, test cases and a step-by-step visualizer that draws your data structures.",
     extraFaqs: [{ q: "Do I need to compile it first?", a: "No. Press Run and the TypeScript runs directly; types are stripped automatically." }],
   }),
   {
@@ -297,7 +305,7 @@ export const LANDING_PAGES: LandingPage[] = [
     language: "python",
     title: "Data Structure Visualizer: stacks, queues, linked lists, trees, graphs",
     description:
-      "Visualize your own Java and Python code step by step: stacks, queues, linked lists, binary trees, BSTs, heaps, tries, hash maps, graphs with BFS and DFS, 2D DP tables and two pointers.",
+      "Visualize your own Java, Python, JavaScript and TypeScript code step by step: stacks, queues, linked lists, binary trees, BSTs, heaps, tries, hash maps, graphs with BFS and DFS, 2D DP tables and two pointers.",
     h1: "Code visualizer",
     intro:
       "Press Visualize and your program is recorded as it runs. Each data structure is drawn the way it is taught: a stack as a pile with a top, a queue with a front and a rear, a linked list as a chain of nodes, a tree as a tree and a graph as nodes and edges. Step forward and back and watch every push, pop, insert and visit.",
@@ -318,14 +326,14 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the visualizer and write a short program.", "Press Visualize.", "Use the arrows or slider to move through the steps."],
     faqs: [
-      { q: "Which languages can be visualized?", a: "Java and Python." },
+      { q: "Which languages can be visualized?", a: "Java, Python, JavaScript and TypeScript." },
       {
         q: "Which data structures are drawn?",
         a: "Arrays and strings with index pointers, 2D arrays, stacks, queues, deques, priority queues and heaps, hash maps and sets, singly, doubly and circular linked lists, binary trees, binary search trees, AVL and red-black trees, N-ary and ternary trees, tries, segment trees, and graphs from adjacency lists, adjacency matrices, edge lists or node objects.",
       },
       {
         q: "Do I have to change my code?",
-        a: "No. Structures are recognised from the program as it runs: Java collections like ArrayDeque, PriorityQueue and HashMap, Python lists, deques, dicts and sets, and your own node classes with fields such as next, left and right, or children.",
+        a: "No. Structures are recognised from the program as it runs: Java collections like ArrayDeque, PriorityQueue and HashMap, Python lists, deques, dicts and sets, JavaScript arrays, Maps, Sets and plain objects, and your own node classes or objects with fields such as next, left and right, or children.",
       },
       ...COMMON_FAQS,
     ],

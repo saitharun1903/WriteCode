@@ -34,13 +34,16 @@ async function record(language: string, files: Record<string, string>): Promise<
 }
 
 describe.skipIf(!dir)("visualizer corpus", () => {
-  const entries = dir ? readdirSync(dir).filter((n) => n.endsWith(".py") || (statSync(join(dir, n)).isDirectory() && n !== "traces")) : [];
+  const only = process.env.VIZ_ONLY ? new RegExp(process.env.VIZ_ONLY) : null;
+  const entries = (dir ? readdirSync(dir).filter((n) => /\.(py|js|ts)$/.test(n) || (statSync(join(dir, n)).isDirectory() && n !== "traces")) : []).filter((n) => !only || only.test(n));
   if (dir) mkdirSync(join(dir, "traces"), { recursive: true });
   it.concurrent.each(entries)("%s", { timeout: 180_000 }, async (name) => {
-    const java = !name.endsWith(".py");
-    const files: Record<string, string> = java ? { "Main.java": readFileSync(join(dir!, name, "Main.java"), "utf8") } : { "main.py": readFileSync(join(dir!, name), "utf8") };
-    const { result, trace } = await record(java ? "java" : "python", files);
+    const ext = /\.(py|js|ts)$/.exec(name)?.[1];
+    const language = ext === "py" ? "python" : ext === "js" ? "javascript" : ext === "ts" ? "typescript" : "java";
+    const files: Record<string, string> = ext ? { [`main.${ext}`]: readFileSync(join(dir!, name), "utf8") } : { "Main.java": readFileSync(join(dir!, name, "Main.java"), "utf8") };
+    const { result, trace } = await record(language, files);
     expect(trace, `${name}: ${result.status} ${result.message ?? ""}`).toBeTruthy();
-    writeFileSync(join(dir!, "traces", `${name.replace(/\.py$/, "")}.json`), JSON.stringify(trace));
+    writeFileSync(join(dir!, "traces", `${name.replace(/\.(py|js|ts)$/, "")}.json`), JSON.stringify(trace));
+    if (process.env.VIZ_ONLY) writeFileSync(join(dir!, "traces", `${name}.result.json`), JSON.stringify({ status: result.status, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }));
   });
 });

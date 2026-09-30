@@ -28,7 +28,11 @@ const OUT_PATH = "/tmp/cw-trace.json";
 const PYTHON_TRACER_URL = new URL("../../tracers/python/cw_trace.py", import.meta.url);
 const JAVA_WRAPPER_HOME = `${TRACE_DIR}/jvm`;
 
+const JS_TRACER_URL = new URL("../../tracers/javascript/cw_trace.cjs", import.meta.url);
+const JS_TRACER_WORKER_URL = new URL("../../tracers/javascript/cw_trace_worker.cjs", import.meta.url);
+
 let pythonSource: Promise<string> | null = null;
+let jsSources: Promise<[string, string]> | null = null;
 
 /** Tracing single-steps every line, so allow more time than a normal run. */
 const slower = (base: ExecutionLimits): ExecutionLimits => ({ ...base, timeoutMs: Math.max(base.timeoutMs, 20_000) });
@@ -74,6 +78,29 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         // Two JVMs share the sandbox, as in a debug session.
         limits: (base) => ({ ...slower(base), memoryMb: Math.max(base.memoryMb, 512), pids: Math.max(base.pids, 256) }),
         ownsStdin: false,
+      };
+    }
+    case "javascript":
+    case "typescript": {
+      jsSources ??= Promise.all([readFile(JS_TRACER_URL, "utf8"), readFile(JS_TRACER_WORKER_URL, "utf8")]).catch((e: unknown) => {
+        jsSources = null;
+        throw e;
+      });
+      const [main, worker] = await jsSources;
+      const config = { entry: request.entry, root: SANDBOX_WORKDIR, files, out: OUT_PATH, language: request.language, limits: TRACE_LIMITS };
+      // The language's own Node flags (TypeScript's type transform), then the tracer instead of the entry file.
+      const flags = requireLanguage(request.language).runtime.command.slice(1).filter((a) => a.startsWith("--"));
+      return {
+        files: [
+          { path: `${TRACE_DIR}/cw_trace.cjs`, content: main },
+          { path: `${TRACE_DIR}/cw_trace_worker.cjs`, content: worker },
+          { path: `${TRACE_DIR}/config.json`, content: JSON.stringify(config) },
+        ],
+        argv: ["node", ...flags, `${TRACE_DIR}/cw_trace.cjs`, `${TRACE_DIR}/config.json`],
+        setup: [],
+        outPath: OUT_PATH,
+        limits: slower,
+        ownsStdin: true,
       };
     }
     default:

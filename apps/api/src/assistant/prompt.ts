@@ -56,7 +56,7 @@ function environment(): string {
 - Each run happens in an isolated sandbox with no network or internet access, ${l.memoryMb} MB of memory, ${l.timeoutMs / 1000} s of running time (time spent waiting for typed input does not count), and at most ${Math.round(l.maxOutputBytes / 1024)} KB of output. Only temporary files can be written.
 - When a program reads input (Scanner, input(), cin, scanf...), the IDE shows an input box in the Console and the user types the value there.
 - Projects can have several files and folders; Java packages are supported. For Java the user picks which class with a main method to run.
-- The debugger (breakpoints, stepping, variables) works for Java and Python. The visualizer records every step of a Java or Python run and shows frames, objects and arrows between them.`;
+- The debugger (breakpoints, stepping, variables) works for Java and Python. The visualizer records every step of a Java, Python, JavaScript or TypeScript run and draws each data structure as its concept (stacks, queues, linked lists, trees, graphs, hash maps, arrays with index pointers), with a memory view of frames, objects and arrows.`;
 }
 
 /** Numbers every line, so the model can cite exact lines. */

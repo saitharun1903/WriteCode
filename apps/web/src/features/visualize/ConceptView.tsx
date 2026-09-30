@@ -10,9 +10,9 @@ import { preview, valueKey, type StepDiff } from "./model";
 
 const SPRING = { type: "spring", stiffness: 260, damping: 30, mass: 0.9 } as const;
 
-const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal)$/;
-const STRING_TYPES = /^(str|String|char|Character|bytes)$/;
-const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false"]);
+const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|number|bigint)$/;
+const STRING_TYPES = /^(str|String|char|Character|bytes|string)$/;
+const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined"]);
 
 function color(v: TraceValue | null | undefined): string {
   if (!v || v.kind !== "value") return "var(--fg)";

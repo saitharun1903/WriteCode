@@ -140,6 +140,7 @@ const javascript: LanguageDefinition = {
     image: "node:22-slim",
     command: ["node", "{entry}"],
   },
+  visualizer: { supportLevel: "beta" },
 };
 
 const typescript: LanguageDefinition = {
@@ -163,6 +164,7 @@ console.log(greeting);
     // Transform (not just strip) so enums, namespaces and parameter properties work.
     command: ["node", "--experimental-transform-types", "--no-warnings", "{entry}"],
   },
+  visualizer: { supportLevel: "beta" },
 };
 
 export const LANGUAGES: readonly LanguageDefinition[] = [java, python, cpp, c, javascript, typescript];
