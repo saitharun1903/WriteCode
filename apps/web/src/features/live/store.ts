@@ -103,6 +103,24 @@ function write(key: string, value: unknown) {
 /** Sessions this browser owns, by project id: the owner token lets it rejoin as owner after a reload. */
 type Owned = Record<string, { roomId: string; ownerToken: string }>;
 
+/** Why a session could not continue, in words, for a close without a message from the server. */
+export function closeMessage(code: number | undefined, reason?: string): string {
+  switch (code) {
+    case 0:
+      return "Could not reach the live server. Check your internet connection and try again.";
+    case 4004:
+      return "This live session has ended or the link is wrong.";
+    case 4008:
+      return "This live session is full.";
+    case 4429:
+      return "The connection was sending too much at once. Try again in a moment.";
+    case 1008:
+      return "Live sessions can't be opened from this address. Open the site at writecode.in and try again.";
+    default:
+      return reason ? `Could not connect to the live session: ${reason}. Try again.` : "Could not connect to the live session. Try again.";
+  }
+}
+
 function clientKey(): string {
   let key = read<string | null>(CLIENT_KEY, null);
   if (!key) {
@@ -323,16 +341,18 @@ export const useLive = create<LiveState>((set, get) => {
         ownerToken,
         onMessage: (m) => session === s && onMessage(m),
         onSynced: () => session === s && onSynced(),
-        onStatus: (status, code) => {
+        onStatus: (status, code, reason) => {
           if (session !== s) return;
           if (status === "closed") {
             const ended = code === 4000 || get().status === "ended";
             const removed = code === 4001 || get().status === "removed";
             if (s.owner && (ended || code === 4004)) forgetOwned(s.projectId);
-            set({ status: ended ? "ended" : removed ? "removed" : "failed", error: get().error ?? (code === 4004 ? "This live session has ended or the link is wrong." : "Could not connect to the live session.") });
+            set({ status: ended ? "ended" : removed ? "removed" : "failed", error: get().error ?? closeMessage(code, reason) });
             teardownKeepProject();
             return;
           }
+          // A refusal that a retry got past is no longer worth showing.
+          if (status === "connected" && get().error) set({ error: null });
           if (status === "connected" && s.synced) return set({ status: "connected" });
           if (status !== "connected") set({ status });
         },

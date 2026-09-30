@@ -28,6 +28,8 @@ export class LiveService implements OnApplicationShutdown {
 
 const JOIN_TIMEOUT_MS = 10_000;
 const MAX_CONTROL_BYTES = 4096;
+/** Messages that carry the interviewer's problem, hidden tests or notes may be larger (up to the frame limit). */
+const LARGE_CONTROL = new Set<string>(["interview-setup", "interview-notes"]);
 
 const CLOSE_FOR: Record<LiveError["code"], number> = {
   "not-found": LiveClose.notFound,
@@ -51,12 +53,16 @@ export class LiveGateway implements OnGatewayConnection {
 
   handleConnection(client: WebSocket, req: IncomingMessage) {
     const origin = req.headers.origin;
-    if (origin && !config.webOrigins.includes(origin)) return client.close(1008, "origin not allowed");
+    if (origin && !config.webOrigins.includes(origin)) {
+      this.logger.warn(`live connection from an origin that is not allowed: ${origin.slice(0, 100)}`);
+      return client.close(1008, "origin not allowed");
+    }
 
     const send = (data: Uint8Array | string) => {
       if (client.readyState === client.OPEN) client.send(data);
     };
     const fail = (code: LiveError["code"], message: string) => {
+      this.logger.warn(`live connection refused: ${code} (${message})`);
       send(JSON.stringify({ type: "error", code, message } satisfies LiveServerMessage));
       client.close(CLOSE_FOR[code], message.slice(0, 120));
     };
@@ -86,13 +92,13 @@ export class LiveGateway implements OnGatewayConnection {
         }
         return;
       }
-      if (raw.length > MAX_CONTROL_BYTES) return fail("invalid", "Message too large.");
       let msg: LiveClientMessage;
       try {
         msg = JSON.parse(raw.toString("utf8")) as LiveClientMessage;
       } catch {
         return fail("invalid", "Invalid JSON.");
       }
+      if (raw.length > MAX_CONTROL_BYTES && !(conn && LARGE_CONTROL.has(String(msg?.type)))) return fail("invalid", "Message too large.");
       if (!conn) {
         if (joining || msg?.type !== "join") return;
         joining = true;
@@ -114,7 +120,9 @@ export class LiveGateway implements OnGatewayConnection {
       void conn.control(msg).catch((e: unknown) => this.logger.error(`live control failed: ${String(e)}`));
     });
 
-    client.on("close", () => {
+    client.on("close", (code: number, reason: Buffer) => {
+      // Normal ends are not worth a line; anything else helps explain a "could not connect".
+      if (![1000, 1001, 1005, LiveClose.ended, LiveClose.removed].includes(code)) this.logger.warn(`live socket closed: ${code} ${reason.toString("utf8").slice(0, 120)}${conn ? "" : " (before joining)"}`);
       closed = true;
       clearTimeout(joinTimer);
       conn?.close();

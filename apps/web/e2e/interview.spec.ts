@@ -41,7 +41,7 @@ async function setCode(page: Page, code: string) {
 test("a full interview: setup, consent, restricted candidate, live activity, hidden tests, notes, replay, report, end", async ({ browser }) => {
   // ---- The interviewer prepares the interview.
   const hr = await freshPage(browser);
-  await hr.getByRole("button", { name: /Start a coding interview/ }).click();
+  await hr.getByRole("button", { name: "Interview mode" }).click();
   const setup = hr.getByRole("dialog", { name: "Start a coding interview" });
   await setup.getByPlaceholder("e.g. Priya (HR)").fill("Meera");
   await setup.getByRole("combobox", { name: "Language" }).selectOption("python");
@@ -119,7 +119,8 @@ test("a full interview: setup, consent, restricted candidate, live activity, hid
 
   // Private notes and rating.
   await panel(hr).getByRole("tab", { name: /Notes/ }).click();
-  await panel(hr).getByRole("textbox", { name: "Interviewer notes" }).fill("Solved it quickly; pasted one line.");
+  await panel(hr).getByRole("textbox", { name: "Interviewer notes" }).fill(`Solved it quickly; pasted one line.
+${"Long notes stay connected. ".repeat(250)}`);
   await panel(hr).getByRole("radio", { name: "4 stars" }).click();
 
   // Replay and the report.
@@ -152,7 +153,7 @@ test("a full interview: setup, consent, restricted candidate, live activity, hid
 test("the problem and its tests are written from a topic, with answers computed by running them", async ({ browser }) => {
   test.skip(!process.env.E2E_ASSISTANT, "set E2E_ASSISTANT=1 with a Gemini key configured");
   const hr = await freshPage(browser);
-  await hr.getByRole("button", { name: /Start a coding interview/ }).click();
+  await hr.getByRole("button", { name: "Interview mode" }).click();
   const setup = hr.getByRole("dialog", { name: "Start a coding interview" });
   await setup.getByRole("textbox", { name: "Problem topic" }).fill("sum of the digits of a number");
   await setup.getByRole("radio", { name: "easy" }).click();

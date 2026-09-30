@@ -11,7 +11,13 @@ import { API_URL } from "@/features/execution/api";
 export type LiveStatus = "connecting" | "connected" | "reconnecting" | "closed";
 
 /** Close codes after which reconnecting cannot help (see LiveClose on the server). */
-const FINAL_CLOSE = new Set([1008, 4000, 4001, 4004, 4008, 4400, 4429]);
+/** Closes that no retry can fix: ended, removed, no such session, full, page not allowed. */
+const FINAL_CLOSE = new Set([1008, 4000, 4001, 4004, 4008]);
+/** Refusals that are usually passing (a slow join, a burst of messages): retried a few times. */
+const RETRY_CLOSE = new Set([4400, 4429]);
+const MAX_REFUSALS = 3;
+/** Failed attempts before a session that never connected gives up. */
+const MAX_FIRST_ATTEMPTS = 6;
 
 function liveUrl(): string {
   const base = API_URL ? API_URL.replace(/^http/, "ws") : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
@@ -24,7 +30,8 @@ export interface LiveClientOptions {
   clientKey: string;
   ownerToken?: string;
   onMessage: (message: LiveServerMessage) => void;
-  onStatus: (status: LiveStatus, closeCode?: number) => void;
+  /** `closeCode` and `reason` come with "closed": the server's code, or 0 when it could not be reached. */
+  onStatus: (status: LiveStatus, closeCode?: number, reason?: string) => void;
   /** The shared document has caught up with the server (after each (re)connect). */
   onSynced: () => void;
 }
@@ -41,6 +48,8 @@ export class LiveClient {
   readonly remote = Symbol("remote");
   private ws: WebSocket | null = null;
   private attempts = 0;
+  private refusals = 0;
+  private everConnected = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private canWrite = false;
@@ -108,6 +117,8 @@ export class LiveClient {
         }
         if (msg.type === "welcome") {
           this.attempts = 0;
+          this.refusals = 0;
+          this.everConnected = true;
           this.opts.onStatus("connected");
           // Ask for anything the server has that we lack; its reply also brings our offline edits to it.
           const enc = encoding.createEncoder();
@@ -138,9 +149,11 @@ export class LiveClient {
       // Other people's cursors are stale until we are back.
       const others = [...this.awareness.getStates().keys()].filter((id) => id !== this.doc.clientID);
       awarenessProtocol.removeAwarenessStates(this.awareness, others, this.remote);
-      if (this.stopped || FINAL_CLOSE.has(e.code)) {
+      const refused = RETRY_CLOSE.has(e.code) && ++this.refusals > MAX_REFUSALS;
+      const unreachable = !this.everConnected && this.attempts + 1 >= MAX_FIRST_ATTEMPTS && !FINAL_CLOSE.has(e.code) && !RETRY_CLOSE.has(e.code);
+      if (this.stopped || FINAL_CLOSE.has(e.code) || refused || unreachable) {
         this.stopped = true;
-        this.opts.onStatus("closed", e.code);
+        this.opts.onStatus("closed", unreachable ? 0 : e.code, e.reason);
         return;
       }
       const delay = Math.min(10_000, 500 * 2 ** this.attempts++) * (0.75 + Math.random() * 0.5);
