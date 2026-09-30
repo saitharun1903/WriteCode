@@ -53,8 +53,26 @@ export type Structure =
   | { kind: "queue"; id: string; name: string; type: string; items: TraceValue[]; omitted: number; deque: boolean }
   | { kind: "hash"; id: string; name: string; type: string; entries: [TraceValue, TraceValue][]; omitted: number; ordered: boolean }
   | { kind: "set"; id: string; name: string; type: string; items: TraceValue[]; omitted: number; ordered: boolean }
-  | { kind: "list"; id: string; name: string; type: string; variant: ListVariant; nodes: { id: string; value: TraceValue | null }[]; pointers: Map<string, string[]>; truncated: boolean }
+  /** `loopTo`: the last node links back to this index (a cycle that does not return to the head). */
+  | {
+      kind: "list";
+      id: string;
+      name: string;
+      type: string;
+      variant: ListVariant;
+      nodes: { id: string; value: TraceValue | null }[];
+      pointers: Map<string, string[]>;
+      truncated: boolean;
+      loopTo?: number;
+      /**
+       * Chains that run into this list: a node being unlinked (`cur` still
+       * points on to the list), or a second list sharing this one's tail.
+       */
+      branches?: { nodes: { id: string; value: TraceValue | null }[]; joinAt: number }[];
+    }
   | { kind: "tree"; id: string; name: string; type: string; variant: TreeVariant; root: TreeNode; pointers: Map<string, string[]>; items?: TraceValue[]; heapOrder?: "min" | "max" }
+  /** Any other object a variable holds: its fields, so nothing the program uses is left out. */
+  | { kind: "object"; id: string; name: string; type: string; fields: [string, TraceValue][]; omitted: number }
   | {
       kind: "graph";
       id: string;
@@ -151,26 +169,37 @@ function fieldOf(o: HeapObject, name: string | undefined): TraceValue | undefine
   return name ? o.fields?.find(([n]) => n === name)?.[1] : undefined;
 }
 
-/** How a class's objects link to each other, if they are the nodes of a structure. */
-function shapeOf(type: string, objects: HeapObject[], heap: Record<string, HeapObject>): Shape | null {
+/** An object of a class, with the heap of the step it was seen in (to follow its references). */
+interface Sample {
+  o: HeapObject;
+  heap: Record<string, HeapObject>;
+}
+
+/**
+ * How a class's objects link to each other, if they are the nodes of a
+ * structure. Decided from every object of the class seen in the whole run
+ * when possible, so a lone first node is already known to be a list node.
+ */
+function shapeOf(type: string, samples: Sample[]): Shape | null {
+  const objects = samples.map((x) => x.o);
   const names = fieldNames(objects);
-  const sameType = (v: TraceValue | undefined) => isNull(v) || (v?.kind === "ref" && heap[v.id]?.type === type);
-  // A field that only ever holds null or another node of this class.
-  const link = (re: RegExp) =>
-    names.find((n) => re.test(n) && objects.every((o) => sameType(fieldOf(o, n))) && objects.some((o) => fieldOf(o, n)?.kind === "ref"));
-  const linkOrNull = (re: RegExp) => names.find((n) => re.test(n) && objects.every((o) => sameType(fieldOf(o, n))));
+  const sameType = (v: TraceValue | undefined, heap: Record<string, HeapObject>) => isNull(v) || (v?.kind === "ref" && heap[v.id]?.type === type);
+  const every = (n: string) => samples.every(({ o, heap }) => sameType(fieldOf(o, n), heap));
+  // A field that only ever holds null or another node of this class (and holds one at least once).
+  const link = (re: RegExp) => names.find((n) => re.test(n) && every(n) && objects.some((o) => fieldOf(o, n)?.kind === "ref"));
+  const linkOrNull = (re: RegExp) => names.find((n) => re.test(n) && every(n));
   // A field holding a list, array or map of nodes of this class.
   const container = (re: RegExp) =>
     names.find((n) => {
       if (!re.test(n)) return false;
       let seen = false;
-      for (const o of objects) {
+      for (const { o, heap } of samples) {
         const v = fieldOf(o, n);
         if (isNull(v)) continue;
         const c = refId(v) ? heap[refId(v)!] : undefined;
         if (!c || (c.kind !== "sequence" && c.kind !== "map")) return false;
         const values = c.kind === "map" ? (c.entries ?? []).map(([, x]) => x) : (c.items ?? []);
-        if (!values.every(sameType)) return false;
+        if (!values.every((x) => sameType(x, heap))) return false;
         seen = true;
       }
       return seen;
@@ -188,27 +217,90 @@ function shapeOf(type: string, objects: HeapObject[], heap: Record<string, HeapO
 
   const children = container(FIELD.children);
   if (children) {
-    const c = objects.map((o) => heap[refId(fieldOf(o, children)) ?? ""]).find(Boolean);
+    const found = samples.map(({ o, heap }) => heap[refId(fieldOf(o, children)) ?? ""]).find(Boolean);
     // Children keyed by character, or a fixed alphabet array with gaps: a trie.
-    const trie = c?.kind === "map" || (c?.kind === "sequence" && (c.items?.length ?? 0) >= 26 && (c.items ?? []).some(isNull));
+    const trie = found?.kind === "map" || (found?.kind === "sequence" && (found.items?.length ?? 0) >= 26 && (found.items ?? []).some(isNull));
     return { kind: trie ? "trie" : "n-ary", children, ...extras([children]) };
   }
   const neighbors = container(FIELD.neighbors);
   if (neighbors) return { kind: "graph", children: neighbors, ...extras([neighbors]) };
 
+  const single = new Set(samples.map(({ o }) => o)).size === 1 || objects.length === 1;
   const left = linkOrNull(FIELD.left);
   const right = linkOrNull(FIELD.right);
-  if (left && right && left !== right && objects.some((o) => fieldOf(o, left)?.kind === "ref" || fieldOf(o, right)?.kind === "ref") || (left && right && objects.length === 1)) {
+  if (left && right && left !== right && (objects.some((o) => fieldOf(o, left)?.kind === "ref" || fieldOf(o, right)?.kind === "ref") || single)) {
     const mid = linkOrNull(FIELD.mid);
     const usedMid = mid && mid !== left && mid !== right ? mid : undefined;
     return { kind: usedMid ? "ternary" : "binary", left, right, mid: usedMid, ...extras([left, right, usedMid].filter(Boolean) as string[]) };
   }
-  const next = link(FIELD.next) ?? (objects.length === 1 ? linkOrNull(FIELD.next) : undefined);
+  const next = link(FIELD.next) ?? (single ? linkOrNull(FIELD.next) : undefined);
   if (next) {
     const prev = linkOrNull(FIELD.prev);
     return { kind: "list", next, prev: prev !== next ? prev : undefined, ...extras([next, prev].filter(Boolean) as string[]) };
   }
   return null;
+}
+
+// -- Decisions made once for the whole run
+
+/**
+ * What a structure is, decided from the whole run rather than one step, so it
+ * keeps one identity: a class seen linking by `next` is a list node even
+ * while its first node stands alone; a tree that is a BST once it has two
+ * nodes is called a BST from its first node; a map that becomes a graph is
+ * drawn as a graph from its first key.
+ */
+export interface TraceHints {
+  shapes: Map<string, Shape>;
+  treeVariant: Map<string, TreeVariant>;
+  doubly: Set<string>;
+  /** Object ids drawn as graphs at some step, with whether the graph is directed at its last step. */
+  graphs: Map<string, boolean>;
+}
+
+const hintCache = new WeakMap<Trace, TraceHints>();
+
+export function analyzeTrace(trace: Trace): TraceHints {
+  const cached = hintCache.get(trace);
+  if (cached) return cached;
+  // Up to ~300 steps, spread over the run, keep this fast for long traces.
+  const every = Math.max(1, Math.ceil(trace.steps.length / 300));
+  const steps = trace.steps.filter((_, i) => i % every === 0 || i === trace.steps.length - 1);
+  const samples = new Map<string, Sample[]>();
+  for (const step of steps)
+    for (const o of Object.values(step.heap)) {
+      if (o.kind !== "object") continue;
+      const list = samples.get(o.type) ?? [];
+      if (list.length < 400) list.push({ o, heap: step.heap });
+      samples.set(o.type, list);
+    }
+  const shapes = new Map<string, Shape>();
+  for (const [type, list] of samples) {
+    const shape = shapeOf(type, list);
+    if (shape) shapes.set(type, shape);
+  }
+  const partial: TraceHints = { shapes, treeVariant: new Map(), doubly: new Set(), graphs: new Map() };
+  const sorted = new Map<string, boolean>();
+  // Observe with the class shapes only; the other decisions are what this pass is working out.
+  const probe: TraceHints = { shapes, treeVariant: new Map(), doubly: new Set(), graphs: new Map() };
+  for (const step of steps) {
+    for (const s of detectWithCoverage(step, probe).structures) {
+      if (s.kind === "tree" && (s.variant === "binary" || s.variant === "bst" || s.variant === "avl")) {
+        let n = 0;
+        const count = (t: TreeNode | null) => t && (n++, t.children.forEach(count));
+        count(s.root);
+        if (n >= 2) sorted.set(s.type, (sorted.get(s.type) ?? true) && s.variant !== "binary");
+      }
+      if (s.kind === "list" && (s.variant === "doubly" || s.variant === "circular-doubly")) partial.doubly.add(s.type);
+      if (s.kind === "graph") partial.graphs.set(s.id, s.directed);
+    }
+  }
+  for (const [type, ok] of sorted) {
+    const shape = shapes.get(type);
+    partial.treeVariant.set(type, ok ? (shape?.height ? "avl" : "bst") : "binary");
+  }
+  hintCache.set(trace, partial);
+  return partial;
 }
 
 // -- Stable identity across steps
@@ -282,11 +374,34 @@ export function stableKeys(trace: Trace, id: string, stepIndex: number): string[
   return entry.keys[stepIndex] ?? [];
 }
 
+/**
+ * Positions whose element is new since the previous step, or kept its
+ * identity but got a new value (`arr[i] = x`). Elements that only moved (a
+ * shift after an insert, a swap) are not listed: their movement shows it.
+ */
+export function changedCells(trace: Trace, id: string, stepIndex: number): Set<number> {
+  const out = new Set<number>();
+  const before = stepIndex > 0 ? itemsOf(trace.steps[stepIndex - 1]?.heap[id]) : null;
+  const now = itemsOf(trace.steps[stepIndex]?.heap[id]);
+  if (!before || !now) return out;
+  const prevKeys = stableKeys(trace, id, stepIndex - 1);
+  const keys = stableKeys(trace, id, stepIndex);
+  const was = new Map(prevKeys.map((k, i) => [k, before[i]]));
+  keys.forEach((k, i) => {
+    if (!was.has(k) || was.get(k) !== now[i]) out.add(i);
+  });
+  return out;
+}
+
 // -- Detection
 
 interface Named {
   id: string;
   name: string;
+  /** Reached through a field of an object a variable holds (`s.items`), not a variable. */
+  fromField?: boolean;
+  /** The holder's class says what it is: a `MyStack`'s list is a stack. */
+  concept?: "stack" | "queue" | "heap";
 }
 
 /** Variables of the frames that hold scalars, innermost frame first (for pointers). */
@@ -394,12 +509,12 @@ function truthy(v: TraceValue | undefined): boolean {
   return !!t && !/^(false|False|0|null|None|'?\\?0'?)$/.test(t);
 }
 
-function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
+function nodeStructures(step: TraceStep, consumed: Set<string>, hints?: TraceHints): Structure[] {
   const byType = new Map<string, [string, HeapObject][]>();
   for (const [id, o] of Object.entries(step.heap)) if (o.kind === "object") byType.set(o.type, [...(byType.get(o.type) ?? []), [id, o]]);
   const out: Structure[] = [];
   for (const [type, list] of byType) {
-    const shape = shapeOf(type, list.map(([, o]) => o), step.heap);
+    const shape = hints?.shapes.has(type) ? hints.shapes.get(type)! : shapeOf(type, list.map(([, o]) => ({ o, heap: step.heap })));
     if (!shape) continue;
     const ids = new Set(list.map(([id]) => id));
     const obj = (id: string) => step.heap[id]!;
@@ -417,7 +532,10 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
     const referenced = new Set<string>();
     for (const id of ids) for (const c of links(id)) if (c && c !== id) referenced.add(c);
     const pointers = nodePointers(step, ids);
-    const named = (id: string) => pointers.get(id)?.[0] ?? nameOf(step, id);
+    const named = (id: string) => {
+      for (const f of step.frames) for (const [n, v] of f.locals) if (v.kind === "ref" && v.id === id && n !== "self" && n !== "this") return n;
+      return pointers.get(id)?.find((n) => n !== "self" && n !== "this") ?? pointers.get(id)?.[0] ?? nameOf(step, id);
+    };
     let roots = [...ids].filter((id) => !referenced.has(id));
     // A circular list has no unreferenced node: start where a variable points, preferring `head`.
     if (shape.kind === "list" || shape.kind === "graph") {
@@ -458,9 +576,9 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
           stack.push(c);
         }
       }
-      if (nodes.length < 2) continue;
+      if (nodes.length < (hints?.graphs.has(roots[0]!) ? 1 : 2)) continue;
       nodes.forEach((n) => consumed.add(n.key));
-      const undirected = edges.every((e) => edges.some((x) => x.from === e.to && x.to === e.from));
+      const undirected = hints?.graphs.has(roots[0]!) ? !hints.graphs.get(roots[0]!) : edges.every((e) => edges.some((x) => x.from === e.to && x.to === e.from));
       out.push({
         kind: "graph",
         id: roots[0]!,
@@ -478,6 +596,20 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
       continue;
     }
 
+    if (shape.kind === "list") {
+      const length = (id: string) => {
+        const seenHere = new Set<string>();
+        let cur: string | null = id;
+        while (cur && ids.has(cur) && !seenHere.has(cur)) {
+          seenHere.add(cur);
+          cur = links(cur)[0] ?? null;
+        }
+        return seenHere.size;
+      };
+      const main = (id: string) => (pointers.get(id) ?? []).some((n) => /^(head|first|root|start|front|dummy|sentinel|list)$/i.test(n));
+      roots.sort((a, b) => Number(main(b)) - Number(main(a)) || length(b) - length(a));
+    }
+    const owner = new Map<string, { list: Extract<Structure, { kind: "list" }>; index: number }>();
     for (const root of roots) {
       if (consumed.has(root)) continue;
       if (shape.kind === "list") {
@@ -485,20 +617,28 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
         const at = new Map<string, number>();
         let cur: string | null = root;
         let loopTo = -1;
+        let join: { list: Extract<Structure, { kind: "list" }>; index: number } | undefined;
         while (cur && ids.has(cur) && nodes.length < 60) {
           if (at.has(cur)) {
             loopTo = at.get(cur)!;
             break;
           }
+          join = owner.get(cur);
+          if (join) break;
           at.set(cur, nodes.length);
           nodes.push({ id: cur, value: value(cur) });
           cur = links(cur)[0] ?? null;
         }
         if (nodes.length === 0) continue;
         nodes.forEach((n) => consumed.add(n.id));
-        const doubly = !!shape.prev && nodes.some((n) => fieldOf(obj(n.id), shape.prev)?.kind === "ref");
+        if (join) {
+          // Runs into a list already drawn: shown above it, pointing at the node it joins.
+          (join.list.branches ??= []).push({ nodes, joinAt: join.index });
+          continue;
+        }
+        const doubly = !!shape.prev && (hints?.doubly.has(type) || nodes.some((n) => fieldOf(obj(n.id), shape.prev)?.kind === "ref"));
         const circular = loopTo === 0;
-        out.push({
+        const list: Extract<Structure, { kind: "list" }> = {
           kind: "list",
           id: root,
           name: named(root),
@@ -507,7 +647,10 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
           nodes,
           pointers,
           truncated: !!cur && loopTo < 0,
-        });
+          ...(loopTo > 0 ? { loopTo } : {}),
+        };
+        nodes.forEach((n, index) => owner.set(n.id, { list, index }));
+        out.push(list);
         continue;
       }
       // Trees.
@@ -550,6 +693,7 @@ function nodeStructures(step: TraceStep, consumed: Set<string>): Structure[] {
       if (variant === "binary") {
         const sorted = inOrderSorted(tree);
         if (shape.color) variant = "red-black";
+        else if (hints?.treeVariant.has(type)) variant = hints.treeVariant.get(type)!;
         else if (shape.height && sorted) variant = "avl";
         else if (sorted) variant = "bst";
       }
@@ -567,7 +711,8 @@ const SET_TYPES = /^(set|frozenset|HashSet|LinkedHashSet|TreeSet)$/;
 const ORDERED = /^(TreeMap|TreeSet)$/;
 
 /** A dict or map, a list of lists, or an adjacency matrix read as a graph. */
-function graphFrom(step: TraceStep, id: string, name: string): Structure | null {
+function graphFrom(step: TraceStep, id: string, name: string, hints?: TraceHints): Structure | null {
+  const known = hints?.graphs.has(id) ?? false;
   const o = step.heap[id]!;
   const edges: GraphEdge[] = [];
   const keys: string[] = [];
@@ -595,10 +740,10 @@ function graphFrom(step: TraceStep, id: string, name: string): Structure | null 
       keys.push(scalarText(k)!);
     }
     // Without a graph-like name, every neighbour must itself be a key.
-    if (!GRAPH_NAME.test(base(name)) && (keys.length < 2 || !edges.every((e) => keys.includes(e.to)))) return null;
+    if (!known && !GRAPH_NAME.test(base(name)) && (keys.length < 2 || !edges.every((e) => keys.includes(e.to)))) return null;
   } else if (o.kind === "sequence") {
     const rows = o.items ?? [];
-    if (!GRAPH_NAME.test(base(name)) || rows.length < 2) return null;
+    if (!(known || GRAPH_NAME.test(base(name))) || rows.length < 1) return null;
     const matrix = rows.map((r) => step.heap[refId(r) ?? ""]).every((r) => r?.kind === "sequence" && r.items?.length === rows.length && r.items.every((x) => asNumber(x) !== null));
     if (matrix) {
       rows.forEach((r, i) => {
@@ -625,8 +770,8 @@ function graphFrom(step: TraceStep, id: string, name: string): Structure | null 
     }
   } else return null;
   for (const e of edges) if (!keys.includes(e.to)) keys.push(e.to);
-  if (keys.length < 2 || keys.length > 60) return null;
-  const undirected = edges.length > 0 && edges.every((e) => edges.some((x) => x.from === e.to && x.to === e.from));
+  if (keys.length < (known ? 0 : 2) || keys.length > 60) return null;
+  const undirected = known ? !hints!.graphs.get(id) : edges.length > 0 && edges.every((e) => edges.some((x) => x.from === e.to && x.to === e.from));
   return {
     kind: "graph",
     id,
@@ -670,9 +815,14 @@ function annotateGraph(step: TraceStep, g: Extract<Structure, { kind: "graph" }>
 }
 
 /** Every structure recognised in a step, in the order the program's variables name them. */
-export function detectStructures(step: TraceStep): Structure[] {
+export function detectStructures(step: TraceStep, hints?: TraceHints): Structure[] {
+  return detectWithCoverage(step, hints).structures;
+}
+
+/** The structures, and the ids of every object they draw. */
+export function detectWithCoverage(step: TraceStep, hints?: TraceHints): { structures: Structure[]; consumed: Set<string> } {
   const consumed = new Set<string>();
-  const nodes = nodeStructures(step, consumed);
+  const nodes = nodeStructures(step, consumed, hints);
   const out: Structure[] = [];
   const named: Named[] = [];
   const seen = new Set<string>();
@@ -685,17 +835,21 @@ export function detectStructures(step: TraceStep): Structure[] {
       }
     }
   }
-  for (const [id, o] of Object.entries(step.heap)) {
-    if (o.kind !== "object" || consumed.has(id)) continue;
-    for (const [, v] of o.fields ?? []) {
-      if (v.kind === "ref" && !seen.has(v.id)) {
-        seen.add(v.id);
-        named.push({ id: v.id, name: nameOf(step, v.id) });
-      }
+  // Collections kept in fields of objects the variables hold (a class's `self.items`), skipping private internals.
+  const held = new Set<string>();
+  for (const f of step.frames) for (const [, v] of f.locals) if (v.kind === "ref") held.add(v.id);
+  for (const id of held) {
+    const o = step.heap[id];
+    if (!o || o.kind !== "object" || consumed.has(id)) continue;
+    const concept = /stack/i.test(o.type) ? "stack" : /heap|priority/i.test(o.type) ? "heap" : /queue|deque/i.test(o.type) ? "queue" : undefined;
+    for (const [field, v] of o.fields ?? []) {
+      if (v.kind !== "ref" || seen.has(v.id) || field.startsWith("_")) continue;
+      seen.add(v.id);
+      named.push({ id: v.id, name: nameOf(step, v.id), fromField: true, ...(concept ? { concept } : {}) });
     }
   }
 
-  for (const { id, name } of named) {
+  for (const { id, name, fromField, concept } of named) {
     if (consumed.has(id)) continue;
     const o = step.heap[id];
     if (!o) continue;
@@ -710,15 +864,19 @@ export function detectStructures(step: TraceStep): Structure[] {
         consumed.add(refId(fieldOf(o, "queue"))!);
         const it = inner.items ?? [];
         if (o.type === "LifoQueue") out.push({ kind: "stack", id: refId(fieldOf(o, "queue"))!, name, type: o.type, items: it, omitted: inner.omitted ?? 0, topFirst: false });
-        else if (o.type === "PriorityQueue") out.push({ kind: "tree", id: refId(fieldOf(o, "queue"))!, name, type: o.type, variant: "heap", root: arrayTree(refId(fieldOf(o, "queue"))!, it, false, false)!, pointers: new Map(), items: it, heapOrder: heapOrder(it) });
+        else if (o.type === "PriorityQueue") {
+          const qid = refId(fieldOf(o, "queue"))!;
+          const root = arrayTree(qid, it, false, false);
+          out.push(root ? { kind: "tree", id: qid, name, type: o.type, variant: "heap", root, pointers: new Map(), items: it, heapOrder: heapOrder(it) } : { kind: "array", id: qid, name, type: o.type, items: it, omitted: 0, pointers: new Map(), label: "Priority queue" });
+        }
         else out.push({ kind: "queue", id: refId(fieldOf(o, "queue"))!, name, type: o.type, items: it, omitted: inner.omitted ?? 0, deque: false });
       }
       continue;
     }
     if (o.kind === "map") {
-      const g = GRAPH_NAME.test(n) || !MAP_TYPES.test(o.type) ? null : graphFrom(step, id, name);
+      const g = GRAPH_NAME.test(n) || !MAP_TYPES.test(o.type) ? null : graphFrom(step, id, name, hints);
       if (g || GRAPH_NAME.test(n)) {
-        const graph = g ?? graphFrom(step, id, name);
+        const graph = g ?? graphFrom(step, id, name, hints);
         if (graph) {
           consumed.add(id);
           (o.entries ?? []).forEach(([, v]) => refId(v) && consumed.add(refId(v)!));
@@ -730,26 +888,34 @@ export function detectStructures(step: TraceStep): Structure[] {
       out.push({ kind: "hash", id, name, type: o.type, entries: o.entries ?? [], omitted, ordered: ORDERED.test(o.type) || o.type === "LinkedHashMap" });
       continue;
     }
+    if (o.kind === "object") {
+      // Only objects a variable holds directly; objects inside others show in their owner's fields.
+      if (step.frames.some((f) => f.locals.some(([, v]) => v.kind === "ref" && v.id === id))) {
+        consumed.add(id);
+        out.push({ kind: "object", id, name, type: o.type, fields: o.fields ?? [], omitted });
+      }
+      continue;
+    }
     if (o.kind !== "sequence") continue;
     if (SET_TYPES.test(o.type)) {
       consumed.add(id);
       out.push({ kind: "set", id, name, type: o.type, items, omitted, ordered: ORDERED.test(o.type) || o.type === "LinkedHashSet" });
       continue;
     }
-    if (HEAP_TYPES.test(o.type) || (HEAP_NAME.test(n) && !QUEUE_TYPES.test(o.type))) {
+    if (concept === "heap" || HEAP_TYPES.test(o.type) || (!concept && HEAP_NAME.test(n) && !QUEUE_TYPES.test(o.type))) {
       consumed.add(id);
       const root = arrayTree(id, items, false, false);
       if (root) out.push({ kind: "tree", id, name, type: o.type, variant: "heap", root, pointers: new Map(), items, heapOrder: heapOrder(items) });
-      else out.push({ kind: "array", id, name, type: o.type, items, omitted, pointers: new Map(), label: "Heap" });
+      else out.push({ kind: "array", id, name, type: o.type, items, omitted, pointers: new Map(), label: HEAP_TYPES.test(o.type) ? "Priority queue" : "Heap" });
       continue;
     }
-    if (STACK_TYPES.test(o.type) || STACK_NAME.test(n)) {
+    if (concept === "stack" || (!concept && (STACK_TYPES.test(o.type) || STACK_NAME.test(n)))) {
       consumed.add(id);
       const topFirst = /^(ArrayDeque|LinkedList|LinkedBlockingDeque|ConcurrentLinkedDeque)$/.test(o.type);
       out.push({ kind: "stack", id, name, type: o.type, items: topFirst ? [...items].reverse() : items, omitted, topFirst });
       continue;
     }
-    if (QUEUE_TYPES.test(o.type) || QUEUE_NAME.test(n)) {
+    if (concept === "queue" || QUEUE_TYPES.test(o.type) || QUEUE_NAME.test(n)) {
       consumed.add(id);
       out.push({ kind: "queue", id, name, type: o.type, items, omitted, deque: /deque|^dq$/i.test(n) || (/Deque|deque/.test(o.type) && !QUEUE_NAME.test(n)) });
       continue;
@@ -757,7 +923,7 @@ export function detectStructures(step: TraceStep): Structure[] {
     // Lists of lists: a graph, a matrix, or neither.
     const rows = items.map((x) => step.heap[refId(x) ?? ""]);
     if (items.length > 0 && rows.every((r) => r?.kind === "sequence")) {
-      const g = graphFrom(step, id, name);
+      const g = graphFrom(step, id, name, hints);
       if (g) {
         consumed.add(id);
         items.forEach((x) => consumed.add(refId(x)!));
@@ -765,6 +931,7 @@ export function detectStructures(step: TraceStep): Structure[] {
         continue;
       }
       if (rows.every((r) => (r!.items ?? []).every(isScalar))) {
+        if (fromField) continue;
         consumed.add(id);
         items.forEach((x) => consumed.add(refId(x)!));
         const locals = scalarLocals(step).filter(([, v]) => /^-?\d+$/.test(v.text));
@@ -796,6 +963,7 @@ export function detectStructures(step: TraceStep): Structure[] {
         continue;
       }
     }
+    if (fromField) continue;
     consumed.add(id);
     if (n === "args" && items.length === 0 && o.type === "String[]") continue;
     out.push({ kind: "array", id, name, type: o.type, items, omitted, pointers: indexPointersFor(step, items.length, frameOf(step, id)), ...(FENWICK_NAME.test(n) ? { label: "Fenwick tree (BIT)" } : {}) });
@@ -826,7 +994,7 @@ export function detectStructures(step: TraceStep): Structure[] {
 
   const all = [...nodes, ...out];
   for (const s of all) if (s.kind === "graph") annotateGraph(step, s, out);
-  return all;
+  return { structures: all, consumed };
 }
 
 /** Short title for a structure, as a textbook would name it. */
@@ -860,5 +1028,7 @@ export function structureTitle(s: Structure): string {
       }[s.variant];
     case "graph":
       return s.directed ? "Directed graph" : "Graph";
+    case "object":
+      return `${s.type} object`;
   }
 }

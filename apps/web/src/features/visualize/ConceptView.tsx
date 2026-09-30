@@ -1,14 +1,14 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, Boxes, GitBranch, Hash, Layers, Link2, ListOrdered, Network, Rows3, Share2, Table2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, Box, Boxes, GitBranch, Hash, Layers, Link2, ListOrdered, Network, Rows3, Share2, Table2 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo, type ReactNode } from "react";
+import { Component, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Trace, TraceStep, TraceValue } from "@cw/shared";
 import { cn } from "@/lib/cn";
-import { detectStructures, scalarText, stableKeys, structureTitle, type Structure, type TreeNode } from "./concepts";
+import { analyzeTrace, changedCells, detectStructures, scalarText, stableKeys, structureTitle, type Structure, type TreeNode } from "./concepts";
 import { preview, valueKey, type StepDiff } from "./model";
 
-const SPRING = { type: "spring", stiffness: 380, damping: 32, mass: 0.8 } as const;
+const SPRING = { type: "spring", stiffness: 260, damping: 30, mass: 0.9 } as const;
 
 const NUMBER_TYPES = /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal)$/;
 const STRING_TYPES = /^(str|String|char|Character|bytes)$/;
@@ -43,6 +43,7 @@ const ACCENT: Record<Structure["kind"], string> = {
   list: "var(--viz-list)",
   tree: "var(--viz-tree)",
   graph: "var(--viz-graph)",
+  object: "var(--viz-obj)",
 };
 
 const ICON: Record<Structure["kind"], ReactNode> = {
@@ -55,6 +56,7 @@ const ICON: Record<Structure["kind"], ReactNode> = {
   list: <Link2 />,
   tree: <GitBranch />,
   graph: <Network />,
+  object: <Box />,
 };
 
 function sizeLabel(s: Structure): string | null {
@@ -72,6 +74,8 @@ function sizeLabel(s: Structure): string | null {
       return `${s.nodes.length} node${s.nodes.length === 1 ? "" : "s"}`;
     case "graph":
       return `${s.nodes.length} nodes · ${s.edges.length} edges`;
+    case "object":
+      return null;
     case "tree": {
       let n = 0;
       const walk = (t: TreeNode | null) => t && (n++, t.children.forEach(walk));
@@ -148,17 +152,27 @@ const isTrue = (v: TraceValue) => v.kind === "value" && /^(bool|boolean|Boolean)
 
 function ArrayView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, { kind: "array" }>; step: TraceStep; trace: Trace; stepIndex: number; diff: StepDiff }) {
   const keys = s.chars ? s.items.map((_, i) => `${s.id}:${i}`) : stableKeys(trace, s.id, stepIndex);
+  const fresh = s.chars ? new Set<number>() : changedCells(trace, s.id, stepIndex);
   const inRange = new Set<number>();
   // Between two pointers (a window or a search range): shade the cells in between.
   const idx = [...s.pointers.keys()].sort((a, b) => a - b);
   if (idx.length >= 2) for (let i = idx[0]!; i <= idx.at(-1)!; i++) inRange.add(i);
   return (
     <div className="flex items-start pb-1 pt-1">
+      <AnimatePresence initial={false} mode="popLayout">
       {s.items.map((item, i) => {
         const names = s.pointers.get(i) ?? [];
-        const changed = diff.highlights.has(`cell:${s.id}:${i}`);
+        const changed = s.chars ? diff.highlights.has(`cell:${s.id}:${i}`) : fresh.has(i);
         return (
-          <motion.div key={keys[i] ?? i} layout transition={SPRING} className="flex flex-col items-center">
+          <motion.div
+            key={keys[i] ?? i}
+            layout
+            initial={{ opacity: 0, y: -18, scale: 0.7 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.7, transition: { duration: 0.22 } }}
+            transition={SPRING}
+            className="flex flex-col items-center"
+          >
             <span className="mb-0.5 text-[10px] tabular-nums leading-4 text-fg-faint">{i}</span>
             <div
               className={cn(
@@ -182,6 +196,7 @@ function ArrayView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, 
           </motion.div>
         );
       })}
+      </AnimatePresence>
       {s.items.length === 0 && <span className="py-2 text-xs text-fg-subtle">empty</span>}
       {s.omitted > 0 && <span className="self-center px-2 text-xs text-fg-subtle">+{s.omitted} more</span>}
     </div>
@@ -419,13 +434,171 @@ function NullBox() {
   );
 }
 
+/** The arrow from the last node back to the node it links to, drawn under the chain. */
+function LoopArrow({ root, to, label, trigger }: { root: React.RefObject<HTMLDivElement | null>; to: number; label: string; trigger: unknown }) {
+  const [path, setPath] = useState<{ d: string; lx: number; ly: number; w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    let raf = 0;
+    const until = performance.now() + 900;
+    const compute = () => {
+      const nodes = el.querySelectorAll<HTMLElement>("[data-main] [data-node]");
+      const last = nodes[nodes.length - 1];
+      const target = nodes[to];
+      if (!last || !target) return setPath(null);
+      const base = el.getBoundingClientRect();
+      const a = last.getBoundingClientRect();
+      const b = target.getBoundingClientRect();
+      const x1 = a.left + a.width / 2 - base.left;
+      const x2 = b.left + b.width / 2 - base.left;
+      const y = a.bottom - base.top;
+      const low = y + 18;
+      setPath({ d: `M ${x1} ${y} L ${x1} ${low} L ${x2} ${low} L ${x2} ${y + 4}`, lx: (x1 + x2) / 2, ly: low, w: el.scrollWidth, h: low + 12 });
+      if (performance.now() < until) raf = requestAnimationFrame(compute);
+    };
+    compute();
+    return () => cancelAnimationFrame(raf);
+  }, [root, to, trigger]);
+  if (!path) return null;
+  return (
+    <svg aria-hidden className="pointer-events-none absolute left-0 top-0 overflow-visible" width={path.w} height={path.h}>
+      <defs>
+        <marker id="cw-loop" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--viz-list)" />
+        </marker>
+      </defs>
+      <path d={path.d} fill="none" stroke="var(--viz-list)" strokeWidth={2} strokeLinejoin="round" markerEnd="url(#cw-loop)" />
+      <text x={path.lx} y={path.ly + 12} textAnchor="middle" className="fill-[var(--viz-list)] text-[10px] font-semibold uppercase tracking-wider">
+        {label}
+      </text>
+    </svg>
+  );
+}
+
+/** One node box with the variables pointing at it. Shared by the chain and its branches, so a node glides between them. */
+function ListNodeBox({ n, s, step, diff, doubly, arrow, index, ref }: { n: { id: string; value: TraceValue | null }; s: Extract<Structure, { kind: "list" }>; step: TraceStep; diff: StepDiff; doubly: boolean; arrow: "next" | "both" | "none"; index?: number; ref?: React.Ref<HTMLDivElement> }) {
+  const names = s.pointers.get(n.id) ?? [];
+  const changed = [...diff.highlights].some((h) => h.startsWith(`field:${n.id}:`) || h === `obj:${n.id}`);
+  const cell = "flex h-11 items-center border-[var(--viz-list)]";
+  return (
+    <motion.div
+      ref={ref}
+      layoutId={`lnode:${n.id}`}
+      layout
+      initial={{ opacity: 0, y: -24, scale: 0.85 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 24, scale: 0.85, transition: { duration: 0.3 } }}
+      transition={SPRING}
+      className="flex items-end"
+    >
+      <div className="flex flex-col items-center">
+        <div className="flex min-h-7 flex-wrap items-end justify-center gap-0.5 pb-1">
+          {names.map((p) => (
+            <motion.span key={p} layoutId={`lptr:${s.type}:${p}`} transition={SPRING} className="flex flex-col items-center">
+              <span className="rounded-full bg-[var(--viz-list)] px-1.5 font-mono text-[10.5px] font-bold leading-4 text-white">{p}</span>
+              <ArrowDown className="size-3 text-[var(--viz-list)]" />
+            </motion.span>
+          ))}
+        </div>
+        <div
+          data-node
+          data-node-index={index}
+          className={cn("flex overflow-hidden rounded-md border-2 border-[var(--viz-list)] bg-surface shadow-[0_6px_16px_-10px_var(--viz-list)]", changed && "cw-viz-changed")}
+        >
+          {doubly && <span className={cn(cell, "w-5 justify-center border-r-2 text-[var(--viz-list)]")}>•</span>}
+          <span className={cn(cell, "min-w-11 justify-center px-2 text-[14px] font-semibold")}>
+            <Text step={step} value={n.value} className="max-w-[7rem]" />
+          </span>
+          <span data-next className={cn(cell, "w-6 justify-center border-l-2 text-[var(--viz-list)]")}>
+            •
+          </span>
+        </div>
+      </div>
+      {arrow !== "none" && (
+        <span className="mb-[0.8rem] flex w-9 flex-col items-center font-mono text-[13px] leading-3 text-[var(--viz-list)]">
+          <span>⟶</span>
+          {arrow === "both" && <span>⟵</span>}
+        </span>
+      )}
+    </motion.div>
+  );
+}
+
+/**
+ * A chain that runs into the list (a node being unlinked, or a list sharing
+ * this one's tail): drawn above the list, ending just before the node it
+ * joins, with an arrow down into that node.
+ */
+function BranchRow({ root, branch, s, step, diff, doubly }: { root: React.RefObject<HTMLDivElement | null>; branch: NonNullable<Extract<Structure, { kind: "list" }>["branches"]>[number]; s: Extract<Structure, { kind: "list" }>; step: TraceStep; diff: StepDiff; doubly: boolean }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [geo, setGeo] = useState<{ x: number; d: string; w: number; h: number } | null>(null);
+  const sig = `${branch.nodes.map((n) => n.id).join()}>${branch.joinAt}`;
+  useLayoutEffect(() => {
+    const el = root.current;
+    const r = row.current;
+    if (!el || !r) return;
+    let raf = 0;
+    const until = performance.now() + 900;
+    const compute = () => {
+      const target = el.querySelector<HTMLElement>(`[data-main] [data-node-index="${branch.joinAt}"]`);
+      const nodes = r.querySelectorAll<HTMLElement>("[data-node]");
+      const last = nodes[nodes.length - 1];
+      if (!target || !last) return;
+      const base = el.getBoundingClientRect();
+      const t = target.getBoundingClientRect();
+      const width = r.getBoundingClientRect().width;
+      const x = Math.max(0, t.left - base.left - width + 6);
+      const dot = last.querySelector<HTMLElement>("[data-next]")!.getBoundingClientRect();
+      // The row moves to x; measure the dot where it will be.
+      const shift = x - (r.getBoundingClientRect().left - base.left);
+      const sx = dot.left + dot.width / 2 - base.left + shift;
+      const sy = dot.top + dot.height / 2 - base.top;
+      const tx = t.left + Math.min(22, t.width / 2) - base.left;
+      const ty = t.top - base.top - 3;
+      setGeo({ x, d: `M ${sx} ${sy} C ${sx + 30} ${sy}, ${tx} ${sy + 10}, ${tx} ${ty}`, w: el.scrollWidth, h: el.scrollHeight });
+      if (performance.now() < until) raf = requestAnimationFrame(compute);
+    };
+    compute();
+    return () => cancelAnimationFrame(raf);
+  }, [root, branch.joinAt, sig]);
+  return (
+    <>
+      <motion.div ref={row} className="flex w-fit items-end self-start" initial={false} animate={{ x: geo?.x ?? 0 }} transition={SPRING}>
+        <AnimatePresence initial={false} mode="popLayout">
+          {branch.nodes.map((n, i) => (
+            <ListNodeBox key={n.id} n={n} s={s} step={step} diff={diff} doubly={doubly} arrow={i < branch.nodes.length - 1 ? (doubly ? "both" : "next") : "none"} />
+          ))}
+        </AnimatePresence>
+      </motion.div>
+      {geo && (
+        <svg aria-hidden className="pointer-events-none absolute left-0 top-0 overflow-visible" width={geo.w} height={geo.h}>
+          <defs>
+            <marker id={`cw-branch-${branch.nodes[0]?.id}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="var(--viz-list)" />
+            </marker>
+          </defs>
+          <path d={geo.d} fill="none" stroke="var(--viz-list)" strokeWidth={2} strokeDasharray="5 3" markerEnd={`url(#cw-branch-${branch.nodes[0]?.id})`} />
+        </svg>
+      )}
+    </>
+  );
+}
+
 function ListView({ s, step, diff }: { s: Extract<Structure, { kind: "list" }>; step: TraceStep; diff: StepDiff }) {
   const doubly = s.variant === "doubly" || s.variant === "circular-doubly";
   const circular = s.variant.startsWith("circular");
-  const cell = "flex h-11 items-center border-[var(--viz-list)]";
+  const loops = circular || s.loopTo !== undefined;
+  const loopTo = circular ? 0 : (s.loopTo ?? 0);
+  const box = useRef<HTMLDivElement>(null);
+  const target = s.nodes[loopTo];
+  const targetName = target ? (s.pointers.get(target.id)?.[0] ?? (target.value ? (scalarText(target.value) ?? "") : "")) : "";
   return (
-    <div className="relative inline-flex flex-col pb-1 pt-1">
-      <div className="flex items-end">
+    <div ref={box} className={cn("relative inline-flex flex-col gap-3 pt-1", loops ? "pb-9" : "pb-1")}>
+      {(s.branches ?? []).map((b) => (
+        <BranchRow key={b.nodes[0]!.id} root={box} branch={b} s={s} step={step} diff={diff} doubly={doubly} />
+      ))}
+      <div data-main className="flex items-end">
         {doubly && !circular && (
           <>
             <NullBox />
@@ -433,55 +606,23 @@ function ListView({ s, step, diff }: { s: Extract<Structure, { kind: "list" }>; 
           </>
         )}
         <AnimatePresence initial={false} mode="popLayout">
-          {s.nodes.map((n, i) => {
-            const names = s.pointers.get(n.id) ?? [];
-            const changed = [...diff.highlights].some((h) => h.startsWith(`field:${n.id}:`) || h === `obj:${n.id}`);
-            return (
-              <motion.div
-                key={n.id}
-                layout
-                initial={{ opacity: 0, y: -24, scale: 0.85 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 24, scale: 0.85, transition: { duration: 0.25 } }}
-                transition={SPRING}
-                className="flex items-end"
-              >
-                <div className="flex flex-col items-center">
-                  <div className="flex min-h-7 flex-wrap items-end justify-center gap-0.5 pb-1">
-                    {names.map((p) => (
-                      <motion.span key={p} layoutId={`lptr:${s.id}:${p}`} transition={SPRING} className="flex flex-col items-center">
-                        <span className="rounded-full bg-[var(--viz-list)] px-1.5 font-mono text-[10.5px] font-bold leading-4 text-white">{p}</span>
-                        <ArrowDown className="size-3 text-[var(--viz-list)]" />
-                      </motion.span>
-                    ))}
-                  </div>
-                  <div className={cn("flex overflow-hidden rounded-md border-2 border-[var(--viz-list)] bg-surface shadow-[0_6px_16px_-10px_var(--viz-list)]", changed && "cw-viz-changed")}>
-                    {doubly && <span className={cn(cell, "w-5 justify-center border-r-2 text-[var(--viz-list)]")}>•</span>}
-                    <span className={cn(cell, "min-w-11 justify-center px-2 text-[14px] font-semibold")}>
-                      <Text step={step} value={n.value} className="max-w-[7rem]" />
-                    </span>
-                    <span className={cn(cell, "w-6 justify-center border-l-2 text-[var(--viz-list)]")}>•</span>
-                  </div>
-                </div>
-                {(i < s.nodes.length - 1 || !circular) && (
-                  <span className="mb-[0.8rem] flex w-9 flex-col items-center font-mono text-[13px] leading-3 text-[var(--viz-list)]">
-                    <span>⟶</span>
-                    {doubly && i < s.nodes.length - 1 && <span>⟵</span>}
-                  </span>
-                )}
-              </motion.div>
-            );
-          })}
+          {s.nodes.map((n, i) => (
+            <ListNodeBox
+              key={n.id}
+              n={n}
+              s={s}
+              step={step}
+              diff={diff}
+              doubly={doubly}
+              index={i}
+              arrow={i < s.nodes.length - 1 || !loops ? (doubly && i < s.nodes.length - 1 ? "both" : "next") : "none"}
+            />
+          ))}
         </AnimatePresence>
-        {!circular && !s.truncated && <NullBox />}
+        {!loops && !s.truncated && <NullBox />}
         {s.truncated && <span className="mb-3 px-2 text-xs text-fg-subtle">…</span>}
       </div>
-      {circular && s.nodes.length > 0 && (
-        <div aria-hidden className="relative mx-[1.4rem] mt-1 h-5 rounded-b-xl border-x-2 border-b-2 border-[var(--viz-list)]">
-          <span className="absolute -left-[7px] -top-2 font-mono text-[12px] leading-3 text-[var(--viz-list)]">▲</span>
-          <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-surface-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--viz-list)]">back to {s.pointers.get(s.nodes[0]!.id)?.[0] ?? "head"}</span>
-        </div>
-      )}
+      {loops && s.nodes.length > 0 && <LoopArrow root={box} to={loopTo} label={circular ? `back to ${targetName || "head"}` : `cycle back to ${targetName}`} trigger={s.nodes.map((n) => n.id).join()} />}
     </div>
   );
 }
@@ -540,8 +681,9 @@ function TreeView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, {
   const height = (maxY + 1) * GY + 40;
   const px = (p: Placed) => 20 + GX / 2 + p.x * GX;
   const py = (p: Placed) => 40 + p.y * GY;
+  const freshCells = s.items ? changedCells(trace, s.id, stepIndex) : null;
   const changed = (n: TreeNode) =>
-    n.index !== undefined ? diff.highlights.has(`cell:${s.id}:${n.index}`) : [...diff.highlights].some((h) => h.startsWith(`field:${n.key}:`));
+    n.index !== undefined ? (freshCells ? freshCells.has(n.index) : diff.highlights.has(`cell:${s.id}:${n.index}`)) : [...diff.highlights].some((h) => h.startsWith(`field:${n.key}:`));
   return (
     <div className="flex flex-col gap-3">
       <svg width={width} height={height} className="overflow-visible" role="img" aria-label={`${structureTitle(s)} with ${placed.length} nodes`}>
@@ -551,7 +693,7 @@ function TreeView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, {
             .map((p) => (
               <motion.line
                 key={`e:${keyOf(p.node)}`}
-                initial={{ opacity: 0 }}
+                initial={{ opacity: 0, x1: px(p.parent!), y1: py(p.parent!), x2: px(p), y2: py(p) }}
                 animate={{ x1: px(p.parent!), y1: py(p.parent!), x2: px(p), y2: py(p), opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={SPRING}
@@ -585,7 +727,7 @@ function TreeView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, {
                 transition={SPRING}
               >
                 {changed(n) && <circle r={R + 6} fill="none" stroke="var(--warning)" strokeWidth={3} className="cw-viz-pulse" />}
-                {names.length > 0 && <circle r={R + 5} fill="none" stroke="var(--success)" strokeWidth={3} className="cw-viz-pulse" />}
+                {names.length > 0 && <circle r={R + 4} fill="none" stroke="var(--success)" strokeWidth={2} strokeOpacity={0.85} />}
                 <circle r={R} fill={fill} stroke={stroke} strokeWidth={2.5} />
                 {n.end && !rb && <circle r={R - 4} fill="none" stroke="var(--success)" strokeWidth={1.5} />}
                 <text textAnchor="middle" dy="0.35em" className={cn("font-mono text-[12.5px] font-bold", rb ? "fill-white" : "fill-[var(--fg)]")} style={text === "root" ? { fontSize: 10 } : undefined}>
@@ -615,13 +757,13 @@ function TreeView({ s, step, trace, stepIndex, diff }: { s: Extract<Structure, {
         </AnimatePresence>
       </svg>
       {s.items && s.variant === "heap" && (
-        <ArrayRow items={s.items} keys={arrayKeys ?? []} step={step} id={s.id} diff={diff} label="as an array" />
+        <ArrayRow items={s.items} keys={arrayKeys ?? []} step={step} fresh={freshCells ?? new Set()} label="as an array" />
       )}
     </div>
   );
 }
 
-function ArrayRow({ items, keys, step, id, diff, label }: { items: TraceValue[]; keys: string[]; step: TraceStep; id: string; diff: StepDiff; label: string }) {
+function ArrayRow({ items, keys, step, fresh, label }: { items: TraceValue[]; keys: string[]; step: TraceStep; fresh: Set<number>; label: string }) {
   return (
     <div className="flex items-center gap-3">
       <span className="text-[10.5px] uppercase tracking-wider text-fg-faint">{label}</span>
@@ -629,7 +771,7 @@ function ArrayRow({ items, keys, step, id, diff, label }: { items: TraceValue[];
         {items.slice(0, 32).map((v, i) => (
           <motion.div key={keys[i] ?? i} layout transition={SPRING} className="flex flex-col items-center">
             <span className="text-[9.5px] text-fg-faint">{i}</span>
-            <span className={cn("-ml-px flex h-8 min-w-9 items-center justify-center border border-line-strong bg-surface px-1.5 text-[12.5px] font-semibold", i === 0 && "ml-0 rounded-l-md", i === items.length - 1 && "rounded-r-md", diff.highlights.has(`cell:${id}:${i}`) && "cw-viz-changed")}>
+            <span className={cn("-ml-px flex h-8 min-w-9 items-center justify-center border border-line-strong bg-surface px-1.5 text-[12.5px] font-semibold", i === 0 && "ml-0 rounded-l-md", i === items.length - 1 && "rounded-r-md", fresh.has(i) && "cw-viz-changed")}>
               <Text step={step} value={v} />
             </span>
           </motion.div>
@@ -646,6 +788,7 @@ function GraphView({ s }: { s: Extract<Structure, { kind: "graph" }> }) {
   const n = nodes.length;
   const R = 20;
   const { pos, width, height } = layoutGraph(nodes.map((x) => x.key), s.edges);
+  if (n === 0) return <span className="text-xs text-fg-subtle">empty</span>;
   const both = (e: { from: string; to: string }) => s.directed && s.edges.some((x) => x.from === e.to && x.to === e.from);
   return (
     <div className="flex flex-wrap items-start gap-5">
@@ -674,8 +817,10 @@ function GraphView({ s }: { s: Extract<Structure, { kind: "graph" }> }) {
           const active = (s.current.has(e.from) && s.checking.has(e.to)) || (!s.directed && s.current.has(e.to) && s.checking.has(e.from));
           return (
             <g key={`${e.from}>${e.to}:${i}`}>
-              <path
-                d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
+              <motion.path
+                initial={false}
+                animate={{ d: `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}` }}
+                transition={SPRING}
                 fill="none"
                 stroke={active ? "var(--viz-hash)" : "color-mix(in srgb, var(--viz-graph) 40%, var(--line-strong))"}
                 strokeWidth={active ? 3 : 1.8}
@@ -683,12 +828,12 @@ function GraphView({ s }: { s: Extract<Structure, { kind: "graph" }> }) {
                 className="transition-[stroke,stroke-width] duration-300"
               />
               {e.weight !== undefined && (
-                <g transform={`translate(${(x1 + x2) / 2 - uy * bend * 0.5},${(y1 + y2) / 2 + ux * bend * 0.5})`}>
+                <motion.g initial={false} animate={{ x: (x1 + x2) / 2 - uy * bend * 0.5, y: (y1 + y2) / 2 + ux * bend * 0.5 }} transition={SPRING}>
                   <rect x={-11} y={-8} width={22} height={16} rx={4} fill="var(--surface-2)" stroke="color-mix(in srgb, var(--viz-graph) 40%, transparent)" />
                   <text textAnchor="middle" dy="0.35em" className="fill-[var(--fg-muted)] font-mono text-[10px] font-semibold">
                     {e.weight.length > 4 ? `${e.weight.slice(0, 3)}…` : e.weight}
                   </text>
-                </g>
+                </motion.g>
               )}
             </g>
           );
@@ -701,7 +846,7 @@ function GraphView({ s }: { s: Extract<Structure, { kind: "graph" }> }) {
           const frontier = s.frontier.has(node.key);
           const badge = s.badges.get(node.key);
           return (
-            <g key={node.key} transform={`translate(${p.x},${p.y})`}>
+            <motion.g key={node.key} initial={{ x: p.x, y: p.y, opacity: 0, scale: 0.5 }} animate={{ x: p.x, y: p.y, opacity: 1, scale: 1 }} transition={SPRING}>
               {current && <circle r={R + 6} fill="none" stroke="var(--success)" className="cw-viz-pulse" />}
               {checking && <circle r={R + 5} fill="none" stroke="var(--viz-hash)" strokeWidth={2.5} strokeDasharray="3 3" />}
               <motion.circle
@@ -725,7 +870,7 @@ function GraphView({ s }: { s: Extract<Structure, { kind: "graph" }> }) {
                   </text>
                 </g>
               )}
-            </g>
+            </motion.g>
           );
         })}
       </svg>
@@ -753,6 +898,7 @@ function layoutGraph(keys: string[], edges: { from: string; to: string }[]) {
   const hit = layoutCache.get(sig);
   if (hit) return hit;
   const n = keys.length;
+  if (n === 0) return { pos: new Map<string, { x: number; y: number }>(), width: 0, height: 0 };
   const k = Math.max(260, 92 * Math.sqrt(n)) / Math.sqrt(Math.max(1, n));
   const p = keys.map((_, i) => {
     const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(1, n);
@@ -821,7 +967,42 @@ function Legend({ swatch, text }: { swatch: string; text: string }) {
   );
 }
 
+function ObjectView({ s, step, diff }: { s: Extract<Structure, { kind: "object" }>; step: TraceStep; diff: StepDiff }) {
+  if (s.fields.length === 0) return <span className="text-xs text-fg-subtle">no fields</span>;
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]">
+      {s.fields.map(([n, v]) => (
+        <div key={n} className="contents">
+          <span className="text-right font-mono text-fg-muted">{n}</span>
+          <span className={cn("min-w-0 rounded px-1", diff.highlights.has(`field:${s.id}:${n}`) && "cw-viz-changed")}>
+            <Text step={step} value={v} className="block max-w-[18rem] font-semibold" />
+          </span>
+        </div>
+      ))}
+      {s.omitted > 0 && <span className="col-span-2 text-xs text-fg-subtle">+{s.omitted} more</span>}
+    </div>
+  );
+}
+
 // -- The view
+
+class CardBoundary extends Component<{ name: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidUpdate(prev: { name: string }) {
+    if (prev.name !== this.props.name && this.state.failed) this.setState({ failed: false });
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="rounded-xl border border-line-strong bg-surface-2 px-4 py-3 text-xs text-fg-subtle">
+        <code className="text-fg-muted">{this.props.name}</code> could not be drawn at this step. The memory view shows it.
+      </div>
+    );
+  }
+}
 
 function StructureCard({ s, step, trace, stepIndex, diff }: { s: Structure; step: TraceStep; trace: Trace; stepIndex: number; diff: StepDiff }) {
   switch (s.kind) {
@@ -873,6 +1054,12 @@ function StructureCard({ s, step, trace, stepIndex, diff }: { s: Structure; step
           <TreeView s={s} step={step} trace={trace} stepIndex={stepIndex} diff={diff} />
         </Card>
       );
+    case "object":
+      return (
+        <Card s={s}>
+          <ObjectView s={s} step={step} diff={diff} />
+        </Card>
+      );
     case "graph":
       return (
         <Card s={s} extra={<span className="text-[11px] text-fg-subtle">{s.directed ? "directed" : "undirected"}{s.edges.some((e) => e.weight !== undefined) ? " · weighted" : ""}</span>}>
@@ -917,21 +1104,42 @@ function Context({ step, diff }: { step: TraceStep; diff: StepDiff }) {
 
 /** Structures of the current step, each drawn as its concept. */
 export function useStructures(trace: Trace, stepIndex: number): Structure[] {
+  const hints = useMemo(() => analyzeTrace(trace), [trace]);
   return useMemo(() => {
     const step = trace.steps[stepIndex];
-    return step ? detectStructures(step) : [];
-  }, [trace, stepIndex]);
+    try {
+      return step ? detectStructures(step, hints) : [];
+    } catch {
+      return [];
+    }
+  }, [trace, stepIndex, hints]);
+}
+
+/** A stable key per card: its name (a structure keeps its card while it grows from a list into a table). */
+function cardKeys(structures: Structure[]): string[] {
+  const used = new Map<string, number>();
+  return structures.map((s) => {
+    const n = used.get(s.name) ?? 0;
+    used.set(s.name, n + 1);
+    return n ? `${s.name}#${n}` : s.name;
+  });
 }
 
 /** Whether any step of the trace has a structure worth the concept view. */
 export function hasStructures(trace: Trace): boolean {
   const sample = trace.steps.length <= 40 ? trace.steps : trace.steps.filter((_, i) => i % Math.ceil(trace.steps.length / 40) === 0).concat(trace.steps.at(-1)!);
-  return sample.some((s) => detectStructures(s).some((x) => x.kind !== "array" || x.pointers.size > 0 || x.items.length > 0));
+  try {
+    const hints = analyzeTrace(trace);
+    return sample.some((s) => detectStructures(s, hints).some((x) => x.kind !== "object" && (x.kind !== "array" || x.pointers.size > 0 || x.items.length > 0)));
+  } catch {
+    return false;
+  }
 }
 
 export function ConceptView({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number; diff: StepDiff }) {
   const step = trace.steps[stepIndex]!;
   const structures = useStructures(trace, stepIndex);
+  const keys = cardKeys(structures);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Context step={step} diff={diff} />
@@ -944,8 +1152,10 @@ export function ConceptView({ trace, stepIndex, diff }: { trace: Trace; stepInde
         ) : (
           <div className="flex flex-wrap items-start gap-4">
             <AnimatePresence initial={false}>
-              {structures.map((s) => (
-                <StructureCard key={`${s.kind}:${s.id}`} s={s} step={step} trace={trace} stepIndex={stepIndex} diff={diff} />
+              {structures.map((s, i) => (
+                <CardBoundary key={keys[i]} name={s.name}>
+                  <StructureCard s={s} step={step} trace={trace} stepIndex={stepIndex} diff={diff} />
+                </CardBoundary>
               ))}
             </AnimatePresence>
           </div>

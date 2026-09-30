@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HeapObject, Trace, TraceStep, TraceValue } from "@cw/shared";
-import { detectStructures, stableKeys, structureTitle, type Structure, type TreeNode } from "./concepts";
+import { analyzeTrace, changedCells, detectStructures, detectWithCoverage, stableKeys, structureTitle, type Structure, type TreeNode } from "./concepts";
 
 const int = (n: number): TraceValue => ({ kind: "value", text: String(n), type: "int" });
 const str = (s: string): TraceValue => ({ kind: "value", text: `'${s}'`, type: "str" });
@@ -212,5 +212,54 @@ describe("stable keys", () => {
     };
     const a = stableKeys(trace, "1", 0);
     expect(stableKeys(trace, "1", 1)).toEqual([a[1], a[0]]);
+  });
+});
+
+describe("whole programs", () => {
+  const node = (v: number, next: TraceValue = none) => obj("Node", { val: int(v), next });
+
+  it("a node being unlinked is drawn above the list, pointing at the node it rejoins", () => {
+    const heap = { a: node(1, ref("b")), b: node(2, ref("d")), c: node(3, ref("d")), d: node(4) };
+    const l = one(step({ head: ref("a"), cur: ref("c") }, heap), "list");
+    expect(l.kind === "list" && [l.name, l.nodes.map((n) => n.id), l.branches]).toEqual(["head", ["a", "b", "d"], [{ nodes: [{ id: "c", value: int(3) }], joinAt: 2 }]]);
+  });
+
+  it("a cycle into the middle of a list is drawn as a loop to that node", () => {
+    const heap = { a: node(1, ref("b")), b: node(2, ref("c")), c: node(3, ref("b")) };
+    expect(one(step({ head: ref("a") }, heap), "list")).toMatchObject({ variant: "singly", loopTo: 1, truncated: false });
+  });
+
+  it("decides from the whole run: a lone first node is already a list node, a one-node tree already a BST", () => {
+    const trace: Trace = {
+      language: "python",
+      stdout: "",
+      steps: [step({ head: ref("a") }, { a: node(1) }), step({ head: ref("a"), n: ref("x") }, { a: node(1), x: node(2) }), step({ head: ref("a") }, { a: node(1, ref("x")), x: node(2) })],
+    };
+    const hints = analyzeTrace(trace);
+    expect(detectStructures(trace.steps[0]!, hints)[0]).toMatchObject({ kind: "list" });
+    // Two unlinked nodes: still nodes, not two plain objects.
+    expect(detectStructures(trace.steps[1]!, hints).map((s) => s.kind)).toEqual(["list", "list"]);
+
+    const bst = (spec: Record<string, [number, string | null, string | null]>) =>
+      Object.fromEntries(Object.entries(spec).map(([id, [v, l, r]]) => [id, obj("T", { key: int(v), left: l ? ref(l) : none, right: r ? ref(r) : none })]));
+    const t2: Trace = { language: "python", stdout: "", steps: [step({ root: ref("r") }, bst({ r: [5, null, null] })), step({ root: ref("r") }, bst({ r: [5, "a", null], a: [2, null, null] }))] };
+    expect(detectStructures(t2.steps[0]!, analyzeTrace(t2))[0]).toMatchObject({ kind: "tree", variant: "bst" });
+  });
+
+  it("only elements that are new or reassigned are highlighted, not ones that shifted", () => {
+    const trace: Trace = {
+      language: "python",
+      stdout: "",
+      steps: [step({ a: ref("1") }, { "1": seq("list", [int(1), int(2), int(3)]) }), step({ a: ref("1") }, { "1": seq("list", [int(1), int(9), int(2), int(3)]) }), step({ a: ref("1") }, { "1": seq("list", [int(1), int(9), int(7), int(3)]) })],
+    };
+    expect([...changedCells(trace, "1", 1)]).toEqual([1]);
+    expect([...changedCells(trace, "1", 2)]).toEqual([2]);
+  });
+
+  it("a list inside an object stays in the object's card, unless the class is a stack or queue", () => {
+    const plain = detectWithCoverage(step({ s: ref("o") }, { o: obj("Student", { name: str("Ana"), marks: ref("m") }), m: seq("list", [int(90)]) }));
+    expect(plain.structures.map((x) => x.kind)).toEqual(["object"]);
+    const wrapped = detectStructures(step({ s: ref("o") }, { o: obj("MyStack", { items: ref("m") }), m: seq("list", [int(1), int(2)]) }));
+    expect(wrapped.map((x) => x.kind)).toEqual(["object", "stack"]);
   });
 });

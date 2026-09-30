@@ -488,9 +488,13 @@ test("visualizer: animates a swap, index pointers and a linked list", async ({ p
   const nodes = viz.getByRole("group", { name: "Node object" });
   await expect(nodes).toHaveCount(2);
   // A linked list reads left to right: the second node sits beside the first.
-  const [a, b] = [await nodes.nth(0).boundingBox(), await nodes.nth(1).boundingBox()];
-  expect(b!.x).toBeGreaterThan(a!.x + a!.width);
-  expect(Math.abs(b!.y - a!.y)).toBeLessThan(4);
+  // Cards glide into place: measure once they have settled.
+  await expect
+    .poll(async () => {
+      const [a, b] = [await nodes.nth(0).boundingBox(), await nodes.nth(1).boundingBox()];
+      return !!a && !!b && b.x > a.x + a.width && Math.abs(b.y - a.y) < 4;
+    })
+    .toBe(true);
   await expect(viz.getByLabel("Output so far")).toHaveText("[1, 3]");
 });
 
