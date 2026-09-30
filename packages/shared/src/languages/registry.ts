@@ -137,6 +137,32 @@ int main(void) {
   visualizer: { supportLevel: "beta" },
 };
 
+/**
+ * Makes Node treat the typed-input pipe like a terminal: once the program stops
+ * reading (rl.close(), process.stdin.pause()), stdin no longer keeps it alive,
+ * so it exits instead of waiting for the input to end; reading again (resume)
+ * keeps it alive as before. A program still listening for lines waits for the
+ * end of input, as it would in a terminal. Loaded before the program with
+ * --import, as a data: URL, so the sandbox needs no extra file.
+ */
+const STDIN_LIKE_A_TERMINAL = [
+  'const d = Object.getOwnPropertyDescriptor(process, "stdin");',
+  "if (d && d.get) {",
+  "  let s;",
+  '  Object.defineProperty(process, "stdin", { configurable: true, enumerable: d.enumerable, get() {',
+  "    if (!s) {",
+  "      s = d.get.call(process);",
+  '      if (!s.isTTY && typeof s.unref === "function") {',
+  '        s.on("pause", () => s.unref());',
+  '        s.on("resume", () => s.ref());',
+  "      }",
+  "    }",
+  "    return s;",
+  "  } });",
+  "}",
+].join("\n");
+export const NODE_STDIN_FLAG = `--import=data:text/javascript,${encodeURIComponent(STDIN_LIKE_A_TERMINAL)}`;
+
 const javascript: LanguageDefinition = {
   id: "javascript",
   name: "JavaScript",
@@ -154,7 +180,7 @@ const javascript: LanguageDefinition = {
   ],
   runtime: {
     image: "node:22-slim",
-    command: ["node", "{entry}"],
+    command: ["node", NODE_STDIN_FLAG, "{entry}"],
   },
   debugger: { protocol: "inspector", supportLevel: "beta" },
   visualizer: { supportLevel: "beta" },
@@ -179,7 +205,7 @@ console.log(greeting);
   runtime: {
     image: "node:22-slim",
     // Transform (not just strip) so enums, namespaces and parameter properties work.
-    command: ["node", "--experimental-transform-types", "--no-warnings", "{entry}"],
+    command: ["node", "--experimental-transform-types", "--no-warnings", NODE_STDIN_FLAG, "{entry}"],
   },
   debugger: { protocol: "inspector", supportLevel: "beta" },
   visualizer: { supportLevel: "beta" },

@@ -323,9 +323,8 @@ rl.once("line", (line) => {
   await expect(variables(page).getByRole("treeitem", { name: "r = 25" })).toBeVisible();
   await page.keyboard.press("F5");
   await expect(output(page)).toContainText("total 28", { timeout: 30_000 });
-  // As in a normal run, Node keeps stdin open until the input ends.
-  await page.getByRole("button", { name: "Send EOF" }).click();
-  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+  // rl.close(): the program ends by itself, no Send EOF needed.
+  await expect(page.getByText("Success", { exact: true })).toBeVisible({ timeout: 30_000 });
 });
 
 test("debugging TypeScript: exact lines across files, with an enum above", async ({ page }) => {
@@ -945,4 +944,52 @@ test("a program asking for input brings its console back, even from another tab"
   await input.fill("y");
   await page.keyboard.press("Enter");
   await expect(output(page)).toContainText("xy", { timeout: 30_000 });
+});
+
+test("JavaScript and TypeScript programs that read with readline end by themselves, like in a terminal", async ({ page }) => {
+  const programs = [
+    [
+      "JavaScript",
+      [
+        'const readline = require("node:readline");',
+        "",
+        "const rl = readline.createInterface({ input: process.stdin, output: process.stdout });",
+        'rl.question("a? ", (a) => {',
+        '  rl.question("b? ", (b) => {',
+        '    console.log("sum", Number(a) + Number(b));',
+        "    rl.close();",
+        "  });",
+        "});",
+        "",
+      ].join("\n"),
+    ],
+    [
+      "TypeScript",
+      [
+        'import * as readline from "node:readline/promises";',
+        "",
+        "const rl = readline.createInterface({ input: process.stdin, output: process.stdout });",
+        'const a: string = await rl.question("a? ");',
+        'const b: string = await rl.question("b? ");',
+        'console.log("sum", Number(a) + Number(b));',
+        "rl.close();",
+        "",
+      ].join("\n"),
+    ],
+  ] as const;
+  for (const [language, code] of programs) {
+    await freshProject(page, language);
+    await setCode(page, code);
+    await page.getByRole("button", { name: "Run program" }).click();
+    const input = page.getByRole("textbox", { name: "Program input" });
+    await expect(page.getByText("Program waiting for input"), language).toBeVisible({ timeout: 120_000 });
+    await input.fill("2");
+    await page.keyboard.press("Enter");
+    await expect(output(page)).toContainText("b?", { timeout: 30_000 });
+    await input.fill("5");
+    await page.keyboard.press("Enter");
+    await expect(output(page)).toContainText("sum 7", { timeout: 30_000 });
+    // No Send EOF: closing readline ends the program.
+    await expect(page.getByText("Success", { exact: true }), language).toBeVisible({ timeout: 30_000 });
+  }
 });
