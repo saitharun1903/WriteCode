@@ -140,6 +140,7 @@ const javascript: LanguageDefinition = {
     image: "node:22-slim",
     command: ["node", "{entry}"],
   },
+  debugger: { protocol: "inspector", supportLevel: "beta" },
   visualizer: { supportLevel: "beta" },
 };
 
@@ -164,6 +165,7 @@ console.log(greeting);
     // Transform (not just strip) so enums, namespaces and parameter properties work.
     command: ["node", "--experimental-transform-types", "--no-warnings", "{entry}"],
   },
+  debugger: { protocol: "inspector", supportLevel: "beta" },
   visualizer: { supportLevel: "beta" },
 };
 

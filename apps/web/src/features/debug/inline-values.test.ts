@@ -46,6 +46,13 @@ describe("inlineValues", () => {
     );
   });
 
+  it("stays inside a TypeScript method", () => {
+    const lines = ["const x = 1;", "class Stack<T> {", "  push(x: T): void {", "    this.items.push(x);", "  }", "}"];
+    const at = inlineValues(lines, 4, [{ name: "x", value: "7", changed: false }]);
+    expect([...at.keys()]).toEqual([4]);
+    expect(inlineValues(["if (a) {", "  b = 1;"], 2, [{ name: "a", value: "true", changed: false }]).get(1)).toBeDefined();
+  });
+
   it("shortens long values", () => {
     expect(shortValue("x".repeat(50), 10)).toBe("xxxxxxxxx…");
   });

@@ -22,7 +22,7 @@ export interface RuntimeConfig {
 }
 
 export interface DebuggerConfig {
-  protocol: "jdwp" | "dap" | "settrace";
+  protocol: "jdwp" | "dap" | "settrace" | "inspector";
   supportLevel: SupportLevel;
 }
 

@@ -54,7 +54,8 @@ while :; do
     [ -n "$c" ] || continue
     case "$c" in
       *pipe*) p=\${t%/task/*}; if [ "$p/fd/0" -ef "$F" ]; then w=1; break; fi;;
-      *ep_poll*|*epoll*) p=\${t%/task/*}; if [ "$p/fd/0" -ef "$F" ] && polls_stdin "$p"; then w=1; break; fi;;
+      # Only the main thread's event loop: a paused Node's inspector thread polls too, and is not reading input.
+      *ep_poll*|*epoll*) p=\${t%/task/*}; if [ "\${t##*/}" = "\${p##*/}" ] && [ "$p/fd/0" -ef "$F" ] && polls_stdin "$p"; then w=1; break; fi;;
     esac
   done
   if [ "$w $s" != "$last" ]; then echo "$w $s"; last="$w $s"; fi

@@ -16,8 +16,12 @@ const PY_DEF = /^\s*(async\s+)?def\s+\w+\s*\(/;
 const C_LIKE_HEADER = /^\s*(?!(if|for|while|switch|catch|else|do|try|return|new)\b)[\w<>[\],.?*&\s]+\s+[\w$]+\s*\([^;]*\)\s*(throws\s+[\w.,\s]+)?\s*\{?\s*$/;
 const JS_FUNCTION = /\bfunction\b|=>\s*\{?\s*$/;
 
+// A JavaScript/TypeScript class method: `push(x: T): void {`, `static async load() {`, `get size() {`.
+const JS_METHOD =
+  /^\s*(?!(if|for|while|switch|catch|else|do|try|return|new|function)\b)((public|private|protected|static|async|get|set|override|readonly)\s+)*[\w$]+\s*(<[^>]*>)?\s*\([^;]*\)\s*(:\s*[^{;]+)?\{\s*$/;
+
 function isFunctionHeader(line: string): boolean {
-  return PY_DEF.test(line) || C_LIKE_HEADER.test(line) || JS_FUNCTION.test(line);
+  return PY_DEF.test(line) || C_LIKE_HEADER.test(line) || JS_FUNCTION.test(line) || JS_METHOD.test(line);
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

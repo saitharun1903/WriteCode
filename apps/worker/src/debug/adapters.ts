@@ -26,8 +26,22 @@ const STDIN_PATH = "/tmp/cw-stdin";
 const JAVA_WRAPPER_HOME = "/tmp/cwdbg/jvm";
 const PYTHON_ADAPTER_URL = new URL("../../debug-adapters/python/cw_debug_adapter.py", import.meta.url);
 const PYTHON_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.py";
+const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
+const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 
 let pythonSource: Promise<string> | null = null;
+let nodeSource: Promise<string> | null = null;
+
+/** Reads an adapter's source once; a failed read is retried next time. */
+function source(url: URL, cached: Promise<string> | null, set: (p: Promise<string> | null) => void): Promise<string> {
+  if (cached) return cached;
+  const p = readFile(url, "utf8").catch((e: unknown) => {
+    set(null);
+    throw e;
+  });
+  set(p);
+  return p;
+}
 
 /** `stdinPath` is the program's stdin: the input file, or the interactive FIFO. */
 export async function debugAdapterFor(docker: Docker, request: ExecutionRequest, stdinPath = STDIN_PATH): Promise<DebugAdapter> {
@@ -62,6 +76,24 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         setup: [],
         // The adapter's own command reader also blocks on a pipe, so it reports input waits itself.
         monitorInput: false,
+      };
+    }
+    case "javascript":
+    case "typescript": {
+      const lang = requireLanguage(request.language);
+      return {
+        files: [{ path: NODE_ADAPTER_PATH, content: await source(NODE_ADAPTER_URL, nodeSource, (p) => (nodeSource = p)) }],
+        argv: ["node", NODE_ADAPTER_PATH],
+        launch: {
+          ...common,
+          entry: request.entry,
+          root: SANDBOX_WORKDIR,
+          // The program runs with the flags of a normal run (TypeScript's transform).
+          nodeArgs: lang.runtime.command.slice(1).filter((a) => a.startsWith("--")),
+        },
+        setup: [],
+        // The program is its own process reading its stdin, as in a normal run.
+        monitorInput: true,
       };
     }
     default:

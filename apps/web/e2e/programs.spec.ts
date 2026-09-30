@@ -288,6 +288,63 @@ test("debugging a program that reads input: Python pauses after the typed value"
   await expect(output(page)).toContainText("hi Ada", { timeout: 30_000 });
 });
 
+test("debugging JavaScript: breakpoint, variables, step, input typed while it runs", async ({ page }) => {
+  await freshProject(page, "JavaScript");
+  await setCode(
+    page,
+    `const readline = require("node:readline");
+
+function square(x) {
+  const r = x * x;
+  return r;
+}
+
+const nums = [3, 1, 2];
+const rl = readline.createInterface({ input: process.stdin });
+rl.once("line", (line) => {
+  const n = Number(line);
+  const total = square(n) + nums.length;
+  console.log("total", total);
+  rl.close();
+});
+`,
+  );
+  await breakpointAt(page, 4);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(page.getByText("Program waiting for input")).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("textbox", { name: "Program input" }).fill("5");
+  await page.keyboard.press("Enter");
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("4:1");
+  await expect(variables(page).getByRole("treeitem", { name: "x = 5" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "square:4, main.js" })).toBeVisible();
+  await page.keyboard.press("F10");
+  await expect(debugPanel(page).getByText("Paused after step")).toBeVisible();
+  await expect(variables(page).getByRole("treeitem", { name: "r = 25" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total 28", { timeout: 30_000 });
+  // As in a normal run, Node keeps stdin open until the input ends.
+  await page.getByRole("button", { name: "Send EOF" }).click();
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("debugging TypeScript: exact lines across files, with an enum above", async ({ page }) => {
+  await freshProject(page, "TypeScript");
+  await addFile(page, "stack.ts", "export class Stack<T> {\n  private items: T[] = [];\n\n  push(x: T): void {\n    this.items.push(x);\n  }\n}\n");
+  await openFile(page, "main.ts");
+  await setCode(page, 'import { Stack } from "./stack.ts";\n\nenum Color {\n  Red,\n  Green,\n}\n\nconst s = new Stack<number>();\ns.push(Color.Green);\nconsole.log("pushed");\n');
+  await openFile(page, "stack.ts");
+  await breakpointAt(page, 5);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("5:1");
+  await expect(variables(page).getByRole("treeitem", { name: "x = 1" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "push:5, Stack" })).toBeVisible();
+  await expect(callStack(page).getByRole("button", { name: "(top level):9, main.ts" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("pushed", { timeout: 30_000 });
+});
+
 test("several main classes: asks which to run and remembers the choice", async ({ page }) => {
   await freshProject(page, "Java");
   await setCode(page, "public class Main {\n    static String helper() {\n        return \"helper\";\n    }\n}\n");
