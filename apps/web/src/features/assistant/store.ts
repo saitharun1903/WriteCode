@@ -1,7 +1,10 @@
 "use client";
 
 import { create } from "zustand";
-import type { AssistantContext, AssistantEffort, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep } from "@cw/shared";
+import type { AssistantContext, AssistantDebug, AssistantEffort, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep, AssistantTests } from "@cw/shared";
+import { useDebug } from "@/features/debug/store";
+import { judge } from "@/features/tests/compare";
+import { useTests } from "@/features/tests/store";
 import { editorBridge, useCursor } from "@/features/editor/bridge";
 import { writeFile } from "@/features/editor/write-file";
 import { API_URL } from "@/features/execution/api";
@@ -130,6 +133,66 @@ function visualizerStep(): AssistantStep | undefined {
   };
 }
 
+/** The debugger's pause, while the program is paused: values read from the running program. */
+function debugPause(): AssistantDebug | undefined {
+  const { stop, selectedFrame, variables, watches, watchResults } = useDebug.getState();
+  const frame = stop?.frames[selectedFrame] ?? stop?.frames[0];
+  if (!stop || !frame) return undefined;
+  const vars = variables[frame.localsRef];
+  const text =
+    vars?.status === "ready"
+      ? vars.variables.map((v) => `${v.name} = ${v.value}${v.type ? `  (${v.type})` : ""}`).join("\n")
+      : vars?.status === "error"
+        ? `(could not be read: ${vars.message})`
+        : "(not loaded yet)";
+  const shown = watches.map((expr) => {
+    const r = watchResults[expr];
+    return `${expr} = ${r?.status === "ready" ? r.value : r?.status === "error" ? `error: ${r.message}` : "…"}`;
+  });
+  return {
+    reason: stop.reason,
+    description: stop.description?.slice(0, 1_000),
+    file: frame.file ?? undefined,
+    line: frame.line,
+    stack: stop.frames.slice(0, 60).map((f, i) => `${f.name} (${f.file ?? "library"}:${f.line})${i === selectedFrame ? "  <- selected" : ""}`),
+    variables: tail(text, 15_000),
+    watches: shown.length ? tail(shown.join("\n"), 4_000) : undefined,
+  };
+}
+
+/** The latest test run of this project: how many passed, and what the failing tests printed. */
+function testResults(): AssistantTests | undefined {
+  const cases = useWorkspace.getState().project?.tests ?? [];
+  const { outcomes } = useTests.getState();
+  const clip = (t: string) => (t.length > 2_500 ? `${t.slice(0, 2_500)}\n[... cut ...]` : t);
+  let total = 0;
+  let passed = 0;
+  const failures: AssistantTests["failures"] = [];
+  cases.forEach((test, i) => {
+    const outcome = outcomes[test.id];
+    const r = outcome?.state === "done" ? outcome.result : undefined;
+    if (!r) return;
+    total++;
+    const { verdict } = judge(r.status, test.expected, r.stdout);
+    if (verdict === "passed" || verdict === "ran") {
+      passed += verdict === "passed" ? 1 : 0;
+      if (verdict === "ran") total--;
+      return;
+    }
+    if (failures.length < 6) {
+      failures.push({
+        name: `Test ${i + 1}`,
+        input: clip(outcome!.input),
+        expected: clip(test.expected),
+        actual: clip(r.stdout + (r.stderr ? `\n[stderr]\n${r.stderr}` : "")),
+        verdict,
+        message: r.message?.slice(0, 1_000),
+      });
+    }
+  });
+  return total > 0 ? { total, passed, failures } : undefined;
+}
+
 /** Everything the assistant should know, taken from what the user can see in the IDE. */
 export function buildContext(): AssistantContext | null {
   const { project, activeFile } = useWorkspace.getState();
@@ -154,6 +217,8 @@ export function buildContext(): AssistantContext | null {
     selection: selection && activeFile && selection.text.trim() ? { file: activeFile, ...selection, text: selection.text.slice(0, 7_500) } : undefined,
     lastRun: lastRun(project.id),
     visualizer: visualizerStep(),
+    debug: debugPause(),
+    tests: testResults(),
   };
 }
 

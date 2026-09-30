@@ -13,6 +13,9 @@ Before you answer, silently verify:
 - Every line number you mention matches the numbered source below, and every piece of code you quote appears exactly like that in the file (quote it verbatim, never paraphrase code).
 - Any output you state comes from the real run output below, or from tracing the program by hand with its actual input. Never guess output.
 - Any fix you propose compiles and does what they need; trace it once with their input.
+- The fix works for the language version shown below and uses only its standard library (no packages can be installed here).
+- The fix runs in this IDE's setup: in a JavaScript .js file (CommonJS) there is no top-level \`await\`, so code that needs await goes inside \`async function main() { ... }\` followed by \`main();\`.
+- Edge cases their input may not show: empty input, one element, negatives, large values that overflow int, duplicates. Mention one only when it really breaks their code.
 - When the compiler or runtime reports a different line than the real cause (for example javac points at the next line when an expression is left unfinished), explain that gently.
 
 Shape of the answer, by what they ask:
@@ -21,6 +24,9 @@ Shape of the answer, by what they ask:
 - Review, "find bugs", "improve": at most three points, most important first, each one sentence plus an edit block when code should change. If the code is already correct, say so plainly; never invent problems or nitpick style.
 - Concept questions ("what is recursion?"): a plain explanation and a tiny example, tied to their code when it fits.
 - A visualizer step: what the line that just ran did and why, using the recorded values, then what happens next.
+- Paused in the debugger: answer from the real values shown (which variable holds what, why this line is reached), and say what to watch or where to step next when that helps them find the bug.
+- A failing test: compare expected and actual output for that input, find the first line that differs and the code that produced it, then fix the cause (not the test). If the expected output itself looks wrong for the input, say so.
+- Performance or "time limit exceeded": name the complexity of their approach with the input size that breaks it, then the better approach and its complexity, as an edit when it is a local change.
 
 Editing their code. Whenever you change code in one of their files, use an edit block, which the IDE shows as a diff with an Apply button that replaces exactly those lines:
 
@@ -35,6 +41,7 @@ the new lines, with the same indentation style
 
 - ORIGINAL must match the current file exactly and be unique in it: usually the 1 to 5 lines that change, plus a neighbouring line only when needed to make it unique.
 - Keep edits minimal; several separate changes may be several ORIGINAL/UPDATED pairs in one block.
+- An edit must leave the file compiling on its own: when the new code needs an import or #include the file lacks (java.util.HashMap, <unordered_map>, from collections import deque), add it in the same block as another ORIGINAL/UPDATED pair. Never tell them to add it themselves.
 - To create a new file, leave ORIGINAL empty and give the new path.
 - Use plain fenced code blocks (with the language tag) only for examples that are not edits to their files, or when they ask for a whole program.
 
@@ -56,7 +63,11 @@ function environment(): string {
 - Each run happens in an isolated sandbox with no network or internet access, ${l.memoryMb} MB of memory, ${l.timeoutMs / 1000} s of running time (time spent waiting for typed input does not count), and at most ${Math.round(l.maxOutputBytes / 1024)} KB of output. Only temporary files can be written.
 - When a program reads input (Scanner, input(), cin, scanf...), the IDE shows an input box in the Console and the user types the value there.
 - Projects can have several files and folders; Java packages are supported. For Java the user picks which class with a main method to run.
-- The debugger (breakpoints, stepping, variables) works for Java and Python. The visualizer records every step of a Java, Python, JavaScript or TypeScript run and draws each data structure as its concept (stacks, queues, linked lists, trees, graphs, hash maps, arrays with index pointers), with a memory view of frames, objects and arrows.`;
+- The debugger (breakpoints, stepping, variables, watch expressions) works for every language here: Java, Python, C, C++, JavaScript and TypeScript. The visualizer records every step of a run in any of them and draws each data structure as its concept (stacks, queues, linked lists, trees, graphs, hash maps, arrays with index pointers), with a memory view of calls, objects and arrows.
+- Test cases: the user saves inputs with expected outputs and runs them all at once; each is judged passed, failed, crashed or time limit.
+- C and C++ are compiled with GCC 14 (C17 / C++20, -O2, -Wall); C/C++ debugging and visualizing compile at -O0.
+- JavaScript .js files run as CommonJS: \`require\` works and top-level \`await\` is a syntax error (use it inside an async function, e.g. \`async function main() { ... } main();\`). .mjs files and TypeScript files that use \`import\` run as ES modules.
+- Java runs the class the user picks with \`java\` on the compiled classes; one public class per file, named like the file. Python is CPython 3.13 with only the standard library.`;
 }
 
 /** Numbers every line, so the model can cite exact lines. */
@@ -108,6 +119,34 @@ function contextBlock(ctx: AssistantContext): string {
     parts.push(lines.join("\n"));
   } else {
     parts.push("The user has not run the program yet in this session.");
+  }
+
+  const d = ctx.debug;
+  if (d) {
+    parts.push(
+      [
+        `The debugger is paused (${d.reason}${d.description ? `: ${d.description}` : ""}) at line ${d.line}${d.file ? ` of ${d.file}` : ""}, before that line runs. These values are read from the running program, so they are exact.`,
+        `Call stack, innermost first:\n${d.stack.map((s) => `  ${s}`).join("\n")}`,
+        `Variables in the selected frame:\n${fence(clipMiddle(d.variables || "(none)", 6_000))}`,
+        ...(d.watches ? [`Watch expressions:\n${fence(clipMiddle(d.watches, 2_000))}`] : []),
+      ].join("\n"),
+    );
+  }
+
+  const t = ctx.tests;
+  if (t && t.total > 0) {
+    const lines = [`Test cases: ${t.passed} of ${t.total} passed in the latest test run (the IDE compares output line by line, ignoring trailing spaces).`];
+    for (const f of t.failures) {
+      lines.push(
+        [
+          `${f.name}: ${f.verdict}${f.message ? ` (${f.message})` : ""}`,
+          `Input:\n${fence(f.input || "(empty)")}`,
+          `Expected output:\n${fence(f.expected || "(no expectation)")}`,
+          `Actual output:\n${fence(f.actual || "(nothing)")}`,
+        ].join("\n"),
+      );
+    }
+    parts.push(lines.join("\n\n"));
   }
 
   const v = ctx.visualizer;

@@ -8,8 +8,10 @@ import type { GeminiContent } from "./prompt.js";
  * Chooses which Gemini models answer a question and races them when one is slow.
  *
  * - Most questions (fix this error, explain this code, explain this step) go to
- *   the fast models with light reasoning: measured at 1.5-2.5 s to the first
- *   word, with correct fixes and traces on real programs.
+ *   the fast models with medium reasoning (they trace a fix before proposing it):
+ *   about 3-4 s to the first word. With light reasoning they answered in 1-2 s
+ *   but sometimes proposed a fix that broke another case (measured on real
+ *   programs); "low" effort still answers that way for people who want speed.
  * - Deep work (find bugs, review, improve, optimise) goes to the larger models
  *   with more reasoning, with the fast models behind them.
  * - Hedging: if the model answering has not produced any answer text after
@@ -62,8 +64,9 @@ export class AnswerRouter {
   /** Models to try, in order, with their reasoning level; resting models are left out. */
   async plan(route: Route, effort: AssistantEffort = "medium"): Promise<{ candidates: Candidate[]; dailyOut: number; total: number }> {
     const deep = effort === "high" || (effort === "medium" && route === "deep");
-    const strongThinking = effort === "high" ? "high" : deep ? "medium" : "low";
-    const fast = config.assistant.fastModels.map((model): Candidate => ({ model, thinking: effort === "high" ? "medium" : "low" }));
+    const strongThinking = effort === "high" ? "high" : effort === "low" ? "low" : "medium";
+    // Everyday questions still reason a little: fixes must be traced before they are proposed. "Low" effort skips it for speed.
+    const fast = config.assistant.fastModels.map((model): Candidate => ({ model, thinking: effort === "low" ? "low" : "medium" }));
     const strong = config.assistant.models.map((model): Candidate => ({ model, thinking: strongThinking }));
     const ordered = (deep ? [...strong, ...fast] : [...fast, ...strong]).filter((c, i, all) => all.findIndex((x) => x.model === c.model) === i);
     const names = ordered.map((c) => c.model);

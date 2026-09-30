@@ -91,13 +91,13 @@ describe("routing", () => {
     expect(routeFor("How can I improve this code?")).toBe("deep");
   });
 
-  it("uses light reasoning on the fast route and more on the deep route", async () => {
+  it("fast models for everyday questions, strong ones for reviews, both reasoning before they answer", async () => {
     const { redis } = fakeRedis();
     const { calls } = mockModels({ lite: { body: sse("ok") }, big: { body: sse("ok") } });
     expect((await ask(new AnswerRouter(redis), "fix it")).model).toBe("lite");
     expect((await ask(new AnswerRouter(redis), "find bugs")).model).toBe("big");
     expect(calls).toEqual([
-      { model: "lite", thinking: "low" },
+      { model: "lite", thinking: "medium" },
       { model: "big", thinking: "medium" },
     ]);
   });

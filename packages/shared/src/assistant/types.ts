@@ -49,6 +49,29 @@ export interface AssistantStep {
   output: string;
 }
 
+/** The debugger paused where the user is looking: values read from the running program. */
+export interface AssistantDebug {
+  /** Why it stopped: breakpoint, step, pause, exception. */
+  reason: string;
+  /** The exception, when it stopped on one. */
+  description?: string;
+  file?: string;
+  line: number;
+  /** Call stack, innermost first, e.g. `square (main.py:3)`. */
+  stack: string[];
+  /** The selected frame's variables, one `name = value` per line. */
+  variables: string;
+  /** Watch expressions with their values or errors. */
+  watches?: string;
+}
+
+/** The latest test run: how many passed, and what the failing ones did. */
+export interface AssistantTests {
+  total: number;
+  passed: number;
+  failures: { name: string; input: string; expected: string; actual: string; verdict: string; message?: string }[];
+}
+
 export interface AssistantContext {
   language: string;
   files: AssistantFile[];
@@ -58,6 +81,8 @@ export interface AssistantContext {
   selection?: { file: string; startLine: number; endLine: number; text: string };
   lastRun?: AssistantRun;
   visualizer?: AssistantStep;
+  debug?: AssistantDebug;
+  tests?: AssistantTests;
 }
 
 /**
@@ -163,11 +188,50 @@ export function validateAssistantRequest(input: unknown): AssistantValidation {
     return fail("Invalid visualizer step.");
   }
 
+  const dbg = context.debug;
+  if (
+    dbg !== undefined &&
+    (!isObject(dbg) ||
+      !isString(dbg.reason, 40) ||
+      !optString(dbg.description, 1_000) ||
+      !optString(dbg.file, 256) ||
+      !optInt(dbg.line) ||
+      !Array.isArray(dbg.stack) ||
+      dbg.stack.length > 100 ||
+      !dbg.stack.every((s) => isString(s, 300)) ||
+      !isString(dbg.variables, 20_000) ||
+      !optString(dbg.watches, 5_000))
+  ) {
+    return fail("Invalid debugger state.");
+  }
+  const tests = context.tests;
+  if (
+    tests !== undefined &&
+    (!isObject(tests) ||
+      !optInt(tests.total) ||
+      !optInt(tests.passed) ||
+      !Array.isArray(tests.failures) ||
+      tests.failures.length > 12 ||
+      !tests.failures.every(
+        (f) =>
+          isObject(f) &&
+          isString(f.name, 80) &&
+          isString(f.input, 3_000) &&
+          isString(f.expected, 3_000) &&
+          isString(f.actual, 3_000) &&
+          isString(f.verdict, 40) &&
+          optString(f.message, 1_000),
+      ))
+  ) {
+    return fail("Invalid test results.");
+  }
+
   const total =
     messages.reduce((n, m) => n + (m as AssistantMessage).text.length, 0) +
     files.reduce((n, f) => n + (f as AssistantFile).content.length, 0) +
     (run ? (run.stdout as string).length + (run.stderr as string).length : 0) +
-    (viz ? (viz.state as string).length + (viz.output as string).length : 0);
+    (viz ? (viz.state as string).length + (viz.output as string).length : 0) +
+    (dbg ? (dbg.variables as string).length : 0);
   if (total > ASSISTANT_LIMITS.maxTotalChars) return fail("The project is too large to send to the assistant. Close some files or ask about a smaller part.");
 
   return { ok: true, value: input as unknown as AssistantRequest };

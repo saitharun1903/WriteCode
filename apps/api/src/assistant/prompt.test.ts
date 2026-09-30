@@ -56,6 +56,23 @@ describe("validateAssistantRequest", () => {
     expect(validateAssistantRequest(request()).ok).toBe(true);
   });
 
+  it("shows the model a paused debugger and failing tests, with their real values", () => {
+    const p = buildPrompt(
+      request({
+        debug: { reason: "breakpoint", line: 2, file: "main.py", stack: ["<module> (main.py:2)"], variables: "xs = []  (list)", watches: "len(xs) = 0" },
+        tests: { total: 2, passed: 1, failures: [{ name: "Test 2", input: "3\n", expected: "9\n", actual: "6\n", verdict: "failed" }] },
+      }),
+    );
+    const context = p.systemInstruction.parts[2]!.text;
+    expect(context).toContain("The debugger is paused (breakpoint) at line 2 of main.py");
+    expect(context).toContain("xs = []  (list)");
+    expect(context).toContain("len(xs) = 0");
+    expect(context).toContain("Test cases: 1 of 2 passed");
+    expect(context).toMatch(/Test 2: failed[\s\S]*Expected output:\n```\n9\n\n```[\s\S]*Actual output:\n```\n6\n/);
+    expect(validateAssistantRequest(request({ debug: { reason: "x", line: 1, stack: "no" as never, variables: "" } })).ok).toBe(false);
+    expect(validateAssistantRequest(request({ tests: { total: 1, passed: 0, failures: [{ name: "t", input: "", expected: "", actual: "", verdict: "failed" }] } })).ok).toBe(true);
+  });
+
   it("rejects malformed and oversized requests", () => {
     expect(validateAssistantRequest({}).ok).toBe(false);
     expect(validateAssistantRequest({ ...request(), messages: [{ role: "assistant", text: "hi" }] }).ok).toBe(false);
