@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeReads, javaReadInput, pythonReadInput } from "./read-input";
+import { cReadInput, describeReads, javaReadInput, jsReadInput, pythonReadInput } from "./read-input";
 
 const CANDIES = `public class Candies {
     public static int search(int[] arr, int s) {
@@ -118,5 +118,43 @@ public class Main {
     expect(describeReads("java", java)).toEqual(["n", "a: n values", "name (a word)", "a value"]);
     const py = "n = int(input())\nnums = list(map(int, input().split()))\na, b = map(int, input().split())\nname = input()\n";
     expect(describeReads("python", py)).toEqual(["n", "nums: values on one line", "a b on one line", "name (a line of text)"]);
+  });
+});
+
+describe("reading input in C, C++, JavaScript and TypeScript", () => {
+  it("C reads scalars with scanf and arrays as how many, then the values", () => {
+    const r = cReadInput("#include <stdio.h>\n\nint main(void) {\n    int n = 4;\n    int a[] = {1, 2};\n    int sum = 0;\n    sum += n;\n    return 0;\n}\n", false)!;
+    expect(r.names).toEqual(["n", "a"]);
+    expect(r.code).toContain('    int n;\n    scanf("%d", &n);');
+    expect(r.code).toContain("    int a[a_size];");
+    // `sum` changes as the program runs: it is state, not input.
+    expect(r.code).toContain("    int sum = 0;");
+    expect(r.input).toBe("4\n2\n1 2\n");
+  });
+
+  it("C++ reads with cin, std:: unless the file uses namespace std, and adds iostream", () => {
+    const r = cReadInput("int main() {\n    std::vector<int> v = {3, 4};\n    std::string s = \"hi\";\n}\n", true)!;
+    expect(r.code.startsWith("#include <iostream>\n")).toBe(true);
+    expect(r.code).toContain("std::cin >> v_size;");
+    expect(r.code).toContain("std::string s;\n    std::cin >> s;");
+    expect(r.input).toBe("2\n3 4\nhi\n");
+  });
+
+  it("JavaScript and TypeScript read the whole input once, in CommonJS or as a module", () => {
+    const js = jsReadInput("const n = 3;\nconst xs = [1, 2];\nlet count = 0;\ncount++;\n", false)!;
+    expect(js.code.split("\n")[0]).toContain('require("node:fs").readFileSync(0, "utf8")');
+    expect(js.code).toContain("const n = Number(input[pos++]);");
+    expect(js.code).toContain("let count = 0;");
+    expect(js.input).toBe("3\n2\n1 2\n");
+    const ts = jsReadInput('import { x } from "./x.ts";\nconst k: number = 2;\n', true)!;
+    expect(ts.code.split("\n").slice(0, 2)).toEqual(['import { x } from "./x.ts";', 'import { readFileSync } from "node:fs";']);
+    expect(ts.code).toContain("const k: number = Number(input[pos++]);");
+  });
+
+  it("describes what C, C++ and JavaScript programs read", () => {
+    expect(describeReads("c", 'int n; scanf("%d", &n);\nfor (int i = 0; i < n; i++) scanf("%d", &a[i]);\nchar w[9]; scanf("%s", w);')).toEqual(["a: how many, then the values", "w (a word)"]);
+    expect(describeReads("cpp", "cin >> x >> y;\ngetline(cin, line);")).toEqual(["x", "y", "line (a line of text)"]);
+    expect(describeReads("javascript", 'const lines = require("fs").readFileSync(0, "utf8").split("\n");')).toEqual(["the whole input (all lines at once)"]);
+    expect(describeReads("javascript", 'rl.on("line", (l) => {});')).toEqual(["lines of text, one at a time"]);
   });
 });
