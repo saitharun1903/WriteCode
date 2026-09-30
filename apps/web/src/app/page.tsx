@@ -7,8 +7,17 @@ const STRUCTURED = [
   {
     "@context": "https://schema.org",
     "@type": "WebSite",
+    // The name Google shows for the site, and other ways people write it.
     name: SITE.name,
-    url: SITE.url,
+    alternateName: ["Write Code", "writecode.in", "WriteCode online compiler"],
+    url: `${SITE.url}/`,
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: SITE.name,
+    url: `${SITE.url}/`,
+    logo: `${SITE.url}/icon-512.png`,
   },
   {
     "@context": "https://schema.org",

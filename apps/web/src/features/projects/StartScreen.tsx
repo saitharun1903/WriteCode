@@ -2,7 +2,7 @@
 
 import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { LANGUAGES, getLanguage, type ProjectSummary } from "@cw/shared";
+import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { DropdownMenu } from "@/components/ui/menu";
@@ -73,11 +73,17 @@ export function StartScreen() {
   return (
     <div className="h-full overflow-y-auto bg-surface-2">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+        <header className="mb-9">
+          <h1 className="text-[28px] font-bold tracking-tight text-fg">{PRODUCT.name}</h1>
+          <p className="mt-1.5 text-[15px] text-fg-muted">
+            Free online compiler, debugger and visualizer for Java, Python, C, C++, JavaScript and TypeScript.
+          </p>
+        </header>
         <section aria-labelledby="new-heading">
           <div className="flex items-end justify-between gap-4">
-            <h1 id="new-heading" className="text-2xl font-semibold tracking-tight text-fg">
+            <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
               New project
-            </h1>
+            </h2>
             <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
               Custom…
             </Button>
