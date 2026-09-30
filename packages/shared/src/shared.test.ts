@@ -224,8 +224,13 @@ describe("debug protocol", () => {
     expect(validateExecutionRequest({ ...base, tests: ["x"] }).ok).toBe(false);
   });
 
-  it("rejects debug mode for languages without a debugger and bad breakpoints", () => {
-    expect(validateExecutionRequest({ language: "cpp", files: [{ path: "main.cpp", content: "" }], entry: "main.cpp", mode: "debug" }).ok).toBe(false);
+  it("debugs and visualizes every language; rejects bad breakpoints", () => {
+    for (const lang of LANGUAGES) {
+      const entry = lang.entryFile;
+      for (const mode of ["debug", "visualize"] as const) {
+        expect(validateExecutionRequest({ language: lang.id, files: [{ path: entry, content: "" }], entry, mode }).ok, `${lang.id} ${mode}`).toBe(true);
+      }
+    }
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Main.java": [0] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "fly" }).ok).toBe(false);
