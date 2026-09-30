@@ -3,7 +3,7 @@
 import type { editor } from "monaco-editor";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
-import { missingJavaImports, missingPythonImports, type ImportEdit } from "./auto-import";
+import { missingIncludes, missingJavaImports, missingPythonImports, type ImportEdit } from "./auto-import";
 
 /** Pause after the last keystroke before imports are added. */
 const DELAY_MS = 600;
@@ -22,7 +22,7 @@ export function installAutoImport(ed: editor.IStandaloneCodeEditor) {
     const position = ed.getPosition();
     if (!model || !position || !useSettings.getState().autoImport) return;
     const language = model.getLanguageId();
-    if (language !== "java" && language !== "python") return;
+    if (!["java", "python", "c", "cpp"].includes(language)) return;
     const code = model.getValue();
     const cursor = model.getOffsetAt(position);
     let change: ImportEdit | null;
@@ -30,8 +30,10 @@ export function installAutoImport(ed: editor.IStandaloneCodeEditor) {
       const project = useWorkspace.getState().project;
       const others = project?.files.filter((f) => f.path.endsWith(".java")).map((f) => f.content) ?? [];
       change = missingJavaImports(code, [code, ...others], cursor);
-    } else {
+    } else if (language === "python") {
       change = missingPythonImports(code, cursor);
+    } else {
+      change = missingIncludes(code, language === "cpp", cursor);
     }
     if (!change) return;
     const text = change.lines.join("\n") + "\n" + (change.blankAfter ? "\n" : "");
@@ -48,7 +50,7 @@ export function installAutoImport(ed: editor.IStandaloneCodeEditor) {
       return;
     }
     // Our own edit ends the chain.
-    if (e.changes.every((c) => /^(?:import |from )/.test(c.text))) return;
+    if (e.changes.every((c) => /^(?:import |from |#include )/.test(c.text))) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(apply, DELAY_MS);
   });
