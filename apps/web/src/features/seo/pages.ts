@@ -203,12 +203,13 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "(GCC 14, C17)",
     label: "C compiler",
     sample: { file: "main.c", code: C },
-    debugs: false,
+    debugs: true,
     intro:
-      "Compile and run C programs online with GCC 14 (C17). Read input with scanf, see compiler errors on the exact line with an explanation, and check your program with test cases. Ideal for C programming labs.",
+      "Compile and run C programs online with GCC 14 (C17). Read input with scanf, see compiler errors on the exact line with an explanation, debug with breakpoints, watch pointers, arrays and structs change in the visualizer, and check your program with test cases. Ideal for C programming labs.",
     extraFaqs: [
       { q: "Which compiler is used?", a: "GCC 14 in C17 mode. Errors point to the exact line in your code." },
       { q: "Does scanf work?", a: "Yes. Type input in the console while the program runs, or prepare it before running." },
+      { q: "Can I debug C online?", a: "Yes. Set breakpoints, step through your code and see variables, arrays, structs and pointers; a segmentation fault stops on the line that caused it." },
     ],
   }),
   langPage({
@@ -218,12 +219,13 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "(GCC 14, C++20)",
     label: "C++ compiler",
     sample: { file: "main.cpp", code: CPP },
-    debugs: false,
+    debugs: true,
     intro:
-      "Write and run C++20 online with GCC 14 and the full standard library (vector, map, algorithm…). Read input with cin, test against expected outputs like a coding judge, and get errors explained in plain English.",
+      "Write and run C++20 online with GCC 14 and the full standard library (vector, map, algorithm…). Read input with cin, debug with breakpoints and see vectors and maps as values, visualize stacks, queues, trees and graphs step by step, test against expected outputs like a coding judge, and get errors explained in plain English.",
     extraFaqs: [
       { q: "Which C++ standard is supported?", a: "C++20 with GCC 14, including the whole standard library." },
       { q: "Can I practise competitive programming?", a: "Yes. Add test cases with input and expected output and run them all at once; differences are highlighted line by line." },
+      { q: "Can I debug C++ online?", a: "Yes. Breakpoints, stepping and variables work with the standard library: vector, map, string and the rest show their contents." },
     ],
   }),
   langPage({
@@ -233,9 +235,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "(Node.js 22)",
     label: "JavaScript runner",
     sample: { file: "main.js", code: JS },
-    debugs: false,
-    visualizes: true,
-    intro: "Run JavaScript online on Node.js 22. Read input from the console, split code into modules, test your functions against expected outputs, and watch arrays, objects, linked lists, trees and graphs change step by step in the visualizer.",
+    debugs: true,
+    intro: "Run JavaScript online on Node.js 22. Read input from the console, split code into modules, debug with breakpoints, test your functions against expected outputs, and watch arrays, objects, linked lists, trees and graphs change step by step in the visualizer.",
     extraFaqs: [{ q: "Is this browser JavaScript or Node.js?", a: "Node.js 22, so require, modules and process.stdin work as they do on your computer." }],
   }),
   langPage({
@@ -245,9 +246,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "(Node.js 22)",
     label: "TypeScript runner",
     sample: { file: "main.ts", code: TS },
-    debugs: false,
-    visualizes: true,
-    intro: "Run TypeScript online without any setup: write .ts files and run them directly on Node.js 22, with input, several files, test cases and a step-by-step visualizer that draws your data structures.",
+    debugs: true,
+    intro: "Run TypeScript online without any setup: write .ts files and run them directly on Node.js 22, with input, several files, a debugger that stops on the exact TypeScript line, test cases and a step-by-step visualizer that draws your data structures.",
     extraFaqs: [{ q: "Do I need to compile it first?", a: "No. Press Run and the TypeScript runs directly; types are stripped automatically." }],
   }),
   {
@@ -276,10 +276,10 @@ export const LANDING_PAGES: LandingPage[] = [
     kind: "feature",
     label: "Online debugger",
     language: "java",
-    title: "Online Debugger for Java and Python: breakpoints, step, watch",
+    title: "Online Debugger for Java, Python, C, C++, JavaScript and TypeScript",
     description:
-      "Debug Java and Python online: set breakpoints, step over, into and out, inspect variables and watch expressions in your browser. Free, no install.",
-    h1: "Online debugger for Java and Python",
+      "Debug Java, Python, C, C++, JavaScript and TypeScript online: set breakpoints, step over, into and out, inspect variables and watch expressions in your browser. Free, no install.",
+    h1: "Online debugger for every language",
     intro:
       "Find bugs the way professionals do, without installing an IDE. Click in the margin to set a breakpoint, press Debug, and step through your program while its variables update next to the code.",
     cta: "Open the debugger",
@@ -294,7 +294,7 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the debugger and write or paste your program.", "Click in the margin next to a line to add a breakpoint.", "Press Debug (F5).", "Step with F10 / F11 and watch the variables change."],
     faqs: [
-      { q: "Which languages can I debug?", a: "Java and Python. C, C++, JavaScript and TypeScript can be run and tested." },
+      { q: "Which languages can I debug?", a: "All six: Java, Python, C, C++, JavaScript and TypeScript." },
       ...COMMON_FAQS,
     ],
   },
@@ -305,7 +305,7 @@ export const LANDING_PAGES: LandingPage[] = [
     language: "python",
     title: "Data Structure Visualizer: stacks, queues, linked lists, trees, graphs",
     description:
-      "Visualize your own Java, Python, JavaScript and TypeScript code step by step: stacks, queues, linked lists, binary trees, BSTs, heaps, tries, hash maps, graphs with BFS and DFS, 2D DP tables and two pointers.",
+      "Visualize your own Java, Python, C, C++, JavaScript and TypeScript code step by step: stacks, queues, linked lists, binary trees, BSTs, heaps, tries, hash maps, graphs with BFS and DFS, 2D DP tables and two pointers.",
     h1: "Code visualizer",
     intro:
       "Press Visualize and your program is recorded as it runs. Each data structure is drawn the way it is taught: a stack as a pile with a top, a queue with a front and a rear, a linked list as a chain of nodes, a tree as a tree and a graph as nodes and edges. Step forward and back and watch every push, pop, insert and visit.",
@@ -326,7 +326,7 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the visualizer and write a short program.", "Press Visualize.", "Use the arrows or slider to move through the steps."],
     faqs: [
-      { q: "Which languages can be visualized?", a: "Java, Python, JavaScript and TypeScript." },
+      { q: "Which languages can be visualized?", a: "Java, Python, C, C++, JavaScript and TypeScript." },
       {
         q: "Which data structures are drawn?",
         a: "Arrays and strings with index pointers, 2D arrays, stacks, queues, deques, priority queues and heaps, hash maps and sets, singly, doubly and circular linked lists, binary trees, binary search trees, AVL and red-black trees, N-ary and ternary trees, tries, segment trees, and graphs from adjacency lists, adjacency matrices, edge lists or node objects.",

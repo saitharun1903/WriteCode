@@ -604,7 +604,7 @@ export function DebugToolWindow() {
       </div>
 
       {!supported ? (
-        <p className="p-3 text-sm text-fg-subtle">Debugging is not available for {language?.name ?? "this language"} yet. It currently supports Java and Python.</p>
+        <p className="p-3 text-sm text-fg-subtle">Debugging is not available for {language?.name ?? "this language"}. It supports Java, Python, C, C++, JavaScript and TypeScript.</p>
       ) : tab === "console" ? (
         <div className="min-h-0 flex-1">
           <ConsoleView />

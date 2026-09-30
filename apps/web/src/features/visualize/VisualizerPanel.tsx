@@ -1121,7 +1121,7 @@ export function VisualizerPanel() {
   }, [playing, stepIndex, speed, total, next, pause]);
 
   if (!supported) {
-    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java, Python, JavaScript and TypeScript projects.</p>;
+    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java, Python, C, C++, JavaScript and TypeScript projects.</p>;
   }
   if (!trace || recording) {
     const failed = run?.mode === "visualize" && !!run.result && !trace;
