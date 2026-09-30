@@ -146,3 +146,20 @@ test("a full interview: setup, consent, restricted candidate, live activity, hid
   await hr.waitForTimeout(800);
   await expect(editor(hr)).not.toContainText("changed after the end");
 });
+
+test("the problem and its tests are written from a topic, with answers computed by running them", async ({ browser }) => {
+  test.skip(!process.env.E2E_ASSISTANT, "set E2E_ASSISTANT=1 with a Gemini key configured");
+  const hr = await freshPage(browser);
+  await hr.getByRole("button", { name: /Start a coding interview/ }).click();
+  const setup = hr.getByRole("dialog", { name: "Start a coding interview" });
+  await setup.getByRole("textbox", { name: "Problem topic" }).fill("sum of the digits of a number");
+  await setup.getByRole("radio", { name: "easy" }).click();
+  await setup.getByRole("button", { name: "Write problem" }).click();
+  await expect(setup.getByRole("list", { name: "Progress" })).toBeVisible();
+  await expect(setup.getByRole("button", { name: "Write problem" })).toBeVisible({ timeout: 200_000 });
+  await expect(setup.getByPlaceholder(/Find the two numbers/)).not.toHaveValue("");
+  await expect(setup.getByRole("textbox", { name: /Problem statement/ })).toHaveValue(/Example 1\nInput:/);
+  const expected = setup.getByRole("textbox", { name: "Sample tests 1 expected output" });
+  await expect(expected).not.toHaveValue("");
+  await expect(setup.getByRole("textbox", { name: "Hidden tests 3 expected output" })).not.toHaveValue("");
+});

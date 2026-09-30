@@ -31,6 +31,8 @@ export interface InterviewTest {
   id: string;
   input: string;
   expected: string;
+  /** What the test checks, for the interviewer (e.g. "1 is not prime"). */
+  note?: string;
 }
 
 /** What the interviewer prepares. The statement is plain text (line breaks kept). */
@@ -115,7 +117,8 @@ export function cleanInterviewSetup(raw: unknown): InterviewSetup | null {
       if (!t || typeof t !== "object") return [];
       const x = t as Record<string, unknown>;
       const id = typeof x.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(x.id) ? x.id : null;
-      return id ? [{ id, input: text(x.input, 128 * 1024), expected: text(x.expected, 128 * 1024) }] : [];
+      const note = text(x.note, 160).trim();
+      return id ? [{ id, input: text(x.input, 128 * 1024), expected: text(x.expected, 128 * 1024), ...(note ? { note } : {}) }] : [];
     }),
   };
 }
@@ -125,4 +128,30 @@ export interface ComplexityEstimate {
   time: string;
   space: string;
   explanation: string;
+}
+
+export type ProblemDifficulty = "easy" | "medium" | "hard";
+
+/**
+ * A problem written from a short topic. The expected outputs are computed by
+ * running `solution` in the sandbox (and checked against `brute` on the small
+ * inputs), never taken on trust.
+ */
+export interface GeneratedProblem {
+  title: string;
+  /** Plain text: task, Input, Output, Constraints. */
+  statement: string;
+  samples: { input: string; note: string }[];
+  /** Small inputs aimed at the usual mistakes. */
+  edge: { input: string; note: string }[];
+  /** Efficient Python 3 reference solution. */
+  solution: string;
+  /** Simple, obviously correct Python 3 solution, for cross-checking. */
+  brute: string;
+  /** Python 3 program: asserts that an input follows the format and constraints. */
+  validator: string;
+  /** Python 3 program: reads a size, prints one random valid input of that size. */
+  generator: string;
+  /** Sizes for the generator, increasing. */
+  sizes: number[];
 }

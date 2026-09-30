@@ -265,8 +265,11 @@ function HiddenTests() {
             <li key={t.id} className="rounded-md border border-line-strong/50">
               <button type="button" onClick={() => setOpen(open === t.id ? null : t.id)} className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px]">
                 {r ? ok ? <CheckCircle2 className="size-4 text-success" /> : <XCircle className="size-4 text-danger" /> : <span className="size-4 rounded-full border border-line-strong" />}
-                Hidden test {i + 1}
-                <span className="ml-auto text-xs text-fg-subtle">{r ? `${r.comparison.verdict}${r.run?.executionTime !== undefined ? ` · ${r.run.executionTime} ms` : ""}` : "not run"}</span>
+                <span className="min-w-0 truncate">
+                  Hidden test {i + 1}
+                  {t.note && <span className="text-fg-subtle"> · {t.note}</span>}
+                </span>
+                <span className="ml-auto shrink-0 text-xs text-fg-subtle">{r ? `${r.comparison.verdict}${r.run?.executionTime !== undefined ? ` · ${r.run.executionTime} ms` : ""}` : "not run"}</span>
               </button>
               {open === t.id && (
                 <div className="grid gap-2 border-t border-line-strong/50 p-2.5 text-[11.5px]">
@@ -278,7 +281,7 @@ function HiddenTests() {
                   ].map(([k, v]) => (
                     <div key={k}>
                       <div className="mb-0.5 font-medium text-fg-subtle">{k}</div>
-                      <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 font-mono text-fg-muted">{v || "(empty)"}</pre>
+                      <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 font-mono text-fg-muted">{!v ? "(empty)" : v.length > 4000 ? `${v.slice(0, 4000)}\n… (${v.length.toLocaleString("en-US")} characters in all)` : v}</pre>
                     </div>
                   ))}
                 </div>

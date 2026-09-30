@@ -31,11 +31,11 @@ interface InterviewToolsState {
 /** Identifies a version of the code (files and entry), to tell when results are stale. */
 export const codeKeyOf = (p: Project) => JSON.stringify([p.entryFile, p.files.map((f) => [f.path, f.content])]);
 
-/** Runs a test execution and resolves with its final result. */
-function runTests(project: Project, inputs: string[]): Promise<ExecutionResult> {
+/** Runs a test execution of `program` and resolves with its final result. */
+export function runTests(program: { language: string; files: { path: string; content: string }[]; entry: string }, inputs: string[]): Promise<ExecutionResult> {
   return new Promise((resolve, reject) => {
     api
-      .createExecution({ language: project.language, files: project.files.map((f) => ({ path: f.path, content: f.content })), entry: entryOf(project), mode: "test", tests: inputs })
+      .createExecution({ language: program.language, files: program.files.map((f) => ({ path: f.path, content: f.content })), entry: program.entry, mode: "test", tests: inputs })
       .then(({ id, controlToken }) => {
         let done = false;
         const stream = streamExecution(id, controlToken, {
@@ -64,7 +64,7 @@ export const useInterviewTools = create<InterviewToolsState>((set, get) => ({
     const codeKey = codeKeyOf(project);
     set({ hidden: { ...get().hidden, running: true, error: undefined, compileError: undefined } });
     try {
-      const r = await runTests(project, tests.map((t) => t.input));
+      const r = await runTests({ language: project.language, files: project.files, entry: entryOf(project) }, tests.map((t) => t.input));
       if (r.status === "COMPILATION_ERROR") {
         set({ hidden: { running: false, results: null, compileError: (r.compileOutput || r.message || "The program did not compile.").trim(), codeKey, ranAt: Date.now() } });
         return;

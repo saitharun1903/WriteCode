@@ -1,11 +1,12 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, HttpException, Inject, Post, Req, Res, ServiceUnavailableException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import type { Redis } from "ioredis";
-import { ASSISTANT_LIMITS, getLanguage, redisKeys, validateAssistantRequest, type AssistantEvent, type ComplexityEstimate } from "@cw/shared";
+import { ASSISTANT_LIMITS, getLanguage, redisKeys, validateAssistantRequest, type AssistantEvent, type ComplexityEstimate, type GeneratedProblem, type ProblemDifficulty } from "@cw/shared";
 import { clientHash } from "../common/request-context.js";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
 import { AssistantError } from "./gemini.js";
+import { parseProblem, problemPrompt } from "./problem.js";
 import { buildPrompt } from "./prompt.js";
 import { AnswerRouter } from "./router.js";
 
@@ -142,6 +143,39 @@ export class AssistantController {
     } catch {
       throw new HttpException("The assistant's answer could not be read. Try again.", 502);
     }
+  }
+
+  /**
+   * Writes an interview problem from a short topic: statement, sample and
+   * edge-case inputs, a reference solution, a brute-force check and an input
+   * generator. The browser computes the expected outputs by running them.
+   */
+  @Post("assistant/interview-problem")
+  @HttpCode(200)
+  async interviewProblem(@Body() body: unknown, @Req() req: Request): Promise<GeneratedProblem> {
+    if (!config.assistant.apiKey || config.assistant.models.length === 0) throw new ServiceUnavailableException("Problem writing isn't available on this server.");
+    const b = (body && typeof body === "object" ? body : {}) as { topic?: unknown; difficulty?: unknown };
+    const topic = typeof b.topic === "string" ? b.topic.trim().slice(0, 2000) : "";
+    const difficulty: ProblemDifficulty = b.difficulty === "easy" || b.difficulty === "hard" ? b.difficulty : "medium";
+    if (topic.length < 2) throw new BadRequestException("Type what the problem is about, e.g. prime numbers.");
+    await this.checkLimits(clientHash(req.ip));
+
+    const { systemInstruction, contents } = problemPrompt(topic, difficulty);
+    const abort = new AbortController();
+    req.on("close", () => abort.abort());
+    // Two attempts: an unreadable reply is usually fine the second time.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let text = "";
+      try {
+        await this.router.answer({ question: "write a problem with edge cases", effort: "medium", systemInstruction, contents, signal: abort.signal, onChunk: (c) => c.kind === "text" && (text += c.text) });
+      } catch (e) {
+        const err = e instanceof AssistantError ? e : new AssistantError("Problem writing is temporarily unavailable. Please try again.", String(e));
+        throw new HttpException(err.userMessage.replace(/^The assistant/, "Problem writing"), err.status === 429 ? 429 : 502);
+      }
+      const problem = parseProblem(text);
+      if (problem) return problem;
+    }
+    throw new HttpException("The problem could not be written. Try again, or describe it in a few more words.", 502);
   }
 
   /** Per-client minute and day windows, plus a global per-minute cap that protects the key's quota. */
