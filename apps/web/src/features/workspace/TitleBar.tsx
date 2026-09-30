@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, ClipboardList, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Workflow } from "lucide-react";
+import { Bug, ChevronDown, ClipboardList, Ellipsis, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
 import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -171,6 +171,33 @@ function RunControls() {
   );
 }
 
+/** Phones: what does not fit in the title bar, in one menu. */
+function PhoneMenu({ interview }: { interview: boolean }) {
+  const theme = useResolvedTheme();
+  const entries: MenuEntry[] = [
+    { label: "Share live session", icon: <Users />, onSelect: () => useLive.getState().setPanelOpen(true) },
+    ...(interview ? [{ label: "Interview mode", icon: <ClipboardList />, onSelect: () => runCommand("interview.start") }] : []),
+    { label: "Search files and actions", icon: <Search />, onSelect: () => runCommand("workbench.quickOpen") },
+    { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: () => runCommand("prefs.toggleTheme") },
+    { label: "Open settings", icon: <Settings />, onSelect: () => runCommand("prefs.open") },
+    { kind: "separator" },
+    ...MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) })),
+  ];
+  return (
+    <span className="sm:hidden">
+      <DropdownMenu
+        align="end"
+        entries={entries}
+        trigger={
+          <button aria-label="More" className="flex size-9 items-center justify-center rounded-full text-fg-muted hover:bg-hover data-[state=open]:bg-active">
+            <Ellipsis className="size-5" />
+          </button>
+        }
+      />
+    </span>
+  );
+}
+
 export function TitleBar({ compact }: { compact: boolean }) {
   const project = useWorkspace((s) => s.project);
   const restricted = useRestriction((s) => s.restricted);
@@ -235,7 +262,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
       )}
 
       {!compact && (
-        <div className="pointer-events-none absolute inset-x-0 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 hidden justify-center xl:flex">
           <button
             onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}
             className="pointer-events-auto flex h-[34px] w-[min(440px,32vw)] items-center gap-2.5 rounded-[10px] border border-line-strong/70 bg-surface-2 px-3 text-[13px] text-fg-subtle shadow-[inset_0_1px_2px_rgb(0_0_0/0.05)] transition-colors hover:border-accent/50 hover:text-fg-muted"
@@ -250,7 +277,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
       <div className="relative ml-auto flex min-w-0 items-center gap-1">
         {project && <RunControls />}
         {project && (
-          <span className="ml-1.5">
+          <span className={cn("ml-1.5", compact && "hidden sm:inline")}>
             <LiveButton />
           </span>
         )}
@@ -264,23 +291,30 @@ export function TitleBar({ compact }: { compact: boolean }) {
             type="button"
             aria-label="Interview mode"
             onClick={() => runCommand("interview.start")}
-            className="mr-1 flex h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-3 text-[13px] font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg"
+            className={cn(
+              "mr-1 h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-3 text-[13px] font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg",
+              compact && project ? "hidden sm:flex" : "flex",
+            )}
           >
             <ClipboardList className="size-3.5 text-accent" />
             <span className={cn(compact && "hidden sm:inline")}>Interview</span>
           </button>
         )}
-        {compact && (
-          <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand("workbench.commandPalette")}>
+        {/* Where the centred search box does not fit. */}
+        <span className={cn(compact ? (project ? "hidden sm:inline-flex" : "inline-flex") : "inline-flex xl:hidden")}>
+          <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}>
             <Search />
           </IconButton>
-        )}
+        </span>
         <span className={cn(compact && project && "hidden sm:inline-flex")}>
           <ThemeToggle />
         </span>
-        <IconButton label="Settings" shortcut="Mod+," onClick={() => runCommand("prefs.open")}>
-          <Settings />
-        </IconButton>
+        <span className={cn(compact && project && "hidden sm:inline-flex")}>
+          <IconButton label="Settings" shortcut="Mod+," onClick={() => runCommand("prefs.open")}>
+            <Settings />
+          </IconButton>
+        </span>
+        {compact && project && <PhoneMenu interview={!interviewActive && !restricted} />}
       </div>
     </header>
   );

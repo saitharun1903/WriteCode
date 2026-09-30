@@ -15,5 +15,5 @@ export function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Below this width the IDE switches to drawers instead of side-by-side panels. */
-export const COMPACT_QUERY = "(max-width: 900px)";
+/** Phones, and touch tablets up to iPad Pro landscape: the editor fills the screen, panels rise as sheets above the glass dock. */
+export const COMPACT_QUERY = "(max-width: 900px), (pointer: coarse) and (max-width: 1366px)";

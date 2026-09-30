@@ -934,7 +934,7 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
     <div
       aria-live="polite"
       aria-label="What happened"
-      className="flex min-h-9 shrink-0 items-center gap-3 border-b border-line bg-surface-2/40 px-3 py-1.5 text-[12.5px]"
+      className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line bg-surface-2/40 px-3 py-1.5 text-[12.5px]"
     >
       <span
         className={cn(
@@ -949,7 +949,7 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
         initial={reducedMotion() ? false : { opacity: 0, y: 5 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18 }}
-        className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden"
+        className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden @max-[640px]/viz:order-last @max-[640px]/viz:basis-full @max-[640px]/viz:flex-col @max-[640px]/viz:items-start @max-[640px]/viz:gap-1"
       >
         {shown.length === 0 ? (
           <span className="text-fg-subtle">{stepIndex === 0 ? "The program is about to start." : "No variables changed."}</span>
@@ -966,7 +966,7 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
         <Sparkles className="size-3 text-[#8a7cf5]" /> Explain this step
       </button>
       {top?.file && (
-        <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle @max-[640px]/viz:hidden">
           {step.event === "line" ? "Next" : "At"}
           <span className="font-mono text-fg-muted">{`${top.file}:${top.line}`}</span>
         </span>
@@ -987,7 +987,7 @@ function Timeline({ trace, stepIndex, onSeek }: { trace: Trace; stepIndex: numbe
   t.depth.forEach((d, i) => (area += ` L ${i} ${h - d} L ${i + 1} ${h - d}`));
   area += ` L ${n} ${h} Z`;
   return (
-    <div className="relative mx-2 h-8 min-w-32 flex-1">
+    <div className="relative mx-2 h-8 min-w-32 flex-1 @max-[640px]/viz:order-last @max-[640px]/viz:mx-1 @max-[640px]/viz:basis-full">
       <div className="absolute inset-x-0 bottom-1 top-1 overflow-hidden rounded-md bg-surface-2">
         <svg className="absolute inset-0 size-full" viewBox={`0 0 ${n} ${h}`} preserveAspectRatio="none" aria-hidden>
           <path d={area} fill="color-mix(in srgb, var(--accent) 22%, transparent)" />
@@ -1034,7 +1034,7 @@ function Output({ trace, stepIndex, printed }: { trace: Trace; stepIndex: number
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [text]);
   return (
-    <div className="flex w-[min(19rem,28%)] shrink-0 flex-col border-l border-line">
+    <div className="flex w-[min(19rem,28%)] shrink-0 flex-col border-l border-line @max-[640px]/viz:h-[30%] @max-[640px]/viz:w-full @max-[640px]/viz:border-l-0 @max-[640px]/viz:border-t">
       <span className="px-3 pt-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Output</span>
       <pre ref={box} aria-label="Output so far" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[12.5px] text-fg">
         {text ? (
@@ -1161,7 +1161,7 @@ export function VisualizerPanel() {
   return (
     <MotionConfig reducedMotion="user">
       <div
-        className="flex h-full min-h-0 flex-col outline-none"
+        className="@container/viz flex h-full min-h-0 flex-col outline-none"
         tabIndex={0}
         aria-label="Execution visualizer"
         onKeyDown={(e) => {
@@ -1179,7 +1179,7 @@ export function VisualizerPanel() {
           action();
         }}
       >
-        <div role="toolbar" aria-label="Step controls" className="flex h-11 shrink-0 items-center gap-0.5 border-b border-line px-2">
+        <div role="toolbar" aria-label="Step controls" className="flex min-h-11 shrink-0 flex-wrap items-center gap-0.5 border-b border-line px-2 @max-[640px]/viz:gap-y-1 @max-[640px]/viz:py-1.5">
           <IconButton label="First step" shortcut="Home" disabled={stepIndex === 0} onClick={manual(() => go(0))}>
             <ChevronFirst />
           </IconButton>
@@ -1247,7 +1247,7 @@ export function VisualizerPanel() {
           )}
         </div>
         <Narration trace={trace} stepIndex={stepIndex} diff={diff} />
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 @max-[640px]/viz:flex-col">
           <LayoutGroup>
             {view === "structures" ? (
               <ConceptView trace={trace} stepIndex={stepIndex} diff={diff} />

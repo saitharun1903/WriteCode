@@ -229,8 +229,9 @@ export function CodeEditor() {
         autoClosingQuotes: autoClose ? "languageDefined" : "never",
         quickSuggestions: suggestions ? { other: true, comments: false, strings: false } : false,
         suggestOnTriggerCharacters: suggestions,
-        padding: { top: 6, bottom: 6 },
-        lineDecorationsWidth: 18,
+        // Phones and tablets: the last lines can scroll up from under the floating dock.
+        padding: { top: 6, bottom: compact ? 108 : 6 },
+        lineDecorationsWidth: compact ? 10 : 18,
         stickyScroll: { enabled: true },
         folding: true,
         glyphMargin: debuggable,

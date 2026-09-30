@@ -471,3 +471,127 @@
   border-bottom: 6px solid transparent;
   border-left: 8px solid var(--live);
 }
+
+/* ---------------------------------------------------------------- glass dock
+ * Phones and tablets only (the desktop keeps its activity bar). A floating
+ * pill of frosted glass: blur and saturation of what scrolls beneath, a bright
+ * top edge like light catching glass, a soft floor shadow. The active tab sits
+ * in a glossy capsule. Only transform and opacity animate.
+ */
+.cw-dock-layer {
+  --dock-ring: rgb(24 25 29);
+}
+[data-theme="light"] .cw-dock-layer {
+  --dock-ring: rgb(245 246 248);
+}
+.cw-dock {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.15) 0%, rgb(255 255 255 / 0.05) 42%, rgb(255 255 255 / 0.02) 100%),
+    rgb(20 21 25 / 0.58);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+  backdrop-filter: blur(22px) saturate(190%);
+  border: 1px solid rgb(255 255 255 / 0.13);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.26),
+    inset 0 -1px 0 rgb(0 0 0 / 0.35),
+    0 18px 42px -14px rgb(0 0 0 / 0.7),
+    0 4px 14px -6px rgb(0 0 0 / 0.45);
+}
+[data-theme="light"] .cw-dock {
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.85) 0%, rgb(255 255 255 / 0.55) 45%, rgb(255 255 255 / 0.4) 100%),
+    rgb(240 242 246 / 0.55);
+  border-color: rgb(0 0 0 / 0.08);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.95),
+    inset 0 -1px 0 rgb(0 0 0 / 0.05),
+    0 18px 40px -14px rgb(15 23 42 / 0.35),
+    0 3px 12px -6px rgb(15 23 42 / 0.2);
+}
+/* The editor's own "show keyboard" button (iPad) sits above the dock, not under it. */
+.cw-dock-layer .monaco-editor .iPadShowKeyboard {
+  transform: translateY(calc(-86px - env(safe-area-inset-bottom)));
+}
+/* Browsers without backdrop blur get solid glass rather than see-through text. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .cw-dock {
+    background: rgb(28 29 34 / 0.96);
+  }
+  [data-theme="light"] .cw-dock {
+    background: rgb(250 251 252 / 0.97);
+  }
+}
+.cw-dock-fg {
+  color: rgb(255 255 255 / 0.62);
+  transition: color 180ms ease;
+}
+.cw-dock-fg-active {
+  color: #fff;
+}
+[data-theme="light"] .cw-dock-fg {
+  color: rgb(30 34 42 / 0.55);
+}
+[data-theme="light"] .cw-dock-fg-active {
+  color: rgb(15 18 25);
+}
+.cw-dock-fg-ai {
+  color: #c4bbff;
+}
+[data-theme="light"] .cw-dock-fg-ai {
+  color: #5b4bd1;
+}
+.cw-dock-capsule {
+  overflow: hidden;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.09));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.38),
+    inset 0 -1px 0 rgb(0 0 0 / 0.22),
+    0 3px 12px -3px rgb(0 0 0 / 0.45);
+  will-change: transform;
+}
+.cw-dock-capsule-ai {
+  background: linear-gradient(180deg, rgb(160 146 255 / 0.34), rgb(122 104 245 / 0.14));
+  box-shadow:
+    inset 0 1px 0 rgb(214 207 255 / 0.45),
+    inset 0 -1px 0 rgb(0 0 0 / 0.2),
+    0 3px 14px -3px rgb(122 104 245 / 0.55);
+}
+[data-theme="light"] .cw-dock-capsule {
+  background: linear-gradient(180deg, rgb(255 255 255 / 1), rgb(236 239 244 / 0.9));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 1),
+    0 0 0 1px rgb(0 0 0 / 0.05),
+    0 4px 12px -4px rgb(15 23 42 / 0.3);
+}
+[data-theme="light"] .cw-dock-capsule-ai {
+  background: linear-gradient(180deg, rgb(238 235 255), rgb(222 216 255));
+}
+/* A band of light that sweeps across the capsule when it lands on a tab. */
+.cw-dock-sheen {
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 55%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.32) 50%, transparent);
+  transform: translateX(-130%) skewX(-18deg);
+  animation: cw-dock-sheen 900ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+@keyframes cw-dock-sheen {
+  to {
+    transform: translateX(260%) skewX(-18deg);
+  }
+}
+/* Sheets above the dock: they rise with a spring and have a grabber. */
+.cw-sheet {
+  box-shadow:
+    0 -1px 0 rgb(255 255 255 / 0.06),
+    0 -18px 40px -18px rgb(0 0 0 / 0.55);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-dock-sheen {
+    animation: none;
+    display: none;
+  }
+}

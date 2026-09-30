@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useDragControls, useReducedMotion } from "motion/react";
 import dynamic from "next/dynamic";
 import { Bug, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
@@ -12,7 +13,8 @@ import { useDebugSync } from "@/features/debug/use-debug-sync";
 import { useGlobalKeybindings } from "@/features/commands/keybindings";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileExplorer } from "@/features/explorer/FileExplorer";
-import { useExecution } from "@/features/execution/store";
+import { isRunning, useExecution } from "@/features/execution/store";
+import { useDebug } from "@/features/debug/store";
 import { CompareDialog } from "@/features/history/CompareDialog";
 import { HistoryPanel } from "@/features/history/HistoryPanel";
 import { NewProjectDialog } from "@/features/projects/NewProjectDialog";
@@ -27,6 +29,7 @@ import { cn } from "@/lib/cn";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { ActivityBar } from "./ActivityBar";
 import { BottomPanel } from "./BottomPanel";
+import { GlassDock, type DockItem } from "./GlassDock";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
@@ -181,7 +184,87 @@ const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: Sid
   { kind: "ai", id: "ai", label: "AI", icon: <Sparkles /> },
 ];
 
-/** Tablet/phone: editor fills the screen; sidebar and panel open as drawers. */
+/** How far the on-screen keyboard has pushed the layout up; the dock steps aside while it is open. */
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    // The tallest the window has been in this orientation: a much shorter one means the keyboard is up.
+    const tallest = { portrait: 0, landscape: 0 };
+    const check = () => {
+      const key = window.innerWidth > window.innerHeight ? "landscape" : "portrait";
+      const height = window.visualViewport?.height ?? window.innerHeight;
+      tallest[key] = Math.max(tallest[key], window.innerHeight, height);
+      setOpen(tallest[key] - height > 140);
+    };
+    check();
+    window.addEventListener("resize", check);
+    window.visualViewport?.addEventListener("resize", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      window.visualViewport?.removeEventListener("resize", check);
+    };
+  }, []);
+  return open;
+}
+
+/** Room the floating dock takes at the bottom of the screen. */
+const DOCK_SPACE = "calc(62px + 22px + env(safe-area-inset-bottom))";
+
+const SHEET_SPRING = { type: "spring", stiffness: 420, damping: 40, mass: 0.9 } as const;
+
+/** A panel that rises from the bottom above the dock; drag it down (or tap outside) to close it. */
+function Sheet({ children, onClose, height, side = false }: { children: React.ReactNode; onClose: () => void; height: string; side?: boolean }) {
+  const reduce = useReducedMotion();
+  const controls = useDragControls();
+  if (side) {
+    return (
+      <motion.div
+        key="side"
+        initial={reduce ? false : { x: "-100%" }}
+        animate={{ x: 0 }}
+        exit={reduce ? { opacity: 0 } : { x: "-100%" }}
+        transition={SHEET_SPRING}
+        className="cw-sheet absolute bottom-0 left-0 top-0 z-30 w-[min(340px,86vw)] overflow-hidden border-r border-line bg-surface"
+        style={{ paddingBottom: DOCK_SPACE }}
+      >
+        {children}
+      </motion.div>
+    );
+  }
+  return (
+    <motion.div
+      initial={reduce ? false : { y: "100%" }}
+      animate={{ y: 0 }}
+      exit={reduce ? { opacity: 0 } : { y: "105%" }}
+      transition={SHEET_SPRING}
+      drag="y"
+      dragControls={controls}
+      dragListener={false}
+      dragConstraints={{ top: 0, bottom: 0 }}
+      dragElastic={{ top: 0, bottom: 0.6 }}
+      onDragEnd={(_, info) => {
+        if (info.offset.y > 110 || info.velocity.y > 600) onClose();
+      }}
+      className="cw-sheet absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[22px] border-t border-line bg-surface"
+      // Runs down behind the dock, so the glass floats over the panel; its content stops above the dock.
+      style={{ height: `calc(${height} + ${DOCK_SPACE})`, paddingBottom: DOCK_SPACE }}
+    >
+      <Grabber onDragStart={(e) => controls.start(e)} />
+      <div className="min-h-0 flex-1">{children}</div>
+    </motion.div>
+  );
+}
+
+/** The grabber at the top of a sheet: drag it down to close. */
+function Grabber({ onDragStart }: { onDragStart: (e: React.PointerEvent) => void }) {
+  return (
+    <div onPointerDown={onDragStart} className="flex h-5 shrink-0 cursor-grab touch-none items-center justify-center active:cursor-grabbing">
+      <span className="h-[5px] w-10 rounded-full bg-fg-faint/60" />
+    </div>
+  );
+}
+
+/** Tablet/phone: the editor fills the screen; panels rise as sheets above a floating glass dock. */
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const interview = useLive((s) => !!s.interview);
@@ -189,59 +272,93 @@ function CompactWorkbench() {
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideView = useSettings((s) => s.layout.sideView);
   const bottomTab = useSettings((s) => s.layout.bottomTab);
+  const run = useExecution((s) => s.run);
+  const paused = useDebug((s) => s.phase === "paused");
+  const keyboard = useKeyboardOpen();
+  const reduce = useReducedMotion();
+  const close = () => setDrawer("none");
+
+  const running = !!run && isRunning(run);
+  const items: DockItem[] = TABS.map((t) => {
+    const active = t.kind === "side" ? drawer === "sidebar" && sideView === t.id : t.kind === "bottom" ? drawer === "bottom" && bottomTab === t.id : drawer === "assistant";
+    const dot: DockItem["dot"] =
+      t.id === "run" && running && run!.mode === "run"
+        ? "run"
+        : t.id === "debug" && running && run!.mode === "debug"
+          ? paused
+            ? "pause"
+            : "run"
+          : t.id === "visualize" && running && run!.mode === "visualize"
+            ? "record"
+            : undefined;
+    return {
+      id: t.id,
+      label: t.label,
+      icon: t.icon,
+      active,
+      dot,
+      tone: t.kind === "ai" ? "ai" : undefined,
+      onSelect: () => {
+        if (t.kind === "side") {
+          updateLayout({ sideView: t.id });
+          setDrawer(active ? "none" : "sidebar");
+        } else if (t.kind === "bottom") {
+          updateLayout({ bottomTab: t.id });
+          setDrawer(active ? "none" : "bottom");
+        } else setDrawer(active ? "none" : "assistant");
+      },
+    };
+  });
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="cw-dock-layer relative flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1">
         <EditorArea />
       </div>
-      <nav aria-label="Panels" className="flex h-[52px] shrink-0 items-stretch border-t border-line bg-canvas px-1 pb-[env(safe-area-inset-bottom)]">
-        {TABS.map((t) => {
-          const active = t.kind === "side" ? drawer === "sidebar" && sideView === t.id : t.kind === "bottom" ? drawer === "bottom" && bottomTab === t.id : drawer === "assistant";
-          return (
-            <button
-              key={t.id}
-              aria-pressed={active}
-              onClick={() => {
-                if (t.kind === "side") {
-                  updateLayout({ sideView: t.id });
-                  setDrawer(active ? "none" : "sidebar");
-                } else if (t.kind === "bottom") {
-                  updateLayout({ bottomTab: t.id });
-                  setDrawer(active ? "none" : "bottom");
-                } else setDrawer(active ? "none" : "assistant");
-              }}
-              className={cn(
-                "relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] transition-colors [&_svg]:size-[18px]",
-                active ? (t.kind === "ai" ? "text-[#8a7cf5]" : "text-accent") : "text-fg-subtle active:text-fg",
-              )}
-            >
-              {active && <span aria-hidden className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-current" />}
-              {t.icon}
-              <span className="max-w-full truncate">{t.label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
-      {drawer !== "none" && (
-        <button aria-label="Close drawer" className="absolute inset-0 bottom-[52px] z-20 bg-black/40 animate-fade" onClick={() => setDrawer("none")} />
-      )}
-      {drawer === "sidebar" && (
-        <div className="absolute inset-y-0 bottom-[52px] left-0 z-30 w-[min(320px,85vw)] border-r border-line shadow-float animate-slide-up">
-          <SideView />
+      <AnimatePresence>
+        {drawer !== "none" && (
+          <motion.button
+            key="scrim"
+            aria-label="Close panel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 z-20 bg-black/45"
+            onClick={close}
+          />
+        )}
+        {drawer === "sidebar" && (
+          <Sheet key="sidebar" side onClose={close} height="auto">
+            <SideView />
+          </Sheet>
+        )}
+        {drawer === "bottom" && (
+          <Sheet key="bottom" onClose={close} height="min(72%, 640px)">
+            <BottomPanel onClose={close} />
+          </Sheet>
+        )}
+        {drawer === "assistant" && (
+          <Sheet key="assistant" onClose={close} height={`calc(100% - 8px)`}>
+            {interview ? <InterviewPanel onClose={close} /> : <AssistantPanel onClose={close} />}
+          </Sheet>
+        )}
+      </AnimatePresence>
+
+      {/* Floats over the editor; the code scrolls up from under the glass. */}
+      <motion.div
+        aria-hidden={keyboard}
+        initial={false}
+        animate={keyboard ? { y: 120, opacity: 0 } : { y: 0, opacity: 1 }}
+        transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 34 }}
+        className="pointer-events-none absolute inset-x-0 z-40 flex justify-center px-3"
+        style={{ bottom: "calc(12px + env(safe-area-inset-bottom))" }}
+      >
+        <div className="w-full max-w-[560px]">
+          <GlassDock items={items} />
         </div>
-      )}
-      {drawer === "bottom" && (
-        <div className="absolute inset-x-0 bottom-[52px] z-30 h-[65%] border-t border-line shadow-float animate-slide-up">
-          <BottomPanel onClose={() => setDrawer("none")} />
-        </div>
-      )}
-      {drawer === "assistant" && (
-        <div className="absolute inset-x-0 bottom-[52px] top-0 z-30 border-t border-line shadow-float animate-slide-up">
-          {interview ? <InterviewPanel onClose={() => setDrawer("none")} /> : <AssistantPanel onClose={() => setDrawer("none")} />}
-        </div>
-      )}
+      </motion.div>
     </div>
   );
 }
@@ -351,7 +468,7 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
         ) : (
           <main className="flex min-h-0 flex-1 flex-col">{compact ? <CompactWorkbench /> : <DesktopWorkbench />}</main>
         )}
-        <StatusBar />
+        {!(compact && project) && <StatusBar />}
       </div>
       <CommandPalette />
       <NewProjectDialog />

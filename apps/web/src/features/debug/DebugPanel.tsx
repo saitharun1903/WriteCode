@@ -520,8 +520,8 @@ export function DebugToolWindow() {
   );
 
   return (
-    <aside aria-label="Debugger" className="flex h-full min-h-0 flex-col">
-      <div role="toolbar" aria-label="Debug controls" className="flex h-11 shrink-0 items-center gap-1 border-b border-line px-2">
+    <aside aria-label="Debugger" className="@container/dbg flex h-full min-h-0 flex-col">
+      <div role="toolbar" aria-label="Debug controls" className="flex min-h-11 shrink-0 flex-wrap items-center gap-1 border-b border-line px-2 @max-[640px]/dbg:gap-y-1.5 @max-[640px]/dbg:py-1.5">
         {tool("debug.restart", "Restart", <RotateCw />, active, "text-success")}
         {tool("run.cancel", "Stop", <Square className={cn(active && "fill-current")} />, active, cn(active && "text-danger"))}
         <span className="mx-1 h-5 w-px bg-line-strong" />
@@ -567,7 +567,7 @@ export function DebugToolWindow() {
         <div role="tablist" className="ml-2 flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5">
           {(
             [
-              ["frames", "Threads & Variables"],
+              ["frames", "Variables"],
               ["console", "Console"],
             ] as const
           ).map(([id, label]) => (
@@ -576,8 +576,10 @@ export function DebugToolWindow() {
               role="tab"
               aria-selected={tab === id}
               onClick={() => setTab(id)}
-              className={cn("rounded-md px-2.5 py-1 text-[12.5px] transition-colors", tab === id ? "bg-canvas text-fg shadow-sm" : "text-fg-subtle hover:text-fg")}
+              className={cn("whitespace-nowrap rounded-md px-2.5 py-1 text-[12.5px] transition-colors", tab === id ? "bg-canvas text-fg shadow-sm" : "text-fg-subtle hover:text-fg")}
             >
+              {/* The full name where it fits. */}
+              {id === "frames" && <span className="@max-[640px]/dbg:hidden">Threads &amp; </span>}
               {label}
             </button>
           ))}
@@ -622,7 +624,7 @@ export function DebugToolWindow() {
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-fg-subtle">
               <CircleDot className="size-6 text-danger/70" />
               <p className="max-w-md">
-                Click next to a line number to add a breakpoint, then start debugging.
+                <span className="[@media(pointer:coarse)]:hidden">Click</span><span className="hidden [@media(pointer:coarse)]:inline">Tap</span> next to a line number to add a breakpoint, then start debugging.
               </p>
               <Button variant="primary" onClick={() => runCommand("debug.startOrContinue")}>
                 Start debugging

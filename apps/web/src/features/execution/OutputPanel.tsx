@@ -246,9 +246,13 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
               <p>{process.env.NODE_ENV === "production" ? "Check your connection and try again." : "Start it with pnpm dev, see the README."}</p>
             </>
           ) : (
-            <p className="flex items-center gap-1.5">
-              Run the program with <Kbd shortcut="Mod+Enter" /> or debug it with <Kbd shortcut="F5" />
-            </p>
+            <>
+              {/* Touch screens have no shortcuts to offer. */}
+              <p className="hidden [@media(pointer:coarse)]:block">Tap Run at the top to run your program. Its output appears here.</p>
+              <p className="flex flex-wrap items-center justify-center gap-1.5 [@media(pointer:coarse)]:hidden">
+                Run the program with <Kbd shortcut="Mod+Enter" /> or debug it with <Kbd shortcut="F5" />
+              </p>
+            </>
           )}
         </div>
       )}
