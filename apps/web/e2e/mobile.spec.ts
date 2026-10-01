@@ -160,7 +160,10 @@ test.describe("tablet", () => {
     await expect(page.getByRole("menu").locator("kbd")).toHaveCount(0);
     await page.getByRole("menuitem", { name: "Open Settings" }).click();
     const settings = page.getByRole("dialog", { name: "Settings" });
-    await expect(settings.getByRole("radiogroup", { name: "Code font" })).toBeVisible();
+    // The code font is chosen from a list of names.
+    const font = settings.getByRole("combobox", { name: "Code font" });
+    await font.selectOption({ label: "Fira Code" });
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--font-code"))).toContain("Fira Code");
     await expect(settings.getByRole("button", { name: "Shortcuts" })).toHaveCount(0);
   });
 });

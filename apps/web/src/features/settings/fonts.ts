@@ -6,24 +6,22 @@
 export interface CodeFont {
   id: string;
   label: string;
-  /** Where people know it from. */
-  note: string;
 }
 
 export const CODE_FONTS: readonly CodeFont[] = [
-  { id: "jetbrains", label: "JetBrains Mono", note: "IntelliJ IDEA" },
-  { id: "cascadia", label: "Cascadia Code", note: "Windows Terminal" },
-  { id: "fira", label: "Fira Code", note: "Popular with VS Code" },
-  { id: "system", label: "Consolas / Menlo", note: "VS Code default" },
-  { id: "source", label: "Source Code Pro", note: "Adobe" },
-  { id: "plex", label: "IBM Plex Mono", note: "IBM" },
-  { id: "roboto", label: "Roboto Mono", note: "Android Studio" },
-  { id: "geist", label: "Geist Mono", note: "Vercel" },
-  { id: "ubuntu", label: "Ubuntu Mono", note: "Ubuntu terminal" },
-  { id: "inconsolata", label: "Inconsolata", note: "Narrow and compact" },
-  { id: "victor", label: "Victor Mono", note: "Slim, with tall letters" },
-  { id: "redhat", label: "Red Hat Mono", note: "Red Hat" },
-  { id: "space", label: "Space Mono", note: "Wide and geometric" },
+  { id: "jetbrains", label: "JetBrains Mono" },
+  { id: "cascadia", label: "Cascadia Code" },
+  { id: "fira", label: "Fira Code" },
+  { id: "system", label: "Consolas / Menlo" },
+  { id: "source", label: "Source Code Pro" },
+  { id: "plex", label: "IBM Plex Mono" },
+  { id: "roboto", label: "Roboto Mono" },
+  { id: "geist", label: "Geist Mono" },
+  { id: "ubuntu", label: "Ubuntu Mono" },
+  { id: "inconsolata", label: "Inconsolata" },
+  { id: "victor", label: "Victor Mono" },
+  { id: "redhat", label: "Red Hat Mono" },
+  { id: "space", label: "Space Mono" },
 ];
 
 export const DEFAULT_CODE_FONT = "jetbrains";
