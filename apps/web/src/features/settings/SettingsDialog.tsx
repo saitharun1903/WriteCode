@@ -78,11 +78,11 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 /** A small picture of the IDE in each theme. */
 function ThemeCard({ value, label, current, onPick }: { value: ThemePreference; label: string; current: ThemePreference; onPick: (v: ThemePreference) => void }) {
   const pane = (dark: boolean) => (
-    <div className={cn("flex h-full flex-1 flex-col gap-1 p-2", dark ? "bg-[#1e1f22]" : "bg-[#f7f8fa]")}>
-      <div className={cn("h-1.5 w-8 rounded-full", dark ? "bg-[#cf8e6d]" : "bg-[#0033b3]")} />
-      <div className={cn("h-1.5 w-12 rounded-full", dark ? "bg-[#6aab73]" : "bg-[#067d17]")} />
-      <div className={cn("h-1.5 w-6 rounded-full", dark ? "bg-[#56a8f5]" : "bg-[#00627a]")} />
-      <div className={cn("mt-auto h-3 rounded-sm", dark ? "bg-[#2b2d30]" : "bg-[#ebecf0]")} />
+    <div className={cn("flex h-full flex-1 flex-col gap-1 p-2", dark ? "bg-[#0b0d13]" : "bg-[#f7f8fa]")}>
+      <div className={cn("h-1.5 w-8 rounded-full", dark ? "bg-[#c296ff]" : "bg-[#0033b3]")} />
+      <div className={cn("h-1.5 w-12 rounded-full", dark ? "bg-[#8fd694]" : "bg-[#067d17]")} />
+      <div className={cn("h-1.5 w-6 rounded-full", dark ? "bg-[#7cc4ff]" : "bg-[#00627a]")} />
+      <div className={cn("mt-auto h-3 rounded-sm", dark ? "bg-[#212636]" : "bg-[#ebecf0]")} />
     </div>
   );
   const active = current === value;

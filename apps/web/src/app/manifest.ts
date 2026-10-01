@@ -10,8 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Write, run, debug and share code in your browser: Java, Python, C, C++, JavaScript and TypeScript.",
     start_url: "/",
     display: "standalone",
-    background_color: "#2b2d30",
-    theme_color: "#2b2d30",
+    background_color: "#10121a",
+    theme_color: "#10121a",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png" },

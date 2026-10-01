@@ -47,7 +47,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0b0d",
+  themeColor: "#10121a",
   // Phones: draw under the notch and home bar (the dock keeps clear with safe-area insets),
   // and let the on-screen keyboard shrink the layout instead of covering the code.
   viewportFit: "cover",

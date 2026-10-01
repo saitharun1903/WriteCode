@@ -13,46 +13,51 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
-  /* Main toolbar, stripes, status bar and tool windows share one chrome colour. */
-  --canvas: #2b2d30;
-  --surface: #2b2d30;
+  /*
+   * A deep night blue rather than grey: the chrome is a shade lighter than the
+   * editor it frames, lines are hairlines, and the accent is the logo's blue.
+   */
+  /* Main toolbar, stripes and status bar. */
+  --canvas: #10121a;
+  /* Tool windows and cards. */
+  --surface: #151823;
   /* Editor and console. */
-  --surface-2: #1e1f22;
+  --surface-2: #0b0d13;
   /* Inputs, chips, pressed buttons. */
-  --surface-3: #393b40;
-  --overlay: #2b2d30;
+  --surface-3: #212636;
+  --overlay: #181c29;
 
-  --line: #1e1f22;
-  --line-strong: #43454a;
+  --line: #1d2130;
+  --line-strong: #2d3347;
 
-  --fg: #dfe1e5;
-  --fg-muted: #ced0d6;
-  --fg-subtle: #8c9098;
-  --fg-faint: #5a5d63;
+  --fg: #e8eaf2;
+  --fg-muted: #c5c9d8;
+  --fg-subtle: #8b91a7;
+  --fg-faint: #555c72;
 
-  --accent: #3574f0;
+  --accent: #4b7bff;
   --accent-fg: #ffffff;
-  --accent-soft: #2e436e;
-  --accent-line: #3574f0;
+  --accent-soft: #1e2c57;
+  --accent-line: #5d88ff;
 
-  --success: #5fb865;
-  --success-soft: rgb(95 184 101 / 0.14);
-  --danger: #e55765;
-  --danger-soft: rgb(229 87 101 / 0.14);
-  --warning: #f2c55c;
-  --warning-soft: rgb(242 197 92 / 0.14);
-  --info: #548af7;
-  --info-soft: rgb(84 138 247 / 0.16);
+  --success: #4fcb7c;
+  --success-soft: rgb(79 203 124 / 0.14);
+  --danger: #f2626f;
+  --danger-soft: rgb(242 98 111 / 0.14);
+  --warning: #f4c761;
+  --warning-soft: rgb(244 199 97 / 0.14);
+  --info: #6d9dff;
+  --info-soft: rgb(109 157 255 / 0.16);
 
-  --selection: #214283;
-  --hover: #393b40;
-  --active: #43454a;
+  --selection: #25408c;
+  --hover: #1f2434;
+  --active: #2a3045;
 
   /* Editor line highlights. */
-  --breakpoint-line: #3b2527;
-  --execution-line: #2d3f5c;
+  --breakpoint-line: #3a1c26;
+  --execution-line: #1c2f5a;
 
-  --shadow-float: 0 0 0 1px #43454a, 0 10px 28px -8px rgb(0 0 0 / 0.6);
+  --shadow-float: 0 0 0 1px #2d3347, 0 18px 44px -12px rgb(0 0 0 / 0.75);
 }
 
 [data-theme="light"] {
