@@ -58,7 +58,12 @@ export interface HistoryEntry {
   files: ProjectFile[];
   stdin: string;
   result: ExecutionResult;
+  /** When this code last ran. */
   createdAt: number;
+  /** How many times this same code has run (absent: once). The entry holds the latest run. */
+  runs?: number;
+  /** When this code first ran (absent: `createdAt`). */
+  firstRunAt?: number;
 }
 
 export interface Snapshot {

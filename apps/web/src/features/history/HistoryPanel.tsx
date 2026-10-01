@@ -1,18 +1,19 @@
 "use client";
 
-import { Camera, GitCompareArrows, History as HistoryIcon, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { Camera, CircleCheck, CircleX, GitCompareArrows, History as HistoryIcon, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getLanguage, type HistoryEntry, type Snapshot } from "@cw/shared";
+import { basename, getLanguage, type HistoryEntry, type Snapshot } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { DropdownMenu } from "@/components/ui/menu";
 import { EmptyState, PanelHeader, Spinner } from "@/components/ui/primitives";
 import { toast } from "@/components/ui/toast";
-import { StatusPill, formatDuration } from "@/features/execution/status";
+import { STATUS_META, StatusPill, formatDuration } from "@/features/execution/status";
 import { useExecution } from "@/features/execution/store";
 import { historyRepo, projectRepo } from "@/features/projects/db";
 import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
+import { ago, changes, outputPreview, sameCode, versions, type Change, type RunVersion } from "./runs";
 import { useSnapshots } from "./snapshot-store";
 
 function dayLabel(ts: number): string {
@@ -68,7 +69,7 @@ function RunHistory() {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onlyThisProject, setOnlyThisProject] = useState(true);
-  const [selected, setSelected] = useState<HistoryEntry | null>(null);
+  const [selected, setSelected] = useState<RunVersion | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -94,10 +95,11 @@ function RunHistory() {
     };
   }, [version]);
 
-  const visible = useMemo(
-    () => (entries ?? []).filter((e) => !onlyThisProject || !currentProjectId || e.projectId === currentProjectId),
-    [entries, onlyThisProject, currentProjectId],
-  );
+  // One row per version of the code: running the same code again only moves it to the top.
+  const all = useMemo(() => versions(entries ?? []), [entries]);
+  const changed = useMemo(() => changes(all), [all]);
+  const scoped = !!currentProjectId && onlyThisProject;
+  const visible = useMemo(() => all.filter((v) => !scoped || v.entry.projectId === currentProjectId), [all, scoped, currentProjectId]);
 
   if (error) return <EmptyState title="History unavailable" description={error} action={<Button size="sm" onClick={load}>Retry</Button>} />;
   if (!entries) return <div className="flex justify-center p-6 text-fg-subtle"><Spinner /></div>;
@@ -105,51 +107,110 @@ function RunHistory() {
   return (
     <>
       {currentProjectId && (
-        <label className="flex items-center gap-2 px-3 pb-2 text-xs text-fg-subtle">
-          <input type="checkbox" checked={onlyThisProject} onChange={(e) => setOnlyThisProject(e.target.checked)} className="accent-[var(--accent)]" />
-          Only this project
-        </label>
+        <div role="radiogroup" aria-label="Which runs" className="mx-3 mb-2 flex items-center gap-1 text-xs">
+          {(
+            [
+              [true, "This project"],
+              [false, "All projects"],
+            ] as const
+          ).map(([only, label]) => (
+            <button
+              key={label}
+              role="radio"
+              aria-checked={onlyThisProject === only}
+              onClick={() => setOnlyThisProject(only)}
+              className={cn("h-6 shrink-0 whitespace-nowrap rounded-full border px-2.5 transition-colors", onlyThisProject === only ? "border-accent/50 bg-accent/15 text-fg" : "border-line-strong/60 text-fg-subtle hover:text-fg")}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="ml-auto truncate whitespace-nowrap text-fg-subtle">
+            {visible.length} version{visible.length === 1 ? "" : "s"}
+          </span>
+        </div>
       )}
       {visible.length === 0 ? (
-        <EmptyState icon={<HistoryIcon />} title="No runs yet" description="Every run is recorded here with its code, input and output." />
+        <EmptyState icon={<HistoryIcon />} title="No runs yet" description="Each version of your code that you run is kept here, with its input and output. Running the same code again does not add a new entry." />
       ) : (
-        groupByDay(visible).map(([day, items]) => (
+        groupByDay(visible.map((v) => ({ ...v, createdAt: v.entry.createdAt }))).map(([day, items]) => (
           <section key={day} className="pb-2">
             <h3 className="sticky top-0 z-[1] bg-surface px-3 py-1 text-xs font-semibold text-fg-subtle">{day}</h3>
-            <ul>
-              {items.map((e) => (
-                <li key={e.id}>
-                  <button
-                    onClick={() => setSelected(e)}
-                    className="flex w-full flex-col gap-1 px-3 py-1.5 text-left hover:bg-hover focus-visible:bg-hover"
-                  >
-                    <span className="flex w-full items-center gap-2 text-sm">
-                      <span className="font-mono text-xs tabular-nums text-fg-subtle">{timeLabel(e.createdAt)}</span>
-                      <span className="text-fg">{getLanguage(e.language)?.name ?? e.language}</span>
-                      <span className="ml-auto truncate text-xs text-fg-subtle">{formatDuration(e.result.executionTime)}</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <StatusPill status={e.result.status} className="h-4 px-1 text-2xs" />
-                      <span className="truncate text-xs text-fg-subtle">
-                        {e.projectName} · {e.entryFile}
-                      </span>
-                    </span>
-                  </button>
+            <ul aria-label={`Runs, ${day}`}>
+              {items.map((v) => (
+                <li key={v.entry.id}>
+                  <RunRow version={v} change={changed.get(v.entry.id)} showProject={!scoped} onOpen={() => setSelected(v)} />
                 </li>
               ))}
             </ul>
           </section>
         ))
       )}
-      {selected && <HistoryDetail entry={selected} onClose={() => setSelected(null)} onDeleted={bump} />}
+      {selected && <HistoryDetail version={selected} change={changed.get(selected.entry.id)} onClose={() => setSelected(null)} onDeleted={bump} />}
     </>
   );
 }
 
-function HistoryDetail({ entry, onClose, onDeleted }: { entry: HistoryEntry; onClose: () => void; onDeleted: () => void }) {
+function ChangeNote({ change }: { change: Change | "first" | undefined }) {
+  if (!change) return null;
+  if (change === "first") return <span>First run</span>;
+  const where = change.files.length === 1 ? basename(change.files[0]!) : `${change.files.length} files`;
+  return (
+    <span title={change.files.join("\n")}>
+      {change.added > 0 && <span className="text-success">+{change.added}</span>}
+      {change.added > 0 && change.removed > 0 && " "}
+      {change.removed > 0 && <span className="text-danger">−{change.removed}</span>}
+      {change.added + change.removed > 0 ? ` line${change.added + change.removed === 1 ? "" : "s"} in ` : "Changed "}
+      {where}
+    </span>
+  );
+}
+
+/** One version of the code: what it ran, what it printed, what changed since the version before. */
+function RunRow({ version, change, showProject, onOpen }: { version: RunVersion; change: Change | "first" | undefined; showProject: boolean; onOpen: () => void }) {
+  const e = version.entry;
+  const ok = e.result.status === "SUCCESS";
+  const preview = outputPreview(e);
+  const duration = formatDuration(e.result.executionTime);
+  return (
+    <button onClick={onOpen} className="flex w-full gap-2 px-3 py-2 text-left hover:bg-hover focus-visible:bg-hover">
+      {ok ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" /> : <CircleX className="mt-0.5 size-4 shrink-0 text-danger" />}
+      <span className="min-w-0 flex-1 space-y-0.5">
+        <span className="flex items-baseline gap-2">
+          <span className="truncate text-[13px] font-medium text-fg">{basename(e.entryFile)}</span>
+          {!ok && <span className="shrink-0 text-xs text-danger">{STATUS_META[e.result.status].label}</span>}
+          <span className="ml-auto shrink-0 text-xs tabular-nums text-fg-subtle">{ago(e.createdAt) ?? timeLabel(e.createdAt)}</span>
+        </span>
+        {preview ? (
+          <span className={cn("line-clamp-2 break-words font-mono text-xs", preview.error ? "text-danger/90" : "text-fg-muted")}>{preview.text}</span>
+        ) : (
+          <span className="block text-xs text-fg-faint">{ok ? "Printed nothing" : "No output"}</span>
+        )}
+        <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-fg-subtle">
+          <ChangeNote change={change} />
+          {change && version.runs > 1 && <span aria-hidden>·</span>}
+          {version.runs > 1 && <span>ran {version.runs} times</span>}
+          {duration && (change || version.runs > 1) && <span aria-hidden>·</span>}
+          {duration && <span>{duration}</span>}
+          {showProject && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">{e.projectName}</span>
+            </>
+          )}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function HistoryDetail({ version, change, onClose, onDeleted }: { version: RunVersion; change: Change | "first" | undefined; onClose: () => void; onDeleted: () => void }) {
+  const entry = version.entry;
   const current = useWorkspace((s) => s.project);
   const r = entry.result;
   const isCurrent = current?.id === entry.projectId;
+  const [view, setView] = useState<"output" | "code">("output");
+  const [file, setFile] = useState(() => (entry.files.some((f) => f.path === entry.entryFile) ? entry.entryFile : (entry.files[0]?.path ?? "")));
+  const unchanged = isCurrent && !!current && sameCode({ entryFile: entry.entryFile, files: current.files }, entry);
 
   const restore = async () => {
     const ws = useWorkspace.getState();
@@ -174,49 +235,81 @@ function HistoryDetail({ entry, onClose, onDeleted }: { entry: HistoryEntry; onC
   };
 
   const remove = async () => {
-    await historyRepo.delete(entry.id);
+    await historyRepo.deleteMany([entry.id, ...version.duplicates]);
     onDeleted();
     onClose();
   };
 
   const output = [r.compileOutput, r.stdout, r.stderr].filter(Boolean).join("\n");
+  const ran = version.runs > 1 ? `Ran ${version.runs} times, last ${dayLabel(entry.createdAt).toLowerCase()} at ${timeLabel(entry.createdAt)}` : `Ran ${dayLabel(entry.createdAt).toLowerCase()} at ${timeLabel(entry.createdAt)}`;
 
   return (
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={`${entry.projectName} · ${entry.entryFile}`}
-      description={`${dayLabel(entry.createdAt)} at ${timeLabel(entry.createdAt)} · ${getLanguage(entry.language)?.name ?? entry.language} ${r.runtimeVersion}`}
+      title={`${basename(entry.entryFile)} · ${entry.projectName}`}
+      description={`${ran} · ${getLanguage(entry.language)?.name ?? entry.language} ${r.runtimeVersion}`}
       className="max-w-2xl"
       footer={
         <>
           <Button variant="ghost" icon={<Trash2 className="size-3.5" />} onClick={remove} className="mr-auto">
             Delete
           </Button>
-          <Button icon={<GitCompareArrows className="size-3.5" />} onClick={compare} disabled={!isCurrent}>
+          <Button icon={<GitCompareArrows className="size-3.5" />} onClick={compare} disabled={!isCurrent || unchanged}>
             Compare with current
           </Button>
-          <Button variant="primary" icon={<RotateCcw className="size-3.5" />} onClick={restore}>
-            Restore code
+          <Button variant="primary" icon={<RotateCcw className="size-3.5" />} onClick={restore} disabled={unchanged}>
+            Restore this code
           </Button>
         </>
       }
     >
-      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs text-fg-subtle">
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-subtle">
         <StatusPill status={r.status} />
-        {r.exitCode !== undefined && <span>exit {r.exitCode}</span>}
+        {r.exitCode !== undefined && r.exitCode !== 0 && <span>exit code {r.exitCode}</span>}
         {r.executionTime !== undefined && <span>{formatDuration(r.executionTime)}</span>}
-        <span>{entry.files.length} file{entry.files.length === 1 ? "" : "s"}</span>
+        <ChangeNote change={change} />
+        {unchanged && <span className="text-fg-muted">This is the code in the editor now</span>}
       </div>
-      {entry.stdin && (
-        <details className="mb-2 text-xs">
-          <summary className="cursor-default text-fg-subtle">Input (stdin)</summary>
-          <pre className="mt-1 max-h-24 overflow-auto rounded-sm bg-surface p-2 font-mono text-fg-muted">{entry.stdin}</pre>
-        </details>
+      <div role="tablist" aria-label="Run" className="mb-2 flex items-center gap-1 text-xs">
+        {(
+          [
+            ["output", "Output"],
+            ["code", `Code (${entry.files.length} file${entry.files.length === 1 ? "" : "s"})`],
+          ] as const
+        ).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={view === id} onClick={() => setView(id)} className={cn("h-6 rounded-md px-2.5", view === id ? "bg-active text-fg" : "text-fg-muted hover:bg-hover hover:text-fg")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "output" ? (
+        <>
+          {entry.stdin && (
+            <div className="mb-2">
+              <div className="mb-1 text-xs font-medium text-fg-subtle">Input</div>
+              <pre className="max-h-24 overflow-auto rounded-md border border-line bg-surface p-2 font-mono text-xs text-fg-muted">{entry.stdin}</pre>
+            </div>
+          )}
+          <div className="mb-1 text-xs font-medium text-fg-subtle">{r.status === "COMPILATION_ERROR" ? "Compiler output" : "Output"}</div>
+          <pre className="max-h-72 overflow-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed text-fg">
+            {output || <span className="text-fg-subtle">The program printed nothing.</span>}
+          </pre>
+        </>
+      ) : (
+        <>
+          {entry.files.length > 1 && (
+            <div className="mb-2 flex flex-wrap gap-1 text-xs">
+              {entry.files.map((f) => (
+                <button key={f.path} onClick={() => setFile(f.path)} title={f.path} className={cn("h-6 rounded-md border px-2", file === f.path ? "border-accent/50 bg-accent/15 text-fg" : "border-line-strong/60 text-fg-muted hover:text-fg")}>
+                  {basename(f.path)}
+                </button>
+              ))}
+            </div>
+          )}
+          <pre className="max-h-80 overflow-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed text-fg">{entry.files.find((f) => f.path === file)?.content ?? ""}</pre>
+        </>
       )}
-      <pre className="max-h-72 overflow-auto rounded-md border border-line bg-surface p-3 font-mono text-xs leading-relaxed text-fg">
-        {output || <span className="text-fg-subtle">No output.</span>}
-      </pre>
       {!isCurrent && <p className="mt-2 text-xs text-fg-subtle">This run belongs to another project. Restoring opens that project first.</p>}
     </Dialog>
   );

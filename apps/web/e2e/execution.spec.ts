@@ -63,7 +63,10 @@ test("Java: run, edit, rerun, history, reload and recover", async ({ page }) => 
   await expect(output(page)).toContainText("Sum: 55", { timeout: 60_000 });
 
   await page.keyboard.press("Control+Shift+H");
-  await expect(page.getByRole("complementary", { name: "Sidebar" }).getByText("Success")).toHaveCount(2);
+  const runs = page.getByRole("complementary", { name: "Sidebar" }).getByRole("list", { name: /Runs/ }).getByRole("listitem");
+  await expect(runs).toHaveCount(2);
+  await expect(runs.nth(0)).toContainText("Sum: 55");
+  await expect(runs.nth(1)).toContainText("Hello World");
 
   await page.reload();
   await expect(editor(page)).toContainText("Sum: ");
@@ -127,7 +130,8 @@ test("run history survives reloads and is private to each browser", async ({ pag
   await page.reload();
   await page.keyboard.press("Control+Shift+H");
   const sidebar = page.getByRole("complementary", { name: "Sidebar" });
-  await expect(sidebar.getByText("Success")).toHaveCount(1);
+  await expect(sidebar.getByRole("list", { name: /Runs/ }).getByRole("listitem")).toHaveCount(1);
+  await expect(sidebar).toContainText("Hello World");
 
   // A different browser profile has its own storage and starts empty.
   const other = await browser.newContext();
@@ -136,4 +140,46 @@ test("run history survives reloads and is private to each browser", async ({ pag
   await expect(otherPage.getByRole("heading", { name: "New project" })).toBeVisible();
   await expect(otherPage.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
   await other.close();
+});
+
+test("history keeps one entry per version of the code: the same code run again only moves to the top", async ({ page }) => {
+  await freshProject(page, /New Python project/);
+  const runOnce = async (text: string) => {
+    await page.getByRole("button", { name: "Run program" }).click();
+    await expect(output(page)).toContainText(text, { timeout: 120_000 });
+    await expect(page.getByRole("button", { name: "Run program" })).toBeEnabled();
+  };
+  await replaceCode(page, 'print("first version")');
+  await runOnce("first version");
+  await runOnce("first version");
+  await replaceCode(page, 'print("second version")\nprint("more")');
+  await runOnce("second version");
+  await runOnce("second version");
+  await runOnce("second version");
+
+  await page.keyboard.press("Control+Shift+H");
+  const sidebar = page.getByRole("complementary", { name: "Sidebar" });
+  const rows = sidebar.getByRole("list", { name: /Runs/ }).getByRole("listitem");
+  await expect(rows).toHaveCount(2);
+  await expect(sidebar).toContainText("2 versions");
+  await expect(rows.nth(0)).toContainText("main.py");
+  await expect(rows.nth(0)).toContainText("second version");
+  await expect(rows.nth(0)).toContainText("ran 3 times");
+  await expect(rows.nth(0)).toContainText("+2 −1 lines in main.py");
+  await expect(rows.nth(1)).toContainText("first version");
+  await expect(rows.nth(1)).toContainText("ran 2 times");
+
+  // The older version's code can be read, and brought back.
+  await rows.nth(1).getByRole("button").click();
+  const detail = page.getByRole("dialog");
+  await expect(detail).toContainText("Ran 2 times");
+  await detail.getByRole("tab", { name: /Code/ }).click();
+  await expect(detail).toContainText('print("first version")');
+  await detail.getByRole("button", { name: "Restore this code" }).click();
+  await expect(editor(page)).toContainText("first version");
+  // Running the restored code is still the first version: it moves to the top, nothing is added.
+  await runOnce("first version");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("ran 3 times");
+  await expect(rows.nth(0)).toContainText("first version");
 });

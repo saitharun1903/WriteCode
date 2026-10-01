@@ -41,6 +41,12 @@ export const LIVE_LIMITS = {
   /** Presence (cursor, name) per person, bytes. */
   maxAwarenessBytes: 2048,
   maxNameLength: 40,
+  /**
+   * A session whose owner has been gone this long closes by itself: nobody is
+   * left to answer for what is shared. (An interview ends instead, and is kept
+   * for the interviewer's report.)
+   */
+  ownerAwaySeconds: 10 * 60,
   /** A session nobody has used for this long is removed. */
   idleTtlSeconds: 24 * 60 * 60,
 } as const;

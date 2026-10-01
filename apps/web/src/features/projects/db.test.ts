@@ -57,6 +57,22 @@ describe("IndexedDB repositories", () => {
     expect(await snapshotRepo.listByProject("a")).toEqual([]);
   });
 
+  it("running the same code again updates its entry; changed code adds one", async () => {
+    const run = (id: string, content: string, at: number, stdout: string) => ({ ...entry(id, "a", at), files: [{ path: "Main.java", content }], result: { ...entry(id, "a", at).result, stdout } });
+    await historyRepo.record(run("h1", "v1", 1, "one"));
+    await historyRepo.record(run("h2", "v1", 2, "one again"));
+    await historyRepo.record(run("h3", "v2", 3, "two"));
+    await historyRepo.record(run("h4", "v1", 4, "one, later"));
+    const list = await historyRepo.list();
+    expect(list.map((h) => [h.id, h.createdAt, h.runs ?? 1, h.firstRunAt ?? h.createdAt, h.result.stdout])).toEqual([
+      ["h1", 4, 3, 1, "one, later"],
+      ["h3", 3, 1, 3, "two"],
+    ]);
+    // The same code in another project is that project's own entry.
+    await historyRepo.record({ ...run("h5", "v1", 5, "one"), projectId: "b" });
+    expect(await historyRepo.list()).toHaveLength(3);
+  });
+
   it("lists history newest first with a limit", async () => {
     for (let i = 0; i < 5; i++) await historyRepo.add(entry(`h${i}`, "a", i));
     expect((await historyRepo.list(3)).map((h) => h.id)).toEqual(["h4", "h3", "h2"]);

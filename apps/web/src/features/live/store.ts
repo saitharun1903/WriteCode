@@ -15,6 +15,7 @@ import type {
   LiveServerMessage,
   Project,
 } from "@cw/shared";
+import { LIVE_LIMITS } from "@cw/shared";
 import { useRestriction } from "@/features/interview/restrict";
 import { useSettings } from "@/features/settings/store";
 import { useTests } from "@/features/tests/store";
@@ -270,6 +271,11 @@ export const useLive = create<LiveState>((set, get) => {
         return;
       case "participants": {
         const me = msg.participants.find((p) => p.id === get().me?.id) ?? get().me;
+        const owner = get().participants.find((p) => p.role === "owner");
+        if (owner && me?.role !== "owner" && !msg.participants.some((p) => p.role === "owner") && !get().interview?.endedAt) {
+          const minutes = Math.round(LIVE_LIMITS.ownerAwaySeconds / 60);
+          toast.info(`${owner.name} disconnected`, get().interview ? `If they are not back in ${minutes} minutes, the interview ends and your code is handed in.` : `If they are not back in ${minutes} minutes, this session closes. Save a copy to keep the code.`);
+        }
         set({ participants: msg.participants, me });
         if (get().following && !msg.participants.some((p) => p.id === get().following)) set({ following: null });
         return;
@@ -350,6 +356,13 @@ export const useLive = create<LiveState>((set, get) => {
             const ended = code === 4000 || get().status === "ended";
             const removed = code === 4001 || get().status === "removed";
             if (s.owner && (ended || code === 4004)) forgetOwned(s.projectId);
+            // The owner came back to a session that closed while they were away: say so, and let them share again.
+            if (s.owner && code === 4004) {
+              teardownKeepProject();
+              set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null });
+              toast.info("Your live session has closed", `It closes by itself when you are away for ${Math.round(LIVE_LIMITS.ownerAwaySeconds / 60)} minutes. Share again to start a new one.`);
+              return;
+            }
             set({ status: ended ? "ended" : removed ? "removed" : "failed", error: get().error ?? closeMessage(code, reason) });
             teardownKeepProject();
             return;

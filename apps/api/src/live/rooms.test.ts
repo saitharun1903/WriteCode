@@ -241,6 +241,44 @@ describe("live rooms", () => {
     await expect(new Client().join(rooms, id, "Ravi", KEY_B)).rejects.toBeInstanceOf(LiveError);
   });
 
+  it("a session whose owner has been gone for ten minutes closes by itself; coming back in time keeps it", async () => {
+    vi.useFakeTimers();
+    try {
+      const { rooms, store, id, ownerToken, owner } = await session();
+      const ravi = await new Client().join(rooms, id, "Ravi", KEY_B);
+      owner.conn.close();
+      vi.advanceTimersByTime(9 * 60_000);
+      expect(ravi.closed).toBeNull();
+      // Back in time: the count starts again the next time they leave.
+      const back = await new Client().join(rooms, id, "Teacher", KEY_A, ownerToken);
+      vi.advanceTimersByTime(5 * 60_000);
+      expect(ravi.closed).toBeNull();
+      back.conn.close();
+      await vi.advanceTimersByTimeAsync(10 * 60_000 + 100);
+      expect(ravi.last("ended")).toBeDefined();
+      expect(ravi.closed?.code).toBe(LiveClose.ended);
+      expect((await store.getMeta(id))?.ended).toBe(true);
+      await expect(new Client().join(rooms, id, "Late", KEY_C)).rejects.toMatchObject({ code: "not-found" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("with nobody left connected, the link stops working once the owner has been gone ten minutes", async () => {
+    vi.useFakeTimers();
+    try {
+      const { rooms, store, id, owner } = await session();
+      owner.conn.close();
+      await rooms.saveAll();
+      // A restarted server knows when the owner left.
+      vi.advanceTimersByTime(11 * 60_000);
+      await expect(new Client().join(new LiveRooms(store), id, "Ravi", KEY_B)).rejects.toMatchObject({ code: "not-found" });
+      expect(store.docs.has(id)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects bad links and limits how many sessions one person opens", async () => {
     const store = new MemoryStore();
     const rooms = new LiveRooms(store);
@@ -471,6 +509,24 @@ describe("live rooms", () => {
         expect(cand.last("interview")!.state.endedAt).toBeDefined();
         expect(cand.last("role")?.role).toBe("viewer");
         expect(hr.last("interview-event")?.event).toMatchObject({ kind: "ended", detail: "Asha left the interview window 2 times" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("an interview whose interviewer has been gone for ten minutes ends, and is kept for the report", async () => {
+      vi.useFakeTimers();
+      try {
+        const { rooms, id, ownerToken, hr, cand } = await interview();
+        await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+        hr.conn.close();
+        vi.advanceTimersByTime(10 * 60_000 + 100);
+        expect(cand.last("interview")!.state).toMatchObject({ endReason: "The interviewer was away for 10 minutes" });
+        expect(cand.last("role")?.role).toBe("viewer");
+        expect(cand.closed).toBeNull();
+        const back = await new Client().join(rooms, id, "Interviewer", KEY_A, ownerToken);
+        expect(back.last("welcome")?.interview?.endedAt).toBeDefined();
+        expect(back.text("Main.java")).toBe("class Main {}\n");
       } finally {
         vi.useRealTimers();
       }

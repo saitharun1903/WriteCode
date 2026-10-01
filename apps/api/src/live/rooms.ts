@@ -48,6 +48,8 @@ export interface RoomMeta {
   /** Browser keys of people the owner removed; they cannot rejoin. */
   removed: string[];
   ended?: boolean;
+  /** When the owner's last connection closed; unset while the owner is here. */
+  ownerLeftAt?: number;
   /** Interview sessions: the problem and clock (public), and what only the interviewer sees. */
   interview?: { public: InterviewPublic; private: InterviewPrivate };
 }
@@ -134,6 +136,8 @@ class Room {
   private approxBytes = 0;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   unloadTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Closes the session when the owner has been away too long. */
+  ownerTimer: ReturnType<typeof setTimeout> | null = null;
   /** Interview: every document update with its time, for replay. */
   history: [number, Uint8Array][] = [];
   private historyBytes = 0;
@@ -441,6 +445,7 @@ class Room {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.clockTimer) clearTimeout(this.clockTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
+    if (this.ownerTimer) clearTimeout(this.ownerTimer);
     this.awareness.destroy();
     this.doc.destroy();
   }
@@ -502,6 +507,14 @@ export class LiveRooms {
         if (!meta || meta.ended) return null;
         // A server restart in the middle of a check leaves nothing running.
         if (meta.interview?.public.judging) meta.interview.public.judging = false;
+        // The owner had been away too long by the time someone came back: the session is over.
+        if (meta.ownerLeftAt && !meta.interview && Date.now() - meta.ownerLeftAt >= LIVE_LIMITS.ownerAwaySeconds * 1000) {
+          meta.ended = true;
+          await this.store.putMeta(meta);
+          await this.store.deleteDoc(id);
+          await this.store.removeRoom(meta.client, id);
+          return null;
+        }
         const room = new Room(meta, this.store, this.log, this.judgeRun);
         const state = await this.store.getDoc(id);
         if (state) room.load(state);
@@ -510,6 +523,7 @@ export class LiveRooms {
           room.scheduleClock();
         }
         this.rooms.set(id, room);
+        if (meta.ownerLeftAt) this.ownerAway(room, meta.ownerLeftAt);
         return room;
       })().finally(() => this.loading.delete(id));
       this.loading.set(id, pending);
@@ -547,6 +561,17 @@ export class LiveRooms {
       awarenessIds: new Set(),
     };
     room.members.set(member.id, member);
+    if (owner) {
+      if (room.ownerTimer) clearTimeout(room.ownerTimer);
+      room.ownerTimer = null;
+      if (room.meta.ownerLeftAt) {
+        room.meta.ownerLeftAt = undefined;
+        room.scheduleSave();
+      }
+    } else if (!room.owners.length && !room.meta.ownerLeftAt) {
+      // The owner's leaving was never recorded (the server stopped suddenly): count from now.
+      this.ownerAway(room, Date.now());
+    }
 
     const send = (m: LiveServerMessage) => peer.send(JSON.stringify(m));
     const iv = room.meta.interview;
@@ -592,6 +617,10 @@ export class LiveRooms {
     if (room.meta.interview && member.role !== "owner") room.log({ kind: "left", who: member.name });
     if (member.awarenessIds.size) awarenessProtocol.removeAwarenessStates(room.awareness, [...member.awarenessIds], null);
     room.sendAll({ type: "participants", participants: room.participants() });
+    if (member.role === "owner" && !room.owners.length && !room.meta.ended) {
+      this.ownerAway(room, Date.now());
+      room.scheduleSave();
+    }
     if (room.members.size === 0 && !room.meta.ended) {
       room.unloadTimer = setTimeout(() => {
         if (room.members.size > 0) return;
@@ -602,6 +631,22 @@ export class LiveRooms {
         });
       }, UNLOAD_DELAY_MS);
     }
+  }
+
+  /** The owner is gone since `since`: unless they come back in time, the session closes. */
+  private ownerAway(room: Room, since: number) {
+    room.meta.ownerLeftAt = since;
+    if (room.ownerTimer) clearTimeout(room.ownerTimer);
+    const wait = Math.max(0, since + LIVE_LIMITS.ownerAwaySeconds * 1000 - Date.now());
+    room.ownerTimer = setTimeout(() => {
+      room.ownerTimer = null;
+      if (room.owners.length || room.meta.ended || this.rooms.get(room.meta.id) !== room) return;
+      const minutes = Math.round(LIVE_LIMITS.ownerAwaySeconds / 60);
+      // An interview is kept for the interviewer's report: it ends, the code locks and is checked.
+      if (room.meta.interview) return room.endInterview(`The interviewer was away for ${minutes} minutes`);
+      void this.end(room).catch((e: unknown) => this.log(`could not end live session: ${String(e)}`));
+    }, wait);
+    room.ownerTimer.unref?.();
   }
 
   async end(room: Room) {

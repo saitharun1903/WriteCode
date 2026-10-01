@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { HistoryEntry, Project, ProjectSummary, Snapshot } from "@cw/shared";
+import { codeKey } from "@/features/history/runs";
 import { lastActivity, summarize } from "./operations";
 
 /**
@@ -93,6 +94,35 @@ export const historyRepo = {
   },
   async add(entry: HistoryEntry): Promise<void> {
     await (await db()).put("history", entry);
+  },
+  /**
+   * Records a run. Running code that is already in the project's history is
+   * not a new entry: that entry gets the new result and time, and counts one
+   * more run. Only changed code adds an entry.
+   */
+  async record(entry: HistoryEntry): Promise<void> {
+    const tx = (await db()).transaction("history", "readwrite");
+    const key = codeKey(entry);
+    let same = null as HistoryEntry | null;
+    let cursor = await tx.store.index("projectId").openCursor(entry.projectId);
+    while (cursor) {
+      const old = cursor.value;
+      if (codeKey(old) === key) {
+        // Entries from before runs were merged: fold them into one.
+        if (same) {
+          same = { ...same, runs: (same.runs ?? 1) + (old.runs ?? 1), firstRunAt: Math.min(same.firstRunAt ?? same.createdAt, old.firstRunAt ?? old.createdAt) };
+          await cursor.delete();
+        } else same = old;
+      }
+      cursor = await cursor.continue();
+    }
+    await tx.store.put(same ? { ...entry, id: same.id, runs: (same.runs ?? 1) + 1, firstRunAt: same.firstRunAt ?? same.createdAt } : entry);
+    await tx.done;
+  },
+  async deleteMany(ids: string[]): Promise<void> {
+    const tx = (await db()).transaction("history", "readwrite");
+    for (const id of ids) await tx.store.delete(id);
+    await tx.done;
   },
   async delete(id: string): Promise<void> {
     await (await db()).delete("history", id);

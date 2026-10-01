@@ -354,7 +354,7 @@ export function LivePanel() {
       description={
         active
           ? owner
-            ? "Everyone with the link sees your code, cursors and runs as they happen."
+            ? "Everyone with the link sees your code, cursors and runs as they happen. If you are away for 10 minutes, the session closes by itself."
             : "You are in someone else's live session."
           : "Share a link. Others see your code, cursors, runs and debugging live, and can edit with you if you allow it."
       }

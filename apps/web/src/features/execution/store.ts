@@ -192,12 +192,13 @@ export const useExecution = create<ExecutionState>((set, get) => {
     }));
     if (useSettings.getState().recordHistory && !watched) {
       try {
-        await historyRepo.add({
+        await historyRepo.record({
           id: createId(),
           projectId: project.id,
           projectName: project.name,
           language: project.language,
-          entryFile: project.entryFile,
+          // The file this run started from (Run Current File may not be the project's entry file).
+          entryFile: get().run?.entry || project.entryFile,
           files: snapshotFiles(project),
           stdin: project.stdin,
           result,
