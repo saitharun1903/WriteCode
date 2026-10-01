@@ -2,45 +2,35 @@ import { PRODUCT } from "@cw/shared";
 import { cn } from "@/lib/cn";
 
 /**
- * Product mark: a white W on a rounded tile in the brand's blue-to-violet.
- * Drawn, not a picture, so it is sharp at every size and in both themes.
+ * Product mark: a W set in pixels on a dark tile, with the cursor waiting
+ * under it (the same drawing as brand/writecode-mark.svg, which the icons are
+ * made from). It is drawn on a 16 x 16 grid, so sizes that are a multiple of
+ * 8 keep every pixel sharp.
  */
 export function LogoMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden className={cn("size-5 shrink-0 select-none", className)}>
-      <defs>
-        <linearGradient id="cw-mark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4f7dff" />
-          <stop offset="1" stopColor="#8b5cf6" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8.5" fill="url(#cw-mark)" />
-      <path d="M8 10.5 12 21.5 16 13 20 21.5 24 10.5" fill="none" stroke="#fff" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 16 16" aria-hidden className={cn("size-5 shrink-0 select-none", className)}>
+      <rect width="16" height="16" rx="3" fill="#15161a" />
+      {/* A hairline, so the dark tile keeps its edge on a dark bar. */}
+      <rect x="0.25" y="0.25" width="15.5" height="15.5" rx="2.75" fill="none" stroke="#fff" strokeOpacity="0.16" strokeWidth="0.5" />
+      <path fill="#f4efe4" d="M3 2h2v8H3zM11 2h2v8h-2zM7 6h2v4H7zM5 10h2v2H5zM9 10h2v2H9z" />
+      <rect x="3" y="13" width="4" height="1.25" fill="#ffb224" />
     </svg>
   );
 }
 
 /**
- * The brand as it appears in a header: the mark, and the name as one quiet
- * wordmark ("Write" strong, "Code" lighter). `name={false}` shows the mark
- * alone (phones).
+ * The brand as it appears in a header: the mark, and the name in the
+ * fixed-width face of a terminal. `name={false}` shows the mark alone (phones).
  */
 export function Brand({ name = true, className }: { name?: boolean; className?: string }) {
-  // "WriteCode" -> "Write" + "Code"; any other name is shown whole.
-  const split = /^(.*[a-z])([A-Z][a-z]+)$/.exec(PRODUCT.name);
   return (
     <span className={cn("flex items-center gap-2.5", className)}>
-      <LogoMark className="size-[26px]" />
+      <LogoMark className="size-6" />
       {name && (
-        <span className="text-[16px] font-semibold leading-none tracking-[-0.02em] text-fg">
-          {split ? (
-            <>
-              {split[1]}
-              <span className="font-normal text-fg-muted">{split[2]}</span>
-            </>
-          ) : (
-            PRODUCT.name
-          )}
+        // Always the same face, whatever code font is chosen in Settings.
+        <span className="text-[15.5px] font-bold leading-none tracking-[-0.03em] text-fg" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
+          {PRODUCT.name}
         </span>
       )}
     </span>

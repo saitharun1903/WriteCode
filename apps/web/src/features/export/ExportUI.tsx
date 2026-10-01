@@ -113,17 +113,9 @@ async function cardPng(text: string, title: string, caption: string): Promise<Bl
     if (img) ctx.drawImage(img, x, y - 40, mark, mark);
     x += mark + 16;
   }
-  const brand = ctx.createLinearGradient(x, 0, x + nameWidth, 0);
-  brand.addColorStop(0, "#3f63f2");
-  brand.addColorStop(1, "#a63fd4");
   ctx.textAlign = "left";
-  ctx.fillStyle = "#1f2328";
-  const split = /^(.*[a-z])([A-Z][a-z]+)$/.exec(name);
-  if (split) {
-    ctx.fillText(split[1]!, x, y);
-    ctx.fillStyle = brand;
-    ctx.fillText(split[2]!, x + ctx.measureText(split[1]!).width, y);
-  } else ctx.fillText(name, x, y);
+  ctx.fillStyle = "#15161a";
+  ctx.fillText(name, x, y);
   ctx.textAlign = "center";
   ctx.fillStyle = "#6b727c";
   ctx.font = "400 26px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -149,9 +141,7 @@ export function QrCard({ text, title, caption, fileName, className }: { text: st
           <p className="mt-1 flex items-center justify-center gap-1.5 text-[13px] font-bold text-[#1f2328]">
             {/* eslint-disable-next-line @next/next/no-img-element -- a small local icon */}
             <img src="/logo.png" alt="" width={18} height={18} className="size-[18px]" />
-            <span>
-              Write<span className="bg-gradient-to-r from-[#3f63f2] to-[#a63fd4] bg-clip-text text-transparent">Code</span>
-            </span>
+            <span>{PRODUCT.name}</span>
             <span className="font-normal text-[#6b727c]">· {SITE}</span>
           </p>
         </div>

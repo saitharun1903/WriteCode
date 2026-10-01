@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- The WriteCode mark: a W set in pixels on a 16 x 16 grid, with the cursor waiting under it. -->
+  <rect width="16" height="16" rx="3" fill="#15161a"/>
+  <path fill="#f4efe4" d="M3 2h2v8H3zM11 2h2v8h-2zM7 6h2v4H7zM5 10h2v2H5zM9 10h2v2H9z"/>
+  <rect x="3" y="13" width="4" height="1.25" fill="#ffb224"/>
+</svg>
