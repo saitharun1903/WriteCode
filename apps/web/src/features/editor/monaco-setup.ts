@@ -4,7 +4,7 @@ import { loader, type Monaco } from "@monaco-editor/react";
 
 // Monaco is copied into /public by scripts/copy-monaco.mjs, so the editor
 // never depends on a third-party CDN.
-loader.config({ paths: { vs: "/monaco/vs" } });
+loader.config({ paths: { vs: `/monaco/${process.env.NEXT_PUBLIC_MONACO_VERSION}/vs` } });
 
 /** Starts downloading the editor in the background, so it is ready when a project opens. */
 export function preloadMonaco() {

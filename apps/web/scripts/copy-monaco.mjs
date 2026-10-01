@@ -1,5 +1,5 @@
 // Serves Monaco from our own origin instead of a third-party CDN.
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +14,14 @@ try {
   process.exit(0);
 }
 const src = join(pkgDir, "min", "vs");
-const dest = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "monaco", "vs");
+// The address carries the version, so the files can be cached for good: a new version is a new address.
+const { version } = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
+const root = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "monaco");
+const dest = join(root, version, "vs");
 if (!existsSync(src)) {
   console.error(`[copy-monaco] ${src} not found`);
   process.exit(1);
 }
-rmSync(dest, { recursive: true, force: true });
+rmSync(root, { recursive: true, force: true });
 cpSync(src, dest, { recursive: true });
-console.log("[copy-monaco] copied Monaco to public/monaco/vs");
+console.log(`[copy-monaco] copied Monaco to public/monaco/${version}/vs`);

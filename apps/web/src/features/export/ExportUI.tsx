@@ -262,6 +262,13 @@ function ShareDialog() {
   );
 }
 
+/** "7:40 PM today" or "7:40 AM tomorrow". */
+function untilLabel(at: number): string {
+  const when = new Date(at);
+  const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return `${time} ${when.toDateString() === new Date().toDateString() ? "today" : "tomorrow"}`;
+}
+
 /** Move this browser's projects to another one: a code to scan there. */
 function TransferDialog() {
   const job = useExport((s) => s.transfer);
@@ -301,7 +308,7 @@ function TransferDialog() {
       </ol>
       <QrCard text={state.link} title={`${n} project${n === 1 ? "" : "s"}`} caption="Scan to bring them to this device" fileName="writecode-projects" />
       <p className="text-center text-xs leading-relaxed text-fg-subtle">
-        The code has no time limit: anyone you show it to can scan it, as often as they like, and gets a copy of their own. No camera there? Copy the link and open it on the other device.
+        Works for 12 hours, until <span className="font-medium text-fg">{untilLabel(state.expiresAt)}</span>. Until then anyone you show it to can scan it, as often as they like, and gets a copy of their own. No camera there? Copy the link and open it on the other device.
       </p>
       <CopyField value={state.link} label="Copy link" />
       <details className="text-xs text-fg-subtle">
@@ -316,7 +323,7 @@ function TransferDialog() {
           ))}
         </ul>
         {state.left.length > 0 && <p className="mt-1.5 text-warning">Too large for one code, not included: {state.left.map((p) => p.name).join(", ")}. Move them afterwards, or share them by link.</p>}
-        <p className="mt-1.5">Files, folders, input and tests move. Your projects also stay here. Anyone who has this code can copy them, so show it only to people you want to have them.</p>
+        <p className="mt-1.5">Files, folders, input and tests move. Your projects also stay here. Anyone who has this code can copy them for the next 12 hours, so show it only to people you want to have them.</p>
       </details>
     </div>
   );

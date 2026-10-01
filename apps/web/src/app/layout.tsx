@@ -53,7 +53,7 @@ export const viewport: Viewport = {
 };
 
 /** Applies the persisted theme and code font before first paint, so nothing flashes or changes shape. */
-const themeScript = `try{var s=JSON.parse(localStorage.getItem("cw:settings")||"{}"),t=s.theme,f=s.codeFont;if(typeof f==="string"&&/^[a-z]+$/.test(f))document.documentElement.style.setProperty("--font-code","var(--font-code-"+f+")");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.dataset.theme="dark"}catch(e){}`;
+const themeScript = `try{if(matchMedia("(max-width: 900px), (pointer: coarse) and (max-width: 1366px)").matches)document.documentElement.setAttribute("data-touch","");if(!localStorage.getItem("cw:last-seen")&&location.pathname==="/"&&!location.search)document.documentElement.setAttribute("data-fresh","");var s=JSON.parse(localStorage.getItem("cw:settings")||"{}"),t=s.theme,f=s.codeFont;if(typeof f==="string"&&/^[a-z]+$/.test(f))document.documentElement.style.setProperty("--font-code","var(--font-code-"+f+")");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.dataset.theme="dark"}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

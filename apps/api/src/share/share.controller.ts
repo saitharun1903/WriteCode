@@ -19,8 +19,8 @@ const transferOfKey = (json: string) => `transfer:of:${createHash("sha256").upda
 
 /**
  * Code shared by link and projects moved between browsers. Both are kept in
- * Redis with an expiry: 90 days after they were last opened, however
- * many people open them. Ids come in the request body, not
+ * Redis with an expiry: a share for 90 days after it was last opened,
+ * a transfer for 12 hours after it was made, however many people open them. Ids come in the request body, not
  * the address, so they are not written to access logs.
  */
 @Controller()
@@ -81,15 +81,15 @@ export class ShareController {
     return { id, projects: projects.length, expiresInSeconds: SHARE_LIMITS.transferTtlSeconds };
   }
 
-  /** The projects of a transfer. Scanning the code keeps it alive. */
+  /** The projects of a transfer: any number of times, until it is 12 hours old. */
   @Post("transfers/open")
   @HttpCode(200)
   async openTransfer(@Body() body: unknown, @Req() req: Request): Promise<{ projects: Project[] }> {
     const id = body && typeof body === "object" ? (body as { id?: unknown }).id : undefined;
     if (typeof id !== "string" || !TRANSFER_ID.test(id)) throw new NotFoundException("This code is not complete. Scan it again.");
     await this.limit(req, "open", OPENS_PER_HOUR, "Too many links opened. Try again later.");
-    const raw = await this.redis.getex(transferKey(id), "EX", SHARE_LIMITS.transferTtlSeconds);
-    if (!raw) throw new NotFoundException("This code no longer exists. Codes stop working 90 days after they were last scanned: make a new one on the other device.");
+    const raw = await this.redis.get(transferKey(id));
+    if (!raw) throw new NotFoundException("This code has stopped working. Codes work for 12 hours: make a new one on the other device.");
     return { projects: JSON.parse(raw) as Project[] };
   }
 }

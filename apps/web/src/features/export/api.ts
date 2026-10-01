@@ -51,8 +51,8 @@ export async function createTransfer(projects: Project[]): Promise<Transfer> {
     } else left.push(p);
   }
   if (!sent.length) throw new Error("These projects are too large to move this way.");
-  const { id } = await post<{ id: string }>("transfers", { projects: sent.map(portable) });
-  return { link: `${location.origin}/get#${id}`, sent, left };
+  const { id, expiresInSeconds } = await post<{ id: string; expiresInSeconds: number }>("transfers", { projects: sent.map(portable) });
+  return { link: `${location.origin}/get#${id}`, sent, left, expiresAt: Date.now() + expiresInSeconds * 1000 };
 }
 
 export const openTransfer = (id: string) => post<{ projects: Project[] }>("transfers/open", { id });
@@ -61,6 +61,8 @@ export interface Transfer {
   link: string;
   sent: Project[];
   left: Project[];
+  /** When the code stops working, ms. */
+  expiresAt: number;
 }
 
 interface ExportState {

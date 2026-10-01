@@ -60,6 +60,9 @@ www.{$PUBLIC_HOST} {
 		root * /srv
 		@immutable path /_next/static/*
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# The editor's files: their address carries the editor's version.
+		@editor path_regexp editor ^/monaco/\d[^/]*/
+		header @editor Cache-Control "public, max-age=31536000, immutable"
 		# Next.js page data files (*.txt) are for the app, not for search results.
 		@payload path_regexp payload ^/(?:.*/)?(?:__next\.|[a-z0-9-]+\.txt$)
 		header @payload X-Robots-Tag "noindex"

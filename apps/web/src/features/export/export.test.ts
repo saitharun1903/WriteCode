@@ -127,7 +127,8 @@ describe("the code to scan", () => {
     expect(svg).toContain(`viewBox="0 0 ${side} ${side}"`);
     expect(svg.split("fill-rule=\"evenodd\"").length - 1).toBe(3);
     expect(svg).toContain('<image href="data:image/png;base64,AAAA"');
-    expect(svg).toContain("linearGradient");
+    // One colour: the ink of the logo.
+    expect(svg).toContain('<g fill="#15161a">');
   });
 });
 

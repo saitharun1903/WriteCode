@@ -36,7 +36,7 @@ function activityLabel(p: ProjectSummary): string {
 /** Brand-coloured tile with a language monogram. */
 const MARKS: Record<string, { text: string; bg: string; fg: string }> = {
   java: { text: "J", bg: "#e76f00", fg: "#fff" },
-  python: { text: "Py", bg: "#3776ab", fg: "#ffd43b" },
+  python: { text: "Py", bg: "#2b5b84", fg: "#ffd43b" },
   cpp: { text: "C++", bg: "#00599c", fg: "#fff" },
   c: { text: "C", bg: "#5c6bc0", fg: "#fff" },
   javascript: { text: "JS", bg: "#f0db4f", fg: "#1e1f22" },
