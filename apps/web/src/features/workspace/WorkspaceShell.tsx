@@ -29,7 +29,7 @@ import { cn } from "@/lib/cn";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { ActivityBar } from "./ActivityBar";
 import { BottomPanel } from "./BottomPanel";
-import { GlassDock, type DockItem } from "./GlassDock";
+import { PanelTabs, type DockItem } from "./PanelTabs";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
@@ -229,7 +229,7 @@ const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: Sid
   { kind: "ai", id: "ai", label: "AI", icon: <Sparkles /> },
 ];
 
-/** How far the on-screen keyboard has pushed the layout up; the dock steps aside while it is open. */
+/** Whether the on-screen keyboard is up; the tab bar steps aside while it is. */
 function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -252,12 +252,9 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
-/** Room the floating dock takes at the bottom of the screen. */
-const DOCK_SPACE = "calc(62px + 22px + env(safe-area-inset-bottom))";
-
 const SHEET_SPRING = { type: "spring", stiffness: 420, damping: 40, mass: 0.9 } as const;
 
-/** A panel that rises from the bottom above the dock; drag it down (or tap outside) to close it. */
+/** Phones: a panel that rises from the bottom, above the tab bar; drag it down (or tap outside) to close it. */
 function Sheet({ children, onClose, height, side = false }: { children: React.ReactNode; onClose: () => void; height: string; side?: boolean }) {
   const reduce = useReducedMotion();
   const controls = useDragControls();
@@ -270,7 +267,6 @@ function Sheet({ children, onClose, height, side = false }: { children: React.Re
         exit={reduce ? { opacity: 0 } : { x: "-100%" }}
         transition={SHEET_SPRING}
         className="cw-sheet absolute bottom-0 left-0 top-0 z-30 w-[min(340px,86vw)] overflow-hidden border-r border-line bg-surface"
-        style={{ paddingBottom: DOCK_SPACE }}
       >
         {children}
       </motion.div>
@@ -290,9 +286,8 @@ function Sheet({ children, onClose, height, side = false }: { children: React.Re
       onDragEnd={(_, info) => {
         if (info.offset.y > 110 || info.velocity.y > 600) onClose();
       }}
-      className="cw-sheet absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[22px] border-t border-line bg-surface"
-      // Runs down behind the dock, so the glass floats over the panel; its content stops above the dock.
-      style={{ height: `calc(${height} + ${DOCK_SPACE})`, paddingBottom: DOCK_SPACE }}
+      className="cw-sheet absolute inset-x-0 bottom-0 z-30 flex flex-col overflow-hidden rounded-t-[20px] border-t border-line bg-surface"
+      style={{ height }}
     >
       <Grabber onDragStart={(e) => controls.start(e)} />
       <div className="min-h-0 flex-1">{children}</div>
@@ -309,7 +304,12 @@ function Grabber({ onDragStart }: { onDragStart: (e: React.PointerEvent) => void
   );
 }
 
-/** Tablet/phone: the editor fills the screen; panels rise as sheets above a floating glass dock. */
+/**
+ * Phones and tablets. A phone has the code, a tab bar under it, and panels that
+ * rise over the code as sheets. A tablet has room to keep the code in view: a
+ * rail of tabs down the left, and the panel that is open sits beside or under
+ * the code, as on a desktop.
+ */
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const interview = useLive((s) => !!s.interview);
@@ -322,7 +322,11 @@ function CompactWorkbench() {
   const run = useExecution((s) => s.run);
   const paused = useDebug((s) => s.phase === "paused");
   const keyboard = useKeyboardOpen();
-  const reduce = useReducedMotion();
+  const tablet = useMediaQuery("(min-width: 700px)");
+  // Wide enough for the assistant to stand beside the code.
+  const roomy = useMediaQuery("(min-width: 1000px)");
+  /** The keyboard is up for the code: the panel under it steps aside. */
+  const [typingCode, setTypingCode] = useState(false);
   const close = () => setDrawer("none");
 
   const running = !!run && isRunning(run);
@@ -349,7 +353,6 @@ function CompactWorkbench() {
       icon: t.icon,
       active,
       dot,
-      tone: t.kind === "ai" ? "ai" : undefined,
       onSelect: () => {
         if (t.kind === "side") {
           updateLayout({ sideView: t.id });
@@ -362,55 +365,67 @@ function CompactWorkbench() {
     };
   });
 
-  return (
-    <div className="cw-dock-layer relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1">
-        <EditorArea />
-      </div>
+  const bottom = restricted ? <CandidateTests actions={false} /> : <BottomPanel onClose={close} />;
+  const assistant = interview ? <InterviewPanel onClose={close} /> : <AssistantPanel onClose={close} />;
 
-      <AnimatePresence>
-        {drawer !== "none" && (
-          <motion.button
-            key="scrim"
-            aria-label="Close panel"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0 z-20 bg-black/45"
-            onClick={close}
-          />
-        )}
+  if (tablet) {
+    const under = keyboard && typingCode ? "hidden" : "";
+    return (
+      <div className="flex min-h-0 flex-1">
+        <PanelTabs rail items={items} />
         {drawer === "sidebar" && !restricted && (
-          <Sheet key="sidebar" side onClose={close} height="auto">
+          <div className="w-[300px] shrink-0 border-r border-line">
             <SideView />
-          </Sheet>
+          </div>
         )}
-        {drawer === "bottom" && (
-          <Sheet key="bottom" onClose={close} height="min(72%, 640px)">
-            {restricted ? <CandidateTests actions={false} /> : <BottomPanel onClose={close} />}
-          </Sheet>
-        )}
-        {drawer === "assistant" && (
-          <Sheet key="assistant" onClose={close} height={`calc(100% - 8px)`}>
-            {interview ? <InterviewPanel onClose={close} /> : <AssistantPanel onClose={close} />}
-          </Sheet>
-        )}
-      </AnimatePresence>
-
-      {/* Floats over the editor; the code scrolls up from under the glass. */}
-      <motion.div
-        aria-hidden={keyboard}
-        initial={false}
-        animate={keyboard ? { y: 120, opacity: 0 } : { y: 0, opacity: 1 }}
-        transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 380, damping: 34 }}
-        className="pointer-events-none absolute inset-x-0 z-40 flex justify-center px-3"
-        style={{ bottom: "calc(12px + env(safe-area-inset-bottom))" }}
-      >
-        <div className="w-full max-w-[560px]">
-          <GlassDock items={items} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1" onFocusCapture={() => setTypingCode(true)} onBlurCapture={() => setTypingCode(false)}>
+            <EditorArea />
+          </div>
+          {drawer === "bottom" && <div className={cn("shrink-0 border-t border-line bg-surface", bottomTab === "visualize" && !restricted ? "h-[58%]" : "h-[44%]", under)}>{bottom}</div>}
+          {drawer === "assistant" && !roomy && <div className={cn("h-[58%] shrink-0 border-t border-line bg-surface", under)}>{assistant}</div>}
         </div>
-      </motion.div>
+        {drawer === "assistant" && roomy && <div className="w-[400px] shrink-0 border-l border-line bg-surface">{assistant}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <EditorArea />
+        <AnimatePresence>
+          {drawer !== "none" && (
+            <motion.button
+              key="scrim"
+              aria-label="Close panel"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 z-20 bg-black/45"
+              onClick={close}
+            />
+          )}
+          {drawer === "sidebar" && !restricted && (
+            <Sheet key="sidebar" side onClose={close} height="auto">
+              <SideView />
+            </Sheet>
+          )}
+          {drawer === "bottom" && (
+            <Sheet key="bottom" onClose={close} height="min(78%, 640px)">
+              {bottom}
+            </Sheet>
+          )}
+          {drawer === "assistant" && (
+            <Sheet key="assistant" onClose={close} height="calc(100% - 8px)">
+              {assistant}
+            </Sheet>
+          )}
+        </AnimatePresence>
+      </div>
+      {/* The tab bar gives its room to the keyboard while it is up. */}
+      {!keyboard && <PanelTabs items={items} />}
     </div>
   );
 }
@@ -499,9 +514,10 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
     };
   }, []);
 
-  // Close drawers when leaving compact mode.
+  // Close drawers when leaving compact mode. Touch screens get larger buttons and fields (see `data-touch` in the components).
   useEffect(() => {
     if (!compact) useUI.getState().setDrawer("none");
+    document.documentElement.toggleAttribute("data-touch", compact);
   }, [compact]);
 
   const loading = status === "loading" || !hydrated;
@@ -525,7 +541,7 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
         ) : (
           <main className="flex min-h-0 flex-1 flex-col">{compact ? <CompactWorkbench /> : restricted ? <CandidateWorkbench /> : <DesktopWorkbench />}</main>
         )}
-        {!(compact && project) && !(restricted && project) && <StatusBar />}
+        {!compact && !(restricted && project) && <StatusBar />}
       </div>
       <CommandPalette />
       <NewProjectDialog />

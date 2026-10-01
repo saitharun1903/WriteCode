@@ -73,9 +73,8 @@ export function qrSvg(text: string, logoHref?: string): QrArt {
     : "";
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" role="img" aria-label="QR code" shape-rendering="geometricPrecision">`,
-    `<defs><linearGradient id="cw-qr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f4fd8"/><stop offset="0.55" stop-color="#5a3fd0"/><stop offset="1" stop-color="#8f2fb8"/></linearGradient></defs>`,
     `<rect width="${side}" height="${side}" fill="#fff"/>`,
-    `<g fill="url(#cw-qr)">${dots.join("")}${finder(0, 0)}${finder(0, qr.size - 7)}${finder(qr.size - 7, 0)}</g>`,
+    `<g fill="#15161a">${dots.join("")}${finder(0, 0)}${finder(0, qr.size - 7)}${finder(qr.size - 7, 0)}</g>`,
     logo,
     "</svg>",
   ].join("");

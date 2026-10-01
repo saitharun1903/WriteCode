@@ -15,8 +15,9 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-6 px-2 gap-1.5 text-xs",
-  md: "h-7 px-3 gap-1.5 text-sm",
+  // On a touch screen (`data-touch` on <html>) buttons are a finger tall.
+  sm: "h-6 px-2 gap-1.5 text-xs [[data-touch]_&]:h-8 [[data-touch]_&]:px-3 [[data-touch]_&]:text-[13px]",
+  md: "h-7 px-3 gap-1.5 text-sm [[data-touch]_&]:h-9 [[data-touch]_&]:px-4 [[data-touch]_&]:text-[14px] [[data-touch]_&]:rounded-[8px]",
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -71,7 +72,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         className={cn(
           "inline-flex shrink-0 items-center justify-center rounded-[5px] text-fg-muted transition-colors duration-75",
           "hover:bg-hover active:bg-active disabled:pointer-events-none disabled:opacity-35",
-          size === "sm" ? "size-6 [&_svg]:size-3.5" : "size-7 [&_svg]:size-4",
+          size === "sm" ? "size-6 [&_svg]:size-3.5 [[data-touch]_&]:size-8 [[data-touch]_&]:[&_svg]:size-4" : "size-7 [&_svg]:size-4 [[data-touch]_&]:size-9 [[data-touch]_&]:[&_svg]:size-[18px]",
           active && "bg-active text-fg",
           className,
         )}

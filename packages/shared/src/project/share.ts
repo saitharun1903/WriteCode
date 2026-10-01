@@ -7,8 +7,9 @@ import type { Project, ProjectFile, TestCase } from "./types.js";
  *
  * - A share is a read-only copy of a project's files at the moment it was
  *   shared: `/share#<id>` shows it, and anyone with the link can open a copy.
- * - A transfer is every chosen project, kept for a few minutes: the other
- *   browser opens `/get#<id>` (from a QR code) and the projects are added there.
+ * - A transfer is every chosen project: another browser opens `/get#<id>`
+ *   (from a QR code) and the projects are added there. The code can be scanned
+ *   by any number of people, whenever they want.
  *
  * Both ids are random and long, travel after the `#` (so they are never sent in
  * a request line or kept in a log), and are the only key to the content.
@@ -20,13 +21,11 @@ export const SHARE_LIMITS = {
   maxNameChars: 120,
   /** A share lives this long after it was last opened. */
   ttlSeconds: 90 * 24 * 60 * 60,
-  /** A transfer is for now: scan, and it is done. */
-  transferTtlSeconds: 15 * 60,
+  /** A transfer lives as long as it is used: this long after it was made or last scanned. */
+  transferTtlSeconds: 90 * 24 * 60 * 60,
   /** Everything in one transfer, bytes of JSON (the server accepts 2 MB a request). */
   transferMaxBytes: 1_800_000,
   transferMaxProjects: 40,
-  /** A transfer can be fetched a few times (a reload, a second device), then it is gone. */
-  transferMaxReads: 5,
 } as const;
 
 /** 96 random bits. */

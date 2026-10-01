@@ -83,7 +83,7 @@ export function StartScreen() {
 
   return (
     <div className="h-full overflow-y-auto bg-surface-2">
-      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8 sm:py-14">
         <header className="mb-10">
           <h1 className="text-[32px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[38px]" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
             {PRODUCT.name}
@@ -132,7 +132,7 @@ export function StartScreen() {
               </p>
             </div>
           )}
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
             {LANGUAGES.map((lang) => (
               <button
                 key={lang.id}
@@ -140,17 +140,17 @@ export function StartScreen() {
                 disabled={!!busy}
                 onClick={() => pick(lang.id)}
                 className={cn(
-                  "group flex items-center gap-4 rounded-xl border bg-surface p-4 text-left transition-[border-color,transform] duration-150",
+                  "group flex items-center gap-3 rounded-xl border bg-surface p-3 text-left transition-[border-color,transform] duration-150 sm:gap-4 sm:p-4",
                   "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
                   temporary ? "border-dashed border-accent/60" : "border-line-strong",
                 )}
               >
-                <LanguageMark id={lang.id} size={46} />
+                <LanguageMark id={lang.id} size={46} className="max-sm:size-10! max-sm:text-[15px]!" />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-base font-semibold text-fg">{lang.name}</span>
+                  <span className="block truncate text-[15px] font-semibold text-fg sm:text-base">{lang.name}</span>
                   <span className="block truncate text-sm text-fg-subtle">{temporary ? "Not saved" : lang.version}</span>
                 </span>
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-fg-faint transition-colors group-hover:bg-accent group-hover:text-accent-fg">
+                <span className="hidden size-7 shrink-0 items-center justify-center rounded-full text-fg-faint transition-colors group-hover:bg-accent group-hover:text-accent-fg sm:flex">
                   {temporary ? <Hourglass className="size-3.5" /> : <ArrowRight className="size-4" />}
                 </span>
               </button>

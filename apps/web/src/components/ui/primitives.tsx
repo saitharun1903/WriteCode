@@ -54,6 +54,8 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
       ref={ref}
       className={cn(
         "h-7 w-full rounded-[4px] border border-line-strong bg-surface-2 px-2 text-sm text-fg placeholder:text-fg-subtle",
+        // Touch: a finger tall, and 16px text so a phone does not zoom in on focus.
+        "[[data-touch]_&]:h-10 [[data-touch]_&]:rounded-[8px] [[data-touch]_&]:px-3 [[data-touch]_&]:text-[16px]",
         "outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent",
         "aria-[invalid=true]:border-danger",
         className,

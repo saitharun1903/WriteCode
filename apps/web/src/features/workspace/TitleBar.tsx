@@ -120,7 +120,7 @@ function RunControls() {
       : findEntryPoints(lang.id, project.files).map((e) => ({ file: e.file, label: e.mainClass ? `${e.label}  (${e.file})` : e.file }));
 
   return (
-    <div className="flex h-[34px] items-center gap-0.5 rounded-[10px] border border-line-strong/80 bg-surface-2 p-[3px] shadow-[0_1px_2px_rgb(0_0_0/0.06)]">
+    <div className="flex h-[34px] shrink-0 items-center gap-0.5 rounded-[10px] border border-line-strong/80 bg-surface-2 p-[3px] shadow-[0_1px_2px_rgb(0_0_0/0.06)] [[data-touch]_&]:h-[42px] [[data-touch]_&]:rounded-[12px]">
       <DropdownMenu
         align="end"
         entries={[
@@ -167,7 +167,7 @@ function RunControls() {
         </IconButton>
       )}
       {canVisualize() && (
-        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 rounded-[7px] text-accent-ink">
+        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 rounded-[7px] text-accent-ink max-sm:hidden">
           <Workflow />
         </IconButton>
       )}
@@ -227,7 +227,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
   useSettings((s) => s.layout);
 
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5">
+    <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5 [[data-touch]_&]:h-14 [[data-touch]_&]:pt-[env(safe-area-inset-top)]">
       <button
         // Going home would leave the interview.
         disabled={restricted}
@@ -235,7 +235,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
         className="flex h-9 items-center rounded-[9px] pl-1 pr-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent"
         aria-label="Home"
       >
-        <Brand name={!compact} />
+        <Brand name={!compact || !project} />
       </button>
 
       {(!compact || !project) && !restricted && (
@@ -274,10 +274,10 @@ export function TitleBar({ compact }: { compact: boolean }) {
             trigger={
               <button
                 aria-label={`Project: ${project.name}`}
-                className="flex h-8 min-w-0 max-w-[28vw] items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active"
+                className="flex h-8 min-w-0 max-w-[28vw] shrink items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active [[data-touch]_&]:h-10"
               >
                 <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
-                <span className="hidden truncate sm:inline">{project.name}</span>
+                <span className="truncate">{project.name}</span>
                 <ChevronDown className="hidden size-3.5 shrink-0 text-fg-subtle sm:block" />
               </button>
             }
@@ -315,7 +315,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
         </div>
       )}
 
-      <div className="relative ml-auto flex min-w-0 items-center gap-1">
+      <div className={cn("relative ml-auto flex items-center gap-1", compact ? "shrink-0" : "min-w-0")}>
         {project && !restricted && <RunControls />}
         {project && restricted && compact && <RunSubmit />}
         {project && restricted && <InterviewClock className="mx-2 text-[13px]" />}

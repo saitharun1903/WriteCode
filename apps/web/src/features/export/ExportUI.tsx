@@ -262,24 +262,11 @@ function ShareDialog() {
   );
 }
 
-function useCountdown(until: number | null): string | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!until) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [until]);
-  if (!until) return null;
-  const left = Math.max(0, Math.ceil((until - now) / 1000));
-  return left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : null;
-}
-
 /** Move this browser's projects to another one: a code to scan there. */
 function TransferDialog() {
   const job = useExport((s) => s.transfer);
   const [state, setState] = useState<Transfer | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const left = useCountdown(state?.expiresAt ?? null);
 
   useEffect(() => {
     if (!job) return;
@@ -306,37 +293,17 @@ function TransferDialog() {
     <div className="space-y-4">
       <ol className="space-y-1 text-[13px] text-fg-muted">
         <li>
-          <b className="text-fg">1.</b> On the other phone or computer, open the camera and point it at this code.
+          <b className="text-fg">1.</b> On another phone or computer, open the camera and point it at this code.
         </li>
         <li>
           <b className="text-fg">2.</b> Open the link it shows. Your {n === 1 ? "project is" : `${n} projects are`} added there at once.
         </li>
       </ol>
-      {left ? (
-        <QrCard text={state.link} title={`${n} project${n === 1 ? "" : "s"}`} caption="Scan to bring them to this device" fileName="writecode-projects" />
-      ) : (
-        <div className="rounded-lg border border-warning/50 bg-warning-soft p-4 text-center text-sm">
-          <p>This code has expired.</p>
-          <Button
-            className="mt-2"
-            variant="primary"
-            onClick={() => {
-              setState(null);
-              useExport.getState().renewTransfer();
-            }}
-          >
-            Make a new code
-          </Button>
-        </div>
-      )}
-      {left && (
-        <>
-          <p className="text-center text-xs text-fg-subtle">
-            Works for <span className="font-mono text-fg">{left}</span> more. No camera there? Copy the link and open it on the other device.
-          </p>
-          <CopyField value={state.link} label="Copy link" />
-        </>
-      )}
+      <QrCard text={state.link} title={`${n} project${n === 1 ? "" : "s"}`} caption="Scan to bring them to this device" fileName="writecode-projects" />
+      <p className="text-center text-xs leading-relaxed text-fg-subtle">
+        The code has no time limit: anyone you show it to can scan it, as often as they like, and gets a copy of their own. No camera there? Copy the link and open it on the other device.
+      </p>
+      <CopyField value={state.link} label="Copy link" />
       <details className="text-xs text-fg-subtle">
         <summary className="cursor-pointer select-none hover:text-fg">
           What moves ({n} project{n === 1 ? "" : "s"})
@@ -349,7 +316,7 @@ function TransferDialog() {
           ))}
         </ul>
         {state.left.length > 0 && <p className="mt-1.5 text-warning">Too large for one code, not included: {state.left.map((p) => p.name).join(", ")}. Move them afterwards, or share them by link.</p>}
-        <p className="mt-1.5">Files, folders, input and tests move. Your projects also stay here. Anyone who gets this code within 15 minutes can copy them, so show it only to yourself.</p>
+        <p className="mt-1.5">Files, folders, input and tests move. Your projects also stay here. Anyone who has this code can copy them, so show it only to people you want to have them.</p>
       </details>
     </div>
   );

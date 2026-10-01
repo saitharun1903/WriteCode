@@ -15,5 +15,5 @@ export function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Phones, and touch tablets up to iPad Pro landscape: the editor fills the screen, panels rise as sheets above the glass dock. */
+/** Phones, and touch tablets up to iPad Pro landscape: touch-sized controls, a tab bar (phones) or a rail of tabs (tablets). */
 export const COMPACT_QUERY = "(max-width: 900px), (pointer: coarse) and (max-width: 1366px)";

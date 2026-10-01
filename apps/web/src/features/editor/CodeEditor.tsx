@@ -268,7 +268,7 @@ export function CodeEditor() {
         pasteAs: { enabled: !restricted },
         links: !restricted,
         // Phones and tablets: the last lines can scroll up from under the floating dock.
-        padding: { top: 6, bottom: compact ? 108 : 6 },
+        padding: { top: 6, bottom: compact ? 28 : 6 },
         lineDecorationsWidth: compact ? 10 : 18,
         stickyScroll: { enabled: true },
         folding: true,

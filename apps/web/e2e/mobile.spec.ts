@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Phones and tablets: a title bar that fits, the glass dock, sheets that open
+ * Phones and tablets: a title bar that fits, the tab bar (a rail on tablets), sheets that open
  * and close (by the dock, by tapping outside, by dragging them down), running a
  * program, and the desktop left as it was. Running needs the full stack
  * (E2E_EXECUTION=1); the rest needs only the web app.
@@ -146,13 +146,25 @@ test.describe("phone", () => {
 test.describe("tablet", () => {
   test.use(TABLET);
 
-  test("a touch tablet gets the dock, icons only, and a More menu without keyboard shortcuts", async ({ page }) => {
+  test("a touch tablet gets a rail of tabs, icons only, panels beside the code, and a More menu without keyboard shortcuts", async ({ page }) => {
     await freshPython(page);
     await fitsWidth(page);
     // Every tab is there by its accessible name; none prints it.
     for (const name of ["Files", "Run", "Debug", "Visualize", "Tests", "History", "AI"]) {
       await expect(dock(page).getByRole("button", { name })).toHaveText("");
     }
+    // A tablet has room: the tabs are a rail down the left, and a panel opens under the code, which stays in use (nothing dims it).
+    const rail = (await dock(page).boundingBox())!;
+    expect(rail.x).toBe(0);
+    expect(rail.height).toBeGreaterThan(rail.width * 4);
+    await dock(page).getByRole("button", { name: "Tests" }).click();
+    await expect(page.getByRole("region", { name: "Tests" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close panel" })).toHaveCount(0);
+    await page.locator(".monaco-editor .view-lines").first().click();
+    await expect(page.getByRole("region", { name: "Tests" })).toBeVisible();
+    await dock(page).getByRole("button", { name: "Tests" }).click();
+    await expect(page.getByRole("region", { name: "Tests" })).toHaveCount(0);
+
     await page.getByRole("button", { name: "More" }).click();
     for (const item of ["Download code…", "Share a link to this code", "Move projects to another device"]) await expect(page.getByRole("menuitem", { name: item })).toBeVisible();
     await page.getByRole("menuitem", { name: "Settings", exact: true }).click();

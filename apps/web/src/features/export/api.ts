@@ -37,7 +37,7 @@ const portable = (p: Project) => ({ id: p.id, name: p.name, language: p.language
  * recently used come first; those that do not fit in one transfer are left
  * out and named in `left`.
  */
-export async function createTransfer(projects: Project[]): Promise<{ link: string; sent: Project[]; left: Project[]; expiresAt: number }> {
+export async function createTransfer(projects: Project[]): Promise<Transfer> {
   // The most recently used first: they are the ones wanted on the other device.
   projects = [...projects].sort((a, b) => Math.max(b.updatedAt, b.lastRunAt ?? 0) - Math.max(a.updatedAt, a.lastRunAt ?? 0));
   const sent: Project[] = [];
@@ -51,8 +51,8 @@ export async function createTransfer(projects: Project[]): Promise<{ link: strin
     } else left.push(p);
   }
   if (!sent.length) throw new Error("These projects are too large to move this way.");
-  const { id, expiresInSeconds } = await post<{ id: string; expiresInSeconds: number }>("transfers", { projects: sent.map(portable) });
-  return { link: `${location.origin}/get#${id}`, sent, left, expiresAt: Date.now() + expiresInSeconds * 1000 };
+  const { id } = await post<{ id: string }>("transfers", { projects: sent.map(portable) });
+  return { link: `${location.origin}/get#${id}`, sent, left };
 }
 
 export const openTransfer = (id: string) => post<{ projects: Project[] }>("transfers/open", { id });
@@ -61,7 +61,6 @@ export interface Transfer {
   link: string;
   sent: Project[];
   left: Project[];
-  expiresAt: number;
 }
 
 interface ExportState {
@@ -75,8 +74,6 @@ interface ExportState {
   shareFiles: (paths: ReadonlySet<string>) => void;
   transfer: Promise<Transfer> | null;
   open: (dialog: "share" | "transfer" | "download") => void;
-  /** A fresh code after the last one expired. */
-  renewTransfer: () => void;
   close: () => void;
 }
 
@@ -111,6 +108,5 @@ export const useExport = create<ExportState>((set) => ({
     const project = useWorkspace.getState().project;
     if (project && paths.size) set({ share: quiet(createShare(project, paths)) });
   },
-  renewTransfer: () => set({ transfer: quiet(startTransfer()) }),
   close: () => set({ dialog: null, share: null, transfer: null }),
 }));

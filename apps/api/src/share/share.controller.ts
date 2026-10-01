@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, HttpCode, HttpException, Inject, NotFoundException, Post, Req } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Request } from "express";
 import type { Redis } from "ioredis";
 import { SHARE_ID, SHARE_LIMITS, TRANSFER_ID, cleanSharedCode, cleanTransferProject, type Project, type SharedCode } from "@cw/shared";
@@ -8,17 +8,19 @@ import { REDIS } from "../infra/infra.module.js";
 
 /** Links one person may create per hour: plenty for sharing, too few to use the server as storage. */
 const SHARES_PER_HOUR = 30;
-const TRANSFERS_PER_HOUR = 20;
+const TRANSFERS_PER_HOUR = 12;
 /** Opening links (people click around, pages reload): generous, but not a way to guess ids. */
 const OPENS_PER_HOUR = 600;
 
 const shareKey = (id: string) => `share:${id}`;
 const transferKey = (id: string) => `transfer:${id}`;
+/** The code already made for these exact projects, so asking again does not store them twice. */
+const transferOfKey = (json: string) => `transfer:of:${createHash("sha256").update(json).digest("base64url")}`;
 
 /**
  * Code shared by link and projects moved between browsers. Both are kept in
- * Redis with an expiry: a share for 90 days after it was last opened, a
- * transfer for 15 minutes and a few reads. Ids come in the request body, not
+ * Redis with an expiry: 90 days after they were last opened, however
+ * many people open them. Ids come in the request body, not
  * the address, so they are not written to access logs.
  */
 @Controller()
@@ -55,7 +57,7 @@ export class ShareController {
     return JSON.parse(raw) as SharedCode;
   }
 
-  /** Puts projects aside for another browser to pick up within a few minutes. */
+  /** Puts projects aside for other browsers to pick up, any number of times. */
   @Post("transfers")
   @HttpCode(201)
   async transfer(@Body() body: unknown, @Req() req: Request): Promise<{ id: string; projects: number; expiresInSeconds: number }> {
@@ -67,23 +69,27 @@ export class ShareController {
     if (projects.some((p) => !p)) throw new BadRequestException("One of the projects cannot be moved (too large, or its files are not valid).");
     const json = JSON.stringify(projects);
     if (json.length > SHARE_LIMITS.transferMaxBytes) throw new BadRequestException("These projects are too large to move at once. Move fewer at a time.");
+    // The same projects, unchanged: the code made for them before is still the one.
+    const known = await this.redis.get(transferOfKey(json));
+    if (known && (await this.redis.expire(transferKey(known), SHARE_LIMITS.transferTtlSeconds)) === 1) {
+      await this.redis.expire(transferOfKey(json), SHARE_LIMITS.transferTtlSeconds);
+      return { id: known, projects: projects.length, expiresInSeconds: SHARE_LIMITS.transferTtlSeconds };
+    }
     await this.limit(req, "transfer", TRANSFERS_PER_HOUR, "You have moved projects many times in the last hour. Try again later.");
     const id = randomBytes(18).toString("base64url");
-    await this.redis.multi().set(transferKey(id), json, "EX", SHARE_LIMITS.transferTtlSeconds).set(`${transferKey(id)}:reads`, "0", "EX", SHARE_LIMITS.transferTtlSeconds).exec();
+    await this.redis.multi().set(transferKey(id), json, "EX", SHARE_LIMITS.transferTtlSeconds).set(transferOfKey(json), id, "EX", SHARE_LIMITS.transferTtlSeconds).exec();
     return { id, projects: projects.length, expiresInSeconds: SHARE_LIMITS.transferTtlSeconds };
   }
 
-  /** The projects of a transfer. After a few reads, or 15 minutes, they are gone from the server. */
+  /** The projects of a transfer. Scanning the code keeps it alive. */
   @Post("transfers/open")
   @HttpCode(200)
   async openTransfer(@Body() body: unknown, @Req() req: Request): Promise<{ projects: Project[] }> {
     const id = body && typeof body === "object" ? (body as { id?: unknown }).id : undefined;
     if (typeof id !== "string" || !TRANSFER_ID.test(id)) throw new NotFoundException("This code is not complete. Scan it again.");
     await this.limit(req, "open", OPENS_PER_HOUR, "Too many links opened. Try again later.");
-    const raw = await this.redis.get(transferKey(id));
-    if (!raw) throw new NotFoundException("This code has expired. Codes work for 15 minutes: make a new one on the other device.");
-    const reads = await this.redis.incr(`${transferKey(id)}:reads`);
-    if (reads >= SHARE_LIMITS.transferMaxReads) await this.redis.del(transferKey(id), `${transferKey(id)}:reads`);
+    const raw = await this.redis.getex(transferKey(id), "EX", SHARE_LIMITS.transferTtlSeconds);
+    if (!raw) throw new NotFoundException("This code no longer exists. Codes stop working 90 days after they were last scanned: make a new one on the other device.");
     return { projects: JSON.parse(raw) as Project[] };
   }
 }
