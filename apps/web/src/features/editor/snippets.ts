@@ -1,5 +1,6 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { editor, languages, Position } from "monaco-editor";
+import { isRestricted } from "@/features/interview/restrict";
 
 /**
  * Editor snippets under the names people already type in IntelliJ and VS Code
@@ -98,7 +99,7 @@ export function installSnippets(monaco: Monaco) {
         const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
         // Only offer snippets while typing a word, never after a dot (member access).
         const before = model.getLineContent(position.lineNumber).slice(0, word.startColumn - 1);
-        if (/\.\s*$/.test(before)) return { suggestions: [] };
+        if (/\.\s*$/.test(before) || isRestricted()) return { suggestions: [] };
         const suggestions: languages.CompletionItem[] = snippets.map((s, i) => ({
           label: { label: s.prefix, description: s.detail },
           kind: monaco.languages.CompletionItemKind.Snippet,

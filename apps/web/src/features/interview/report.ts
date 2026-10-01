@@ -1,4 +1,4 @@
-import type { ComplexityEstimate, InterviewEvent, InterviewPrivate, InterviewPublic, Project } from "@cw/shared";
+import type { ComplexityEstimate, InterviewEvent, InterviewPrivate, InterviewPublic, InterviewVerdict, Project } from "@cw/shared";
 import { formatDuration } from "./monitor";
 import type { Growth, HiddenResult } from "./store";
 
@@ -14,10 +14,11 @@ export interface ActivitySummary {
   largePastes: number;
   runs: number;
   blocked: number;
+  submissions: number;
 }
 
 export function summarize(events: InterviewEvent[]): ActivitySummary {
-  const s: ActivitySummary = { tabSwitches: 0, windowSwitches: 0, awayMs: 0, fullscreenExits: 0, pastes: 0, pastedChars: 0, largePastes: 0, runs: 0, blocked: 0 };
+  const s: ActivitySummary = { tabSwitches: 0, windowSwitches: 0, awayMs: 0, fullscreenExits: 0, pastes: 0, pastedChars: 0, largePastes: 0, runs: 0, blocked: 0, submissions: 0 };
   for (const e of events) {
     if (e.kind === "tab-hidden") s.tabSwitches++;
     if (e.kind === "blur") s.windowSwitches++;
@@ -30,6 +31,7 @@ export function summarize(events: InterviewEvent[]): ActivitySummary {
     }
     if (e.kind === "run") s.runs++;
     if (e.kind === "blocked") s.blocked++;
+    if (e.kind === "submit") s.submissions++;
   }
   return s;
 }
@@ -59,11 +61,13 @@ export function describeEvent(e: InterviewEvent): string {
     case "fullscreen-enter":
       return `${who} went back to full screen`;
     case "paste":
-      return `${who} pasted ${e.chars ?? 0} characters`;
+      return `${who} tried to paste ${e.chars ?? 0} characters (blocked)`;
     case "run":
       return `${who} ran ${e.detail || "the program"}`;
     case "run-result":
       return e.detail ?? "Run finished";
+    case "submit":
+      return e.who ? `${e.who} submitted. ${e.detail ?? ""}` : `The code handed in was checked. ${e.detail ?? ""}`;
     case "blocked":
       return `${who} tried to use the ${e.detail ?? "a blocked tool"} (blocked)`;
     case "extended":
@@ -72,6 +76,15 @@ export function describeEvent(e: InterviewEvent): string {
       return `The interview ended: ${e.detail ?? ""}`;
   }
 }
+
+const VERDICT: Record<InterviewVerdict["status"], string> = {
+  accepted: "Accepted",
+  "wrong-answer": "Wrong answer",
+  "runtime-error": "Runtime error",
+  "time-limit": "Time limit exceeded",
+  "compile-error": "Did not compile",
+  error: "Could not be checked",
+};
 
 /** Events that deserve the interviewer's attention. */
 export const WARN = new Set<InterviewEvent["kind"]>(["tab-hidden", "blur", "fullscreen-exit", "paste", "blocked"]);
@@ -99,6 +112,7 @@ export function buildReport(r: ReportInput): string {
   const iv = r.interview;
   const sum = summarize(r.priv.events);
   const passed = r.hidden?.filter((h) => h.comparison.verdict === "passed").length ?? 0;
+  const last = iv.verdicts?.at(-1);
   const took = iv.startedAt ? (iv.endedAt ?? Date.now()) - iv.startedAt : undefined;
   const row = (k: string, v: string) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`;
   const stars = r.priv.rating ? "★".repeat(r.priv.rating) + "☆".repeat(5 - r.priv.rating) : "Not rated";
@@ -127,6 +141,8 @@ ${row("Interviewer", esc(r.interviewer))}
 ${row("Language", esc(r.project.language))}
 ${row("Started", iv.startedAt ? esc(new Date(iv.startedAt).toLocaleString()) : "Not started")}
 ${row("Time used", took !== undefined ? `${esc(formatDuration(took))} of ${iv.durationMin} min` : "–")}
+${last ? row(last.final ? "Code handed in" : "Latest submission", `<span class="${last.status === "accepted" ? "ok" : "bad"}">${esc(VERDICT[last.status])}</span>${last.total && last.status !== "compile-error" && last.status !== "error" ? ` · ${last.passed} / ${last.total} tests passed` : ""}`) : ""}
+${iv.endReason ? row("Ended", esc(iv.endReason)) : ""}
 ${row("Hidden tests", r.hidden ? `<span class="${passed === r.hidden.length ? "ok" : "bad"}">${passed} / ${r.hidden.length} passed</span>` : r.hiddenCompileError ? '<span class="bad">Did not compile</span>' : "Not run")}
 ${row("Complexity (estimate)", r.complexity ? `<span class="pill">Time ${esc(r.complexity.time)}</span> <span class="pill">Space ${esc(r.complexity.space)}</span><br>${esc(r.complexity.explanation)}` : "Not analysed")}
 ${r.growth?.label ? row("Measured growth (rough)", `${esc(r.growth.label)} · time ∝ size<sup>${r.growth.exponent}</sup>`) : ""}
@@ -137,11 +153,13 @@ ${row("Left the tab", `${sum.tabSwitches} time(s)`)}
 ${row("Switched window", `${sum.windowSwitches} time(s)`)}
 ${row("Total time away", esc(formatDuration(sum.awayMs)))}
 ${row("Left full screen", `${sum.fullscreenExits} time(s)`)}
-${row("Pastes", `${sum.pastes} (${sum.pastedChars} characters; ${sum.largePastes} of 80+ characters)`)}
+${row("Left the window in all", `${iv.leaves ?? 0} time(s)${iv.maxLeaves ? ` (the interview ends at ${iv.maxLeaves})` : ""}`)}
+${row("Paste attempts (blocked)", `${sum.pastes} (${sum.pastedChars} characters; ${sum.largePastes} of 80+ characters)`)}
 ${row("Runs", String(sum.runs))}
+${row("Submissions", String(sum.submissions))}
 ${row("Blocked tool attempts", String(sum.blocked))}
 </table>
-<p class="muted">Signals from the candidate's browser. A second device (a phone) cannot be seen; use them with the replay and a video call.</p>
+<p class="muted">Copying from the page and pasting into it were turned off for the candidate. Signals from the candidate's browser. A second device (a phone) cannot be seen; use them with the replay and a video call.</p>
 ${r.hidden?.length ? `<h2>Hidden tests</h2><table><tr><th>Test</th><th>Result</th><th>Time</th></tr>${hiddenRows}</table>` : ""}
 <h2>Interviewer notes</h2><p class="note">${r.priv.notes ? esc(r.priv.notes) : '<span class="muted">No notes.</span>'}</p>
 <h2>Problem</h2><pre>${esc(iv.statement || "(no statement)")}</pre>

@@ -16,7 +16,15 @@ import {
   CANDIDATE_EVENTS,
   INTERVIEW_LIMITS,
   cleanInterviewSetup,
+  anyFileIsRunnable,
+  findEntryPoints,
+  judge,
+  type ExecutionRequest,
+  type ExecutionResult,
   type InterviewEvent,
+  type InterviewSubmissionTest,
+  type InterviewTest,
+  type InterviewVerdict,
   type InterviewPrivate,
   type InterviewPublic,
   type InterviewSetup,
@@ -65,6 +73,9 @@ export interface LivePeer {
   close(code: number, reason: string): void;
 }
 
+/** Runs a program once per test input (a test-mode execution) and resolves with its result. */
+export type JudgeRun = (request: ExecutionRequest, client: string) => Promise<ExecutionResult>;
+
 export const LiveClose = { ended: 4000, removed: 4001, notFound: 4004, full: 4008, invalid: 4400, rate: 4429 } as const;
 
 export class LiveError extends Error {
@@ -87,11 +98,24 @@ interface Member {
   awarenessIds: Set<number>;
   /** Interview: when this candidate left the tab / window, to report how long they were away. */
   awaySince?: { tab?: number; window?: number };
+  /** Interview: when this candidate was last counted as leaving the window. */
+  lastLeave?: number;
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest();
 const SAVE_DELAY_MS = 2000;
 const UNLOAD_DELAY_MS = 60_000;
+/** Test inputs sent in one execution, bytes (under the limit for a request). */
+const JUDGE_CHUNK_BYTES = TEST_LIMITS.maxTotalInputBytes - 32 * 1024;
+
+const VERDICT_TEXT: Record<InterviewVerdict["status"], string> = {
+  accepted: "Accepted",
+  "wrong-answer": "Wrong answer",
+  "runtime-error": "Runtime error",
+  "time-limit": "Time limit exceeded",
+  "compile-error": "Did not compile",
+  error: "Could not be checked",
+};
 
 export function cleanName(raw: unknown): string {
   const name = typeof raw === "string" ? raw.replace(/[\u0000-\u001f\u007f<>]/g, "").replace(/\s+/g, " ").trim() : "";
@@ -115,11 +139,16 @@ class Room {
   private historyBytes = 0;
   private historyDirty = false;
   private clockTimer: ReturnType<typeof setTimeout> | null = null;
+  private destroyed = false;
+  private lastSubmitAt = 0;
+  /** The code the latest verdict is for. */
+  private judgedCode: string | null = null;
 
   constructor(
     public meta: RoomMeta,
     private readonly store: LiveStore,
     private readonly onError: (message: string) => void,
+    private readonly judgeRun?: JudgeRun,
   ) {
     // The server takes part in presence only as a relay.
     this.awareness.setLocalState(null);
@@ -214,6 +243,7 @@ class Room {
     const pub = this.meta.interview?.public;
     if (!pub || pub.endedAt) return;
     pub.endedAt = Date.now();
+    pub.endReason = reason;
     if (this.clockTimer) clearTimeout(this.clockTimer);
     this.clockTimer = null;
     this.meta.defaultRole = "viewer";
@@ -229,6 +259,139 @@ class Room {
     this.log({ kind: "ended", detail: reason });
     this.sendPublic();
     this.sendAll({ type: "participants", participants: this.participants() });
+    this.scheduleSave();
+    // What was handed in is checked too, unless the candidate had just submitted this very code.
+    if (pub.startedAt) void this.judgeNow(undefined, true);
+  }
+
+  /** The candidate left the tab, the window or full screen. At the limit the interview ends. */
+  countLeave(member: Member) {
+    const pub = this.meta.interview?.public;
+    if (!pub?.startedAt || pub.endedAt) return;
+    const now = Date.now();
+    // Alt+Tab from full screen reports a window switch and a full-screen exit: one time, not two.
+    if (member.lastLeave && now - member.lastLeave < INTERVIEW_LIMITS.leaveWindowMs) return;
+    member.lastLeave = now;
+    pub.leaves = (pub.leaves ?? 0) + 1;
+    if (pub.maxLeaves && pub.leaves >= pub.maxLeaves) return this.endInterview(`${member.name} left the interview window ${pub.leaves} time${pub.leaves === 1 ? "" : "s"}`);
+    this.sendPublic();
+    this.scheduleSave();
+  }
+
+  /** The program in the shared document, as Run would start it. */
+  private program(): Pick<ExecutionRequest, "language" | "files" | "entry"> {
+    const meta = this.doc.getMap<unknown>("meta");
+    const language = String(meta.get("language") ?? "");
+    const files = [...this.doc.getMap<Y.Text>("files").entries()].map(([path, text]) => ({ path, content: text.toString() })).sort((a, b) => a.path.localeCompare(b.path));
+    let entry = String(meta.get("entryFile") ?? "");
+    // The file with the main function when the entry file has none (same rule as Run).
+    if (!anyFileIsRunnable(language)) {
+      const mains = [...new Set(findEntryPoints(language, files).map((e) => e.file))];
+      if (mains.length && !mains.includes(entry)) entry = mains[0]!;
+    }
+    return { language, files, entry };
+  }
+
+  /**
+   * Checks the code as it is now against every test, samples and hidden. The
+   * candidate gets the score and which test failed first; the interviewer gets
+   * every test's output. `final`: the interview has just ended.
+   */
+  async judgeNow(by: string | undefined, final: boolean): Promise<void> {
+    const iv = this.meta.interview;
+    const run = this.judgeRun;
+    if (!iv || !run || iv.public.judging || this.destroyed) return;
+    const now = Date.now();
+    if (!final && now - this.lastSubmitAt < INTERVIEW_LIMITS.submitCooldownMs) return;
+    const program = this.program();
+    const code = JSON.stringify(program);
+    if (final && (code === this.judgedCode || !program.files.length)) return;
+    this.lastSubmitAt = now;
+
+    const used = (t: InterviewTest) => t.input.trim() !== "" || t.expected.trim() !== "";
+    const tests = [
+      ...(iv.public.samples ?? []).filter(used).map((t, i) => ({ ...t, kind: "sample" as const, number: i + 1 })),
+      ...iv.private.hiddenTests.filter(used).map((t, i) => ({ ...t, kind: "hidden" as const, number: i + 1 })),
+    ];
+    iv.public.judging = true;
+    this.sendPublic();
+
+    const results: InterviewSubmissionTest[] = [];
+    let verdict: InterviewVerdict = { at: now, status: "accepted", passed: 0, total: tests.length, ...(final ? { final } : {}) };
+    try {
+      // As many tests per execution as a request may carry: the program is compiled once for each.
+      const chunks: (typeof tests)[] = [];
+      let bytes = 0;
+      for (const t of tests) {
+        const size = utf8ByteLength(t.input);
+        const last = chunks.at(-1);
+        if (!last || last.length >= TEST_LIMITS.maxTests || bytes + size > JUDGE_CHUNK_BYTES) {
+          chunks.push([t]);
+          bytes = size;
+        } else {
+          last.push(t);
+          bytes += size;
+        }
+      }
+      const cut = (text: string) => text.slice(0, INTERVIEW_LIMITS.submissionOutputChars);
+      for (const chunk of chunks) {
+        const r = await run({ ...program, mode: "test", tests: chunk.map((t) => t.input) }, sha256(`live:${this.meta.id}`).toString("hex"));
+        if (r.status === "COMPILATION_ERROR") {
+          verdict = { ...verdict, status: "compile-error", passed: 0, compileOutput: cut((r.compileOutput || r.message || "The program did not compile.").trim()) };
+          results.length = 0;
+          break;
+        }
+        if (r.status === "SYSTEM_ERROR" || r.status === "CANCELLED") throw new Error(r.message ?? "The tests could not run.");
+        for (const [i, t] of chunk.entries()) {
+          const one = r.tests?.find((x) => x.index === i);
+          // A test that never ran: the whole run was cut short before it.
+          const outcome = one ? judge(one.status, t.expected, one.stdout).verdict : r.status === "TIME_LIMIT" ? "time-limit" : "error";
+          results.push({
+            id: t.id,
+            kind: t.kind,
+            verdict: outcome === "compile-error" ? "error" : outcome,
+            status: one?.status ?? r.status,
+            stdout: cut(one?.stdout ?? ""),
+            stderr: cut(one?.stderr ?? ""),
+            ...(one?.executionTime !== undefined ? { executionTime: one.executionTime } : {}),
+          });
+        }
+      }
+      if (verdict.status !== "compile-error") {
+        const ok = (v: InterviewSubmissionTest["verdict"]) => v === "passed" || v === "ran";
+        const at = results.findIndex((x) => !ok(x.verdict));
+        const failed = at >= 0 ? results[at]! : null;
+        const times = results.flatMap((x) => (x.executionTime !== undefined ? [x.executionTime] : []));
+        verdict = {
+          ...verdict,
+          passed: results.filter((x) => ok(x.verdict)).length,
+          status: !failed ? "accepted" : failed.verdict === "failed" ? "wrong-answer" : failed.verdict === "time-limit" ? "time-limit" : failed.verdict === "crashed" ? "runtime-error" : "error",
+          ...(failed ? { firstFailed: { kind: failed.kind, number: tests[at]!.number } } : {}),
+          ...(times.length ? { timeMs: Math.max(...times) } : {}),
+          ...(!tests.length ? { message: "This problem has no tests to check against. Your code has been recorded for the interviewer." } : {}),
+        };
+      }
+    } catch (e) {
+      const message = e instanceof Error && e.message ? e.message : "The tests could not run.";
+      verdict = { ...verdict, status: "error", passed: 0, message: `${message.replace(/[.\s]+$/, "")}. Submit again in a moment.` };
+      results.length = 0;
+    }
+
+    iv.public.judging = false;
+    this.judgedCode = verdict.status === "error" ? null : code;
+    iv.public.verdicts = [...(iv.public.verdicts ?? []), verdict].slice(-INTERVIEW_LIMITS.maxVerdicts);
+    iv.private.submission = { at: now, ...(by ? { by } : {}), verdict, tests: results };
+    const score = verdict.status === "compile-error" || verdict.status === "error" || !tests.length ? "" : `: ${verdict.passed} / ${verdict.total} tests passed`;
+    const entry = { kind: "submit" as const, ...(by ? { who: by } : {}), detail: `${VERDICT_TEXT[verdict.status]}${score}` };
+    if (this.destroyed) {
+      // Everyone left while the tests ran; keep the verdict for when they come back.
+      iv.private.events.push({ t: Date.now(), ...entry });
+      if (!this.meta.ended) await this.store.putMeta(this.meta).catch((e: unknown) => this.onError(`could not save live session: ${String(e)}`));
+      return;
+    }
+    this.log(entry);
+    this.sendPublic();
+    this.sendPrivate();
     this.scheduleSave();
   }
 
@@ -274,6 +437,7 @@ class Room {
   }
 
   destroy() {
+    this.destroyed = true;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.clockTimer) clearTimeout(this.clockTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
@@ -298,6 +462,8 @@ export class LiveRooms {
     /** Sends typed input to a running program; returns an error message or null. */
     readonly sendInput: (executionId: string, data: string, eof: boolean) => Promise<string | null> = async () => "Input is not available.",
     private readonly maxRoomsPerClient: number = LIVE_LIMITS.maxRoomsPerClient,
+    /** Runs an interview submission against its tests. Without it, submissions are not checked. */
+    private readonly judgeRun?: JudgeRun,
   ) {}
 
   /** Starts a session. The owner token is returned once and only its hash is kept. */
@@ -310,7 +476,14 @@ export class LiveRooms {
     const meta: RoomMeta = { id, ownerTokenHash: sha256(ownerToken).toString("hex"), client, createdAt: Date.now(), defaultRole: "editor", roles: {}, removed: [] };
     if (interview) {
       meta.interview = {
-        public: { title: interview.title, statement: interview.statement, durationMin: interview.durationMin },
+        public: {
+          title: interview.title,
+          statement: interview.statement,
+          durationMin: interview.durationMin,
+          samples: interview.samples ?? [],
+          maxLeaves: interview.maxLeaves ?? INTERVIEW_LIMITS.defaultMaxLeaves,
+          leaves: 0,
+        },
         private: { hiddenTests: interview.hiddenTests, notes: "", rating: 0, events: [] },
       };
     }
@@ -327,7 +500,9 @@ export class LiveRooms {
       pending = (async () => {
         const meta = await this.store.getMeta(id);
         if (!meta || meta.ended) return null;
-        const room = new Room(meta, this.store, this.log);
+        // A server restart in the middle of a check leaves nothing running.
+        if (meta.interview?.public.judging) meta.interview.public.judging = false;
+        const room = new Room(meta, this.store, this.log, this.judgeRun);
         const state = await this.store.getDoc(id);
         if (state) room.load(state);
         if (meta.interview) {
@@ -614,6 +789,8 @@ export class LiveConnection {
         // The duration can change until the clock starts; after that, extend it.
         if (!iv.public.startedAt) iv.public.durationMin = setup.durationMin;
         iv.private.hiddenTests = setup.hiddenTests;
+        if (setup.samples) iv.public.samples = setup.samples;
+        if (setup.maxLeaves !== undefined) iv.public.maxLeaves = setup.maxLeaves;
         room.sendPublic();
         room.sendPrivate();
         room.scheduleSave();
@@ -634,6 +811,12 @@ export class LiveConnection {
         if (!room.meta.interview || me.role === "viewer") return;
         room.endInterview(owner ? "Ended by the interviewer" : `${me.name} finished`);
         return;
+      case "interview-submit": {
+        const pub = room.meta.interview?.public;
+        if (!pub || owner || me.role === "viewer" || !pub.startedAt || pub.endedAt) return;
+        await room.judgeNow(me.name, false);
+        return;
+      }
       case "interview-notes": {
         const iv = room.meta.interview;
         if (!owner || !iv) return;
@@ -670,6 +853,7 @@ export class LiveConnection {
         if (kind === "focus") away.window = undefined;
         const chars = kind === "paste" && Number.isFinite(Number(msg.event.chars)) ? Math.max(0, Math.round(Number(msg.event.chars))) : undefined;
         room.log({ kind, who: me.name, ...(detail ? { detail } : {}), ...(chars !== undefined ? { chars } : {}), ...(awayMs !== undefined ? { awayMs } : {}) });
+        if (kind === "tab-hidden" || kind === "blur" || kind === "fullscreen-exit") room.countLeave(me);
         return;
       }
       case "interview-history": {

@@ -17,6 +17,7 @@ import { LiveButton } from "@/features/live/LiveUI";
 import { useRestriction } from "@/features/interview/restrict";
 import { InterviewClock } from "@/features/interview/Clock";
 import { useLive } from "@/features/live/store";
+import { RunSubmit } from "@/features/interview/CandidateTests";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
 function fromCommands(ids: (string | "-")[]): MenuEntry[] {
@@ -209,15 +210,17 @@ export function TitleBar({ compact }: { compact: boolean }) {
   return (
     <header className="relative flex h-12 shrink-0 items-center gap-1 border-b border-line bg-canvas px-2.5">
       <button
+        // Going home would leave the interview.
+        disabled={restricted}
         onClick={() => useWorkspace.getState().closeProject()}
-        className="flex h-8 items-center gap-2 rounded-[6px] pl-1 pr-2 hover:bg-hover"
+        className="flex h-8 items-center gap-2 rounded-[6px] pl-1 pr-2 enabled:hover:bg-hover"
         aria-label="Home"
       >
         <LogoMark className="size-6" />
         {!compact && <span className="text-[15px] font-semibold tracking-tight text-fg">{PRODUCT.name}</span>}
       </button>
 
-      {(!compact || !project) && (
+      {(!compact || !project) && !restricted && (
         <DropdownMenu
           entries={MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) }))}
           trigger={
@@ -228,7 +231,8 @@ export function TitleBar({ compact }: { compact: boolean }) {
         />
       )}
 
-      {project && (
+      {project && restricted && <span className="ml-1 min-w-0 truncate text-[13.5px] font-semibold text-fg">{project.name}</span>}
+      {project && !restricted && (
         <>
           {!compact && <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />}
           <DropdownMenu
@@ -261,7 +265,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
         </>
       )}
 
-      {!compact && (
+      {!compact && !restricted && (
         <div className="pointer-events-none absolute inset-x-0 hidden justify-center xl:flex">
           <button
             onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}
@@ -275,13 +279,15 @@ export function TitleBar({ compact }: { compact: boolean }) {
       )}
 
       <div className="relative ml-auto flex min-w-0 items-center gap-1">
-        {project && <RunControls />}
+        {project && !restricted && <RunControls />}
+        {project && restricted && compact && <RunSubmit />}
+        {project && restricted && <InterviewClock className="mx-2 text-[13px]" />}
         {project && (
           <span className={cn("ml-1.5", compact && "hidden sm:inline")}>
             <LiveButton />
           </span>
         )}
-        {project && !compact && (!restricted || interviewActive) && (
+        {project && !compact && !restricted && (
           <span className="ml-1.5 mr-1">
             <AssistantButton />
           </span>
@@ -301,7 +307,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
           </button>
         )}
         {/* Where the centred search box does not fit. */}
-        <span className={cn(compact ? (project ? "hidden sm:inline-flex" : "inline-flex") : "inline-flex xl:hidden")}>
+        <span className={cn(restricted ? "hidden" : compact ? (project ? "hidden sm:inline-flex" : "inline-flex") : "inline-flex xl:hidden")}>
           <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}>
             <Search />
           </IconButton>
@@ -314,7 +320,12 @@ export function TitleBar({ compact }: { compact: boolean }) {
             <Settings />
           </IconButton>
         </span>
-        {compact && project && <PhoneMenu interview={!interviewActive && !restricted} />}
+        {compact && project && !restricted && <PhoneMenu interview={!interviewActive} />}
+        {compact && project && restricted && (
+          <span className="sm:hidden">
+            <ThemeToggle />
+          </span>
+        )}
       </div>
     </header>
   );

@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Download,
   FileText,
+  History,
   FlaskConical,
   Gauge,
   NotebookPen,
@@ -30,6 +31,8 @@ import { InterviewClock } from "./Clock";
 import { buildReport, describeEvent, downloadReport, printReport, summarize, WARN } from "./report";
 import { codeKeyOf, measuredGrowth, useInterviewTools } from "./store";
 import { useInterviewUI } from "./ui";
+import { Statement } from "./Statement";
+import { VERDICT_TEXT, verdictDetail } from "./CandidateTests";
 
 function Header({ title, onClose }: { title: string; onClose: () => void }) {
   return (
@@ -46,48 +49,75 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
 
 // ---------------------------------------------------------------- candidate
 
-function CandidatePanel({ onClose }: { onClose: () => void }) {
+function CandidatePanel() {
   const iv = useLive((s) => s.interview)!;
-  const role = useLive((s) => s.role);
-  const [confirm, setConfirm] = useState(false);
+  const [tab, setTab] = useState<"description" | "submissions">("description");
+  const verdicts = iv.verdicts ?? [];
+  const limit = iv.maxLeaves ?? 0;
+  const tabs = [
+    { id: "description" as const, label: "Description", icon: <FileText className="size-4 text-accent" /> },
+    { id: "submissions" as const, label: "Submissions", icon: <History className="size-4 text-accent" /> },
+  ];
   return (
     <section aria-label="Interview" className="flex h-full min-h-0 flex-col bg-surface">
-      <Header title="Problem" onClose={onClose} />
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-        <div>
-          <h3 className="text-[17px] font-semibold leading-snug">{iv.title}</h3>
-          <p className="mt-2 whitespace-pre-wrap text-[13.5px] leading-relaxed text-fg-muted">{iv.statement || "The interviewer will explain the problem."}</p>
+      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-line bg-surface-2/60 px-2">
+        <div role="tablist" aria-label="Problem" className="flex items-center gap-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={cn("flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] transition-colors", tab === t.id ? "font-semibold text-fg" : "text-fg-muted hover:bg-hover hover:text-fg")}
+            >
+              {t.icon}
+              {t.label}
+              {t.id === "submissions" && verdicts.length > 0 && <span className="rounded-full bg-surface-3 px-1.5 text-[11px] font-medium text-fg-subtle">{verdicts.length}</span>}
+            </button>
+          ))}
         </div>
-        <div className="rounded-lg border border-line-strong/60 p-3 text-[12.5px] leading-relaxed text-fg-muted">
-          <p className="font-medium text-fg">You can use</p>
-          <p>The editor, Run (Ctrl+Enter), Program input and the sample tests.</p>
-          <p className="mt-2 font-medium text-fg">Not available</p>
-          <p>Debugger, visualizer and AI help.</p>
-          <p className="mt-2 text-fg-subtle">The interviewer sees your code as you type, your runs, and when you leave this tab, the window or full screen, or paste text.</p>
-        </div>
-        {iv.endedAt ? (
-          <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
-            <CheckCircle2 className="size-4" /> The interview has ended. Your code has been handed in.
-          </p>
-        ) : role !== "viewer" && iv.startedAt ? (
-          confirm ? (
-            <div className="space-y-2 rounded-lg border border-line-strong p-3 text-sm">
-              <p>Hand in your code now? You cannot change it afterwards.</p>
-              <div className="flex gap-2">
-                <Button variant="primary" onClick={() => useLive.getState().sendInterview({ type: "interview-end" })}>
-                  Yes, finish
-                </Button>
-                <Button variant="ghost" onClick={() => setConfirm(false)}>
-                  Keep working
-                </Button>
-              </div>
+      </div>
+      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto p-4">
+        {tab === "description" ? (
+          <div className="space-y-5">
+            <h3 className="select-none text-[22px] font-semibold leading-snug tracking-tight">{iv.title}</h3>
+            {iv.statement.trim() ? <Statement text={iv.statement} /> : <p className="text-sm text-fg-muted">The interviewer will explain the problem.</p>}
+            <div className="select-none rounded-lg border border-line-strong/60 p-3 text-[12.5px] leading-relaxed text-fg-muted">
+              <p>
+                <b className="text-fg">Run</b> checks your code on the example tests and on inputs of your own. <b className="text-fg">Submit</b> checks it on every test, including hidden ones; you can submit as often as you like.
+              </p>
+              <p className="mt-2 text-fg-subtle">
+                Your program reads the input from standard input and prints only the answer. Copy and paste from outside, code suggestions, the debugger and AI help are turned off.
+                {limit > 0 ? ` Leaving this window ${limit === 1 ? "once" : `${limit} times`} ends the interview${iv.leaves ? ` (so far: ${iv.leaves})` : ""}.` : " Leaving this window is reported to the interviewer."}
+              </p>
             </div>
-          ) : (
-            <Button variant="secondary" onClick={() => setConfirm(true)}>
-              I have finished
-            </Button>
-          )
-        ) : null}
+            {iv.endedAt && (
+              <p className="flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
+                <CheckCircle2 className="size-4 shrink-0" /> The interview has ended. Your code has been handed in.
+              </p>
+            )}
+          </div>
+        ) : verdicts.length === 0 ? (
+          <p className="text-sm text-fg-subtle">Nothing submitted yet. Submit checks your code on every test.</p>
+        ) : (
+          <ol aria-label="Submissions" className="space-y-1.5">
+            {[...verdicts].reverse().map((v, i) => (
+              <li key={v.at} className="rounded-lg border border-line-strong/50 px-3 py-2">
+                <div className="flex items-baseline gap-2">
+                  <span className={cn("text-[13.5px] font-semibold", v.status === "accepted" ? "text-success" : v.status === "error" ? "text-warning" : "text-danger")}>{VERDICT_TEXT[v.status]}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[11.5px] text-fg-subtle">
+                    #{verdicts.length - i}
+                    {iv.startedAt ? ` · +${formatRemaining(v.at - iv.startedAt)}` : ""}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-fg-muted">
+                  {verdictDetail(v)}
+                  {v.final ? " · handed in at the end" : ""}
+                </p>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </section>
   );
@@ -122,6 +152,7 @@ function Overview() {
   const roomId = useLive((s) => s.roomId);
   const candidateOnline = participants.some((p) => p.role !== "owner");
   const sum = summarize(priv?.events ?? []);
+  const last = iv.verdicts?.at(-1);
   const [confirm, setConfirm] = useState(false);
   const send = useLive.getState().sendInterview;
   return (
@@ -175,6 +206,14 @@ function Overview() {
           </div>
         ))}
 
+      {last && (
+        <div className={cn("rounded-lg border p-3", last.status === "accepted" ? "border-success/40 bg-success/10" : "border-line-strong/60")}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">{last.final ? "Handed in at the end" : "Latest submission"}</div>
+          <div className={cn("mt-1 text-[15px] font-semibold", last.status === "accepted" ? "text-success" : last.status === "error" ? "text-warning" : "text-danger")}>{VERDICT_TEXT[last.status]}</div>
+          <p className="text-xs text-fg-muted">{verdictDetail(last)}</p>
+        </div>
+      )}
+
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Integrity</h3>
         <div className="grid grid-cols-2 gap-2">
@@ -182,8 +221,10 @@ function Overview() {
           <Stat label="Window switches" value={sum.windowSwitches} warn={sum.windowSwitches > 0} />
           <Stat label="Time away" value={formatDuration(sum.awayMs)} warn={sum.awayMs > 30_000} />
           <Stat label="Left full screen" value={sum.fullscreenExits} warn={sum.fullscreenExits > 0} />
-          <Stat label={`Pastes (${sum.pastedChars} chars)`} value={sum.pastes} warn={sum.largePastes > 0} />
+          <Stat label={`Paste attempts (${sum.pastedChars} chars, blocked)`} value={sum.pastes} warn={sum.pastes > 0} />
           <Stat label="Runs" value={sum.runs} />
+          <Stat label={iv.maxLeaves ? `Left the window (ends at ${iv.maxLeaves})` : "Left the window"} value={iv.leaves ?? 0} warn={(iv.leaves ?? 0) > 0} />
+          <Stat label="Submissions" value={sum.submissions} />
         </div>
         {sum.blocked > 0 && <p className="mt-2 text-xs text-warning">Tried a blocked tool {sum.blocked} time(s).</p>}
       </div>
@@ -207,7 +248,7 @@ function Timeline() {
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-xs text-fg-muted">
         <input type="checkbox" checked={onlyFlags} onChange={(e) => setOnlyFlags(e.target.checked)} className="accent-[var(--accent)]" />
-        Only things to look at (tab, window, full screen, pastes)
+        Only things to look at (tab, window, full screen, paste attempts)
       </label>
       {list.length === 0 && <p className="text-sm text-fg-subtle">Nothing yet. Activity appears here as it happens.</p>}
       <ol aria-label="Activity" className="space-y-1">
@@ -235,7 +276,7 @@ function HiddenTests() {
   if (!tests.length) {
     return (
       <div className="space-y-3 text-sm text-fg-muted">
-        <p>Hidden tests check the candidate&apos;s code on inputs they never see. They run automatically after each successful run of the candidate.</p>
+        <p>Hidden tests check the candidate&apos;s code on inputs they never see. They run when the candidate presses Submit, after each of their runs, and on the code handed in at the end.</p>
         <Button variant="secondary" onClick={() => useInterviewUI.getState().openSetup("edit")}>
           Add hidden tests
         </Button>
@@ -499,9 +540,9 @@ function InterviewerPanel({ onClose }: { onClose: () => void }) {
 }
 
 /** Right-hand panel in an interview: the interviewer's tools, or the problem for the candidate. */
-export function InterviewPanel({ onClose }: { onClose: () => void }) {
+export function InterviewPanel({ onClose = () => {} }: { onClose?: () => void }) {
   const iv = useLive((s) => s.interview);
   const role = useLive((s) => s.role);
   if (!iv) return null;
-  return role === "owner" ? <InterviewerPanel onClose={onClose} /> : <CandidatePanel onClose={onClose} />;
+  return role === "owner" ? <InterviewerPanel onClose={onClose} /> : <CandidatePanel />;
 }

@@ -75,6 +75,8 @@ interface LiveState {
   startInterview: (name: string, setup: InterviewSetup) => Promise<boolean>;
   /** Sends an interview message (setup, extend, end, notes, events). */
   sendInterview: (message: Extract<LiveClientMessage, { type: `interview-${string}` }>) => boolean;
+  /** Candidate: shows a run of the sample tests to the interviewer (`testIds` in the order they ran). */
+  announceTests: (executionId: string, testIds: string[]) => void;
   /** Interviewer: the typing history for replay (document updates with their times). */
   requestHistory: () => Promise<[number, string][]>;
   /** Owner: emails the link through the server. */
@@ -154,7 +156,8 @@ const ALERT: Partial<Record<InterviewEvent["kind"], (e: InterviewEvent) => strin
   "tab-hidden": (e) => `${e.who ?? "The candidate"} left the tab`,
   blur: (e) => `${e.who ?? "The candidate"} switched to another window`,
   "fullscreen-exit": (e) => `${e.who ?? "The candidate"} left full screen`,
-  paste: (e) => `${e.who ?? "The candidate"} pasted ${e.chars ?? 0} characters`,
+  paste: (e) => `${e.who ?? "The candidate"} tried to paste ${e.chars ?? 0} characters (blocked)`,
+  submit: (e) => (e.who ? `${e.who} submitted` : "The code handed in was checked"),
   blocked: (e) => `${e.who ?? "The candidate"} tried to use the ${e.detail ?? "a blocked tool"}`,
 };
 
@@ -260,8 +263,8 @@ export const useLive = create<LiveState>((set, get) => {
         set({ me: msg.you, role: msg.you.role, participants: msg.participants, defaultRole: msg.defaultRole, error: null, interview: msg.interview ?? null, interviewPrivate: msg.interviewPrivate ?? null });
         // In an interview, everyone but the interviewer is a candidate: editor and Run only.
         useRestriction.setState({ restricted: !!msg.interview && msg.you.role !== "owner" });
-        // The interview panel (tools, or the problem) opens on the right.
-        if (msg.interview) useSettings.getState().updateLayout({ assistantOpen: true });
+        // The interviewer's tools open on the right (the candidate has a layout of their own).
+        if (msg.interview && msg.you.role === "owner") useSettings.getState().updateLayout({ assistantOpen: true });
         applyRole(msg.you.role);
         if (msg.run && session && !session.owner && session.synced) watchRun(msg.run);
         return;
@@ -300,7 +303,7 @@ export const useLive = create<LiveState>((set, get) => {
         const priv = get().interviewPrivate;
         if (priv) set({ interviewPrivate: { ...priv, events: [...priv.events, msg.event] } });
         const alert = ALERT[msg.event.kind];
-        if (alert) toast.info(alert(msg.event), msg.event.kind === "paste" && msg.event.detail ? msg.event.detail.slice(0, 120) : undefined);
+        if (alert) toast.info(alert(msg.event), (msg.event.kind === "paste" || msg.event.kind === "submit") && msg.event.detail ? msg.event.detail.slice(0, 120) : undefined);
         return;
       }
       case "interview-history": {
@@ -428,6 +431,12 @@ export const useLive = create<LiveState>((set, get) => {
     startInterview: (name, setup) => createRoom(name, { interview: setup }),
 
     sendInterview: (message) => session?.client.send(message) ?? false,
+
+    announceTests(executionId, testIds) {
+      if (!session || session.announced.has(executionId)) return;
+      session.announced.add(executionId);
+      session.client.send({ type: "run", executionId, mode: "test", entry: "", tests: testIds });
+    },
 
     requestHistory() {
       if (!session?.owner) return Promise.resolve([]);

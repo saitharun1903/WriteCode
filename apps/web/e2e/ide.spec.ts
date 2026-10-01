@@ -257,3 +257,26 @@ test("settings: sections, live font preview, and turning automatic imports off i
   await page.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: "Coding help" }).click();
   await expect(page.getByRole("switch", { name: "Add imports automatically" })).toHaveAttribute("aria-checked", "false");
 });
+
+test("the browser's Back button goes from the editor to the start screen, and Forward reopens the project", async ({ page }) => {
+  await freshStart(page);
+  await page.getByRole("button", { name: /New Python project/ }).click();
+  await editorText(page).click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("# kept");
+  await waitSaved(page);
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/");
+  await page.goForward();
+  await expect(editorText(page)).toContainText("# kept");
+
+  // Home steps back off the project's entry, so Forward opens it again and Back does not show it twice.
+  await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await page.goForward();
+  await expect(editorText(page)).toContainText("# kept");
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+});

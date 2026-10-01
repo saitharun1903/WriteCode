@@ -3,6 +3,7 @@
 import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/shared";
 import { blockedForCandidate, isRestricted } from "@/features/interview/restrict";
 import { useInterviewUI } from "@/features/interview/ui";
+import { useCandidate } from "@/features/interview/candidate";
 import { useLive } from "@/features/live/store";
 import { toast } from "@/components/ui/toast";
 import { useAssistant } from "@/features/assistant/store";
@@ -101,8 +102,10 @@ export const COMMANDS: Command[] = [
     title: "Run",
     category: "Run",
     shortcut: "Mod+Enter",
-    enabled: () => hasProject() && !isOwnRun(useExecution.getState().run),
+    enabled: () => hasProject() && (isRestricted() ? useCandidate.getState().phase === "idle" : !isOwnRun(useExecution.getState().run)),
     run: () => {
+      // An interview candidate's Run checks the code on the example tests.
+      if (isRestricted()) return void useCandidate.getState().run();
       showBottom("run");
       void useExecution.getState().execute();
     },

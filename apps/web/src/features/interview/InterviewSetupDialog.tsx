@@ -177,9 +177,10 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
   const [name, setName] = useState(live.name || "");
   const [language, setLanguage] = useState(project?.language ?? "java");
   const [duration, setDuration] = useState(current?.durationMin ?? 45);
+  const [maxLeaves, setMaxLeaves] = useState<number>(current ? (current.maxLeaves ?? 0) : INTERVIEW_LIMITS.defaultMaxLeaves);
   const [title, setTitle] = useState(current?.title ?? "");
   const [statement, setStatement] = useState(current?.statement ?? "");
-  const [samples, setSamples] = useState<InterviewTest[]>(mode === "edit" ? (project?.tests ?? []).map((t) => ({ ...t })) : []);
+  const [samples, setSamples] = useState<InterviewTest[]>(mode === "edit" ? (current?.samples ?? project?.tests ?? []).map((t) => ({ ...t })) : []);
   const [hidden, setHidden] = useState<InterviewTest[]>(mode === "edit" ? (live.interviewPrivate?.hiddenTests ?? []).map((t) => ({ ...t })) : []);
   const [solution, setSolution] = useState("");
   const [busy, setBusy] = useState(false);
@@ -190,14 +191,16 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
     if (!title.trim()) return setError("Give the problem a title.");
     if (mode === "create" && !name.trim()) return setError("Type your name; the candidate sees it.");
     setError(null);
+    // The candidate sees the sample tests: no notes.
+    const sampleTests = samples.filter((t) => t.input.trim() || t.expected.trim()).map(({ id, input, expected }) => ({ id, input, expected }));
     const setup: InterviewSetup = {
       title: title.trim(),
       statement,
       durationMin: duration,
+      samples: sampleTests,
       hiddenTests: hidden.filter((t) => t.input.trim() || t.expected.trim()),
+      maxLeaves,
     };
-    // Sample tests go into the shared project, where the candidate sees them: no notes.
-    const sampleTests = samples.filter((t) => t.input.trim() || t.expected.trim()).map(({ id, input, expected }) => ({ id, input, expected }));
     if (mode === "edit") {
       useWorkspace.getState().setTests(sampleTests);
       useLive.getState().sendInterview({ type: "interview-setup", setup });
@@ -237,7 +240,7 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
           void submit();
         }}
       >
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {mode === "create" && (
             <label className="block space-y-1">
               <span className={label}>Your name</span>
@@ -266,6 +269,15 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
               ))}
             </select>
           </label>
+          <label className="block space-y-1">
+            <span className={label}>If the candidate leaves the window</span>
+            <select value={maxLeaves} onChange={(e) => setMaxLeaves(Number(e.target.value))} className={select} aria-label="Leaving the window">
+              <option value={1}>End the interview at once</option>
+              <option value={3}>End it the 3rd time</option>
+              <option value={5}>End it the 5th time</option>
+              <option value={0}>Only tell me</option>
+            </select>
+          </label>
         </div>
         <label className="block space-y-1">
           <span className={label}>Problem title</span>
@@ -282,10 +294,10 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
             className={cn(field, "resize-y leading-relaxed")}
           />
         </label>
-        <TestList label="Sample tests" hint="The candidate sees these and can run them." icon={<Eye className="size-4 text-fg-subtle" />} tests={samples} onChange={setSamples} max={Math.min(6, TEST_LIMITS.maxTests)} />
+        <TestList label="Sample tests" hint="The candidate sees these; Run checks the code against them." icon={<Eye className="size-4 text-fg-subtle" />} tests={samples} onChange={setSamples} max={Math.min(6, TEST_LIMITS.maxTests)} />
         <TestList
           label="Hidden tests"
-          hint="Only you see these. They run on the candidate's code after each successful run; large inputs show how the code scales."
+          hint="Only you see these. Submit checks the candidate's code against them and tells the candidate the score, never the tests. Large inputs show how the code scales."
           icon={<EyeOff className="size-4 text-fg-subtle" />}
           tests={hidden}
           onChange={setHidden}
@@ -325,7 +337,7 @@ export function InterviewSetupDialog() {
       description={
         mode === "edit"
           ? "Changes reach the candidate immediately. Hidden tests stay private."
-          : "The candidate gets the editor, Run and your sample tests only. You see their code, runs, tab switches and pastes live."
+          : "The candidate works in a locked full-screen window: no copy and paste, no code suggestions, no other tools. You see their code, runs and submissions live."
       }
       className="top-[5vh] max-h-[90vh] max-w-3xl overflow-y-auto"
     >

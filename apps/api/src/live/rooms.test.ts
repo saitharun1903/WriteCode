@@ -4,8 +4,8 @@ import * as syncProtocol from "y-protocols/sync";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
-import { LiveFrame, type LiveServerMessage } from "@cw/shared";
-import { LiveClose, LiveError, LiveRooms, type LiveConnection, type LiveStore, type RoomMeta } from "./rooms.js";
+import { LiveFrame, cleanInterviewSetup, type ExecutionRequest, type InterviewSetup, type LiveServerMessage } from "@cw/shared";
+import { LiveClose, LiveError, LiveRooms, type JudgeRun, type LiveConnection, type LiveStore, type RoomMeta } from "./rooms.js";
 
 class MemoryStore implements LiveStore {
   meta = new Map<string, RoomMeta>();
@@ -296,10 +296,10 @@ describe("live rooms", () => {
       hiddenTests: [{ id: "h1", input: "4\n1 2 3 4\n7", expected: "2 3" }],
     };
 
-    async function interview() {
+    async function interview(setup: InterviewSetup = SETUP, judgeRun?: JudgeRun) {
       const store = new MemoryStore();
-      const rooms = new LiveRooms(store);
-      const { id, ownerToken } = await rooms.create("c", SETUP);
+      const rooms = new LiveRooms(store, undefined, undefined, undefined, judgeRun);
+      const { id, ownerToken } = await rooms.create("c", cleanInterviewSetup(setup)!);
       const hr = await new Client().join(rooms, id, "Interviewer", KEY_A, ownerToken);
       hr.doc.transact(() => {
         const t = new Y.Text();
@@ -365,6 +365,123 @@ describe("live rooms", () => {
       await cand.conn.control({ type: "interview-event", event: { kind: "run-result", detail: "SUCCESS" } });
       expect(hr.last("interview-event")?.event.kind).toBe("blocked");
       expect(cand.messages.some((m) => m.type === "interview-event")).toBe(false);
+    });
+
+    /** A sandbox that doubles each test's number, or prints `wrong` for inputs listed in `bad`. */
+    const doubling =
+      (bad: string[] = [], seen: ExecutionRequest[] = []): JudgeRun =>
+      async (request) => {
+        seen.push(request);
+        return {
+          id: "x",
+          status: "SUCCESS",
+          language: request.language,
+          stdout: "",
+          stderr: "",
+          compileOutput: "",
+          runtimeVersion: "",
+          createdAt: "",
+          tests: request.tests!.map((input, index) => ({ index, status: "SUCCESS" as const, stdout: bad.includes(input) ? "wrong\n" : `${Number(input) * 2}\n`, stderr: "", executionTime: 5 })),
+        };
+      };
+    const JUDGED: InterviewSetup = {
+      title: "Double it",
+      statement: "Print 2n.",
+      durationMin: 30,
+      samples: [{ id: "s1", input: "2", expected: "4" }],
+      hiddenTests: [
+        { id: "h1", input: "5", expected: "10" },
+        { id: "h2", input: "3000", expected: "6000  \n\n" },
+      ],
+    };
+
+    it("Submit checks the code on every test; the candidate gets the score, the interviewer every output", async () => {
+      const seen: ExecutionRequest[] = [];
+      const { hr, cand } = await interview(JUDGED, doubling([], seen));
+      // Nothing is checked before the interview starts.
+      await cand.conn.control({ type: "interview-submit" });
+      expect(seen).toHaveLength(0);
+      await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+      await cand.conn.control({ type: "interview-submit" });
+      expect(seen[0]).toMatchObject({ mode: "test", tests: ["2", "5", "3000"], files: [{ path: "Main.java", content: "class Main {}\n" }] });
+      const state = cand.last("interview")!.state;
+      expect(state.judging).toBe(false);
+      expect(state.verdicts).toEqual([expect.objectContaining({ status: "accepted", passed: 3, total: 3, timeMs: 5 })]);
+      // The candidate never receives a hidden test's input or expected output.
+      expect(JSON.stringify(cand.messages)).not.toContain("3000");
+      expect(hr.last("interview-private")?.state.submission).toMatchObject({ by: "Asha", tests: [{ id: "s1", kind: "sample", verdict: "passed" }, { id: "h1", kind: "hidden", verdict: "passed", stdout: "10\n" }, { id: "h2", verdict: "passed" }] });
+      expect(hr.last("interview-event")?.event).toMatchObject({ kind: "submit", who: "Asha", detail: "Accepted: 3 / 3 tests passed" });
+      // The interviewer's own Submit does nothing: only candidates hand in.
+      await hr.conn.control({ type: "interview-submit" });
+      expect(seen).toHaveLength(1);
+    });
+
+    it("a wrong answer names the first failing test, and what is handed in at the end is checked too", async () => {
+      const seen: ExecutionRequest[] = [];
+      const { hr, cand } = await interview(JUDGED, doubling(["5"], seen));
+      await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+      await cand.conn.control({ type: "interview-submit" });
+      expect(cand.last("interview")!.state.verdicts!.at(-1)).toMatchObject({ status: "wrong-answer", passed: 2, total: 3, firstFailed: { kind: "hidden", number: 1 } });
+      // The same code is not checked again at the end; changed code is.
+      cand.doc.getMap<Y.Text>("files").get("Main.java")!.insert(0, "// fixed\n");
+      await cand.conn.control({ type: "interview-end" });
+      await vi.waitFor(() => expect(hr.last("interview-private")?.state.submission?.verdict.final).toBe(true));
+      expect(seen).toHaveLength(2);
+      expect(seen[1]!.files[0]!.content).toContain("// fixed");
+      expect(cand.last("interview")!.state.verdicts).toHaveLength(2);
+    });
+
+    it("code that does not compile, and a sandbox that is down, are told apart", async () => {
+      let mode: "compile" | "down" = "compile";
+      const { cand } = await interview(JUDGED, async (request) => {
+        if (mode === "down") throw new Error("The execution service is not available.");
+        return { id: "x", status: "COMPILATION_ERROR", language: request.language, stdout: "", stderr: "", compileOutput: "Main.java:1: error: ';' expected", runtimeVersion: "", createdAt: "" };
+      });
+      await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+      await cand.conn.control({ type: "interview-submit" });
+      expect(cand.last("interview")!.state.verdicts!.at(-1)).toMatchObject({ status: "compile-error", passed: 0, total: 3, compileOutput: "Main.java:1: error: ';' expected" });
+      mode = "down";
+      vi.useFakeTimers();
+      try {
+        vi.advanceTimersByTime(4000);
+        await cand.conn.control({ type: "interview-submit" });
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(cand.last("interview")!.state.verdicts!.at(-1)).toMatchObject({ status: "error", message: "The execution service is not available. Submit again in a moment." });
+    });
+
+    it("leaving the window is counted, and at the limit the interview ends", async () => {
+      vi.useFakeTimers();
+      try {
+        const { hr, cand } = await interview({ ...JUDGED, maxLeaves: 2 });
+        // Before the clock starts nothing counts.
+        await cand.conn.control({ type: "interview-event", event: { kind: "blur" } });
+        await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+        expect(cand.last("interview")!.state).toMatchObject({ maxLeaves: 2, leaves: 0 });
+        vi.advanceTimersByTime(5000);
+        // Alt+Tab out of full screen reports both: one time.
+        await cand.conn.control({ type: "interview-event", event: { kind: "blur" } });
+        await cand.conn.control({ type: "interview-event", event: { kind: "fullscreen-exit" } });
+        expect(cand.last("interview")!.state).toMatchObject({ leaves: 1 });
+        expect(cand.last("interview")!.state.endedAt).toBeUndefined();
+        vi.advanceTimersByTime(5000);
+        await cand.conn.control({ type: "interview-event", event: { kind: "tab-hidden" } });
+        expect(cand.last("interview")!.state).toMatchObject({ leaves: 2 });
+        expect(cand.last("interview")!.state.endedAt).toBeDefined();
+        expect(cand.last("role")?.role).toBe("viewer");
+        expect(hr.last("interview-event")?.event).toMatchObject({ kind: "ended", detail: "Asha left the interview window 2 times" });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("with no limit, leaving is only recorded", async () => {
+      const { cand } = await interview({ ...JUDGED, maxLeaves: 0 });
+      await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+      await cand.conn.control({ type: "interview-event", event: { kind: "tab-hidden" } });
+      expect(cand.last("interview")!.state).toMatchObject({ leaves: 1 });
+      expect(cand.last("interview")!.state.endedAt).toBeUndefined();
     });
 
     it("notes, rating and hidden tests are the interviewer's; the typing history can be replayed", async () => {

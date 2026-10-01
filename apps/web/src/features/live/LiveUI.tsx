@@ -13,6 +13,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
 import { liveLink, useLive } from "./store";
 import { InterviewClock } from "@/features/interview/Clock";
+import { useRestriction } from "@/features/interview/restrict";
 
 const colorOf = (p: Pick<LiveParticipant, "color">) => LIVE_COLORS[p.color % LIVE_COLORS.length]!;
 const initials = (name: string) =>
@@ -509,7 +510,9 @@ export function LiveStrip() {
   const participants = useLive((s) => s.participants);
   const owner = participants.find((p) => p.role === "owner");
   const followed = participants.find((p) => p.id === following);
-  if (!ACTIVE.has(status)) return null;
+  // An interview candidate's screen is for the problem and the code; only connection trouble is worth a line.
+  const restricted = useRestriction((r) => r.restricted);
+  if (!ACTIVE.has(status) || (restricted && status === "connected")) return null;
   return (
     <div role="status" className="flex h-7 shrink-0 items-center gap-3 border-b border-line bg-surface px-3 text-xs text-fg-muted">
       <span className="flex items-center gap-1.5 font-medium text-success">

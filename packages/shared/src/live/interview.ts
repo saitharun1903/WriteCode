@@ -14,6 +14,18 @@ export const INTERVIEW_LIMITS = {
   maxTitleChars: 120,
   maxStatementChars: 10_000,
   maxHiddenTests: 12,
+  /** Sample tests: the candidate sees them and runs them. */
+  maxSampleTests: 6,
+  /** Verdicts of earlier submissions the candidate can look back at. */
+  maxVerdicts: 30,
+  /** Output of one test kept with a submission, for the interviewer. */
+  submissionOutputChars: 4000,
+  /** Shortest time between two submissions. */
+  submitCooldownMs: 3000,
+  /** Leaving the window: reports closer together than this are one time (Alt+Tab also leaves full screen). */
+  leaveWindowMs: 2000,
+  /** Times the candidate may leave the window before the interview ends, unless the interviewer chose otherwise. */
+  defaultMaxLeaves: 3,
   maxNotesChars: 10_000,
   /** Activity entries kept; older ones are dropped. */
   maxEvents: 2000,
@@ -40,7 +52,54 @@ export interface InterviewSetup {
   title: string;
   statement: string;
   durationMin: number;
+  /** Shown to the candidate with the problem; Run checks the code against them. */
+  samples?: InterviewTest[];
   hiddenTests: InterviewTest[];
+  /** The interview ends when the candidate has left the window this many times. 0: only recorded. */
+  maxLeaves?: number;
+}
+
+export type InterviewVerdictStatus = "accepted" | "wrong-answer" | "runtime-error" | "time-limit" | "compile-error" | "error";
+
+/**
+ * How a submission did on every test, as the candidate sees it: the score and
+ * which test failed first, never a hidden test's input or expected output.
+ */
+export interface InterviewVerdict {
+  /** Server time, ms. */
+  at: number;
+  status: InterviewVerdictStatus;
+  passed: number;
+  total: number;
+  /** The first test that did not pass: a sample (which the candidate can look at) or a hidden one. */
+  firstFailed?: { kind: "sample" | "hidden"; number: number };
+  /** Compiler output, when the code did not compile. */
+  compileOutput?: string;
+  /** Why the submission could not be checked. */
+  message?: string;
+  /** Slowest test, ms. */
+  timeMs?: number;
+  /** Judged when the interview ended, not by the candidate pressing Submit. */
+  final?: boolean;
+}
+
+/** One test of a submission, for the interviewer. */
+export interface InterviewSubmissionTest {
+  id: string;
+  kind: "sample" | "hidden";
+  verdict: "passed" | "failed" | "ran" | "time-limit" | "crashed" | "error";
+  status: string;
+  /** Cut to INTERVIEW_LIMITS.submissionOutputChars. */
+  stdout: string;
+  stderr: string;
+  executionTime?: number;
+}
+
+export interface InterviewSubmission {
+  at: number;
+  by?: string;
+  verdict: InterviewVerdict;
+  tests: InterviewSubmissionTest[];
 }
 
 /** Everyone sees this: the problem and the clock. */
@@ -53,8 +112,19 @@ export interface InterviewPublic {
   endsAt?: number;
   /** The interview is over: candidates can no longer change the code. */
   endedAt?: number;
+  /** Why it ended, in words ("Time is up", "Asha finished"…). */
+  endReason?: string;
   /** Name of the candidate, once one has joined. */
   candidate?: string;
+  samples?: InterviewTest[];
+  /** 0: leaving the window is only recorded. */
+  maxLeaves?: number;
+  /** Times the candidate has left the window (tab, another window, full screen). */
+  leaves?: number;
+  /** A submission is being checked. */
+  judging?: boolean;
+  /** Submissions so far, oldest first. */
+  verdicts?: InterviewVerdict[];
 }
 
 export type InterviewEventKind =
@@ -72,6 +142,7 @@ export type InterviewEventKind =
   | "run"
   | "run-result"
   | "blocked"
+  | "submit"
   | "extended"
   | "ended";
 
@@ -96,6 +167,8 @@ export interface InterviewPrivate {
   /** 0 = not rated, 1–5. */
   rating: number;
   events: InterviewEvent[];
+  /** The latest submission, test by test. */
+  submission?: InterviewSubmission;
 }
 
 /** Events a candidate's browser may report about itself. */
@@ -108,18 +181,23 @@ export function cleanInterviewSetup(raw: unknown): InterviewSetup | null {
   const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
   const minutes = Math.round(Number(r.durationMin));
   if (!Number.isFinite(minutes)) return null;
-  const tests = Array.isArray(r.hiddenTests) ? r.hiddenTests : [];
-  return {
-    title: text(r.title, INTERVIEW_LIMITS.maxTitleChars).trim() || "Coding interview",
-    statement: text(r.statement, INTERVIEW_LIMITS.maxStatementChars),
-    durationMin: Math.min(INTERVIEW_LIMITS.maxMinutes, Math.max(INTERVIEW_LIMITS.minMinutes, minutes)),
-    hiddenTests: tests.slice(0, INTERVIEW_LIMITS.maxHiddenTests).flatMap((t) => {
+  const tests = (list: unknown, max: number): InterviewTest[] =>
+    (Array.isArray(list) ? list : []).slice(0, max).flatMap((t) => {
       if (!t || typeof t !== "object") return [];
       const x = t as Record<string, unknown>;
       const id = typeof x.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(x.id) ? x.id : null;
       const note = text(x.note, 160).trim();
       return id ? [{ id, input: text(x.input, 128 * 1024), expected: text(x.expected, 128 * 1024), ...(note ? { note } : {}) }] : [];
-    }),
+    });
+  const leaves = Math.round(Number(r.maxLeaves));
+  return {
+    title: text(r.title, INTERVIEW_LIMITS.maxTitleChars).trim() || "Coding interview",
+    statement: text(r.statement, INTERVIEW_LIMITS.maxStatementChars),
+    durationMin: Math.min(INTERVIEW_LIMITS.maxMinutes, Math.max(INTERVIEW_LIMITS.minMinutes, minutes)),
+    // Notes on sample tests are the interviewer's; the candidate sees the tests.
+    ...(r.samples !== undefined ? { samples: tests(r.samples, INTERVIEW_LIMITS.maxSampleTests).map(({ id, input, expected }) => ({ id, input, expected })) } : {}),
+    hiddenTests: tests(r.hiddenTests, INTERVIEW_LIMITS.maxHiddenTests),
+    maxLeaves: Number.isFinite(leaves) && leaves >= 0 && leaves <= 20 ? leaves : INTERVIEW_LIMITS.defaultMaxLeaves,
   };
 }
 

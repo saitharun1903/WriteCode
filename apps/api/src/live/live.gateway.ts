@@ -3,7 +3,7 @@ import { WebSocketGateway, type OnGatewayConnection } from "@nestjs/websockets";
 import type { IncomingMessage } from "node:http";
 import type { Redis } from "ioredis";
 import type { WebSocket } from "ws";
-import { LIVE_LIMITS, type LiveClientMessage, type LiveServerMessage } from "@cw/shared";
+import { LIVE_LIMITS, isTerminalStatus, type LiveClientMessage, type LiveServerMessage } from "@cw/shared";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
 import { ExecutionsService } from "../executions/executions.service.js";
@@ -18,7 +18,26 @@ export class LiveService implements OnApplicationShutdown {
 
   constructor(@Inject(REDIS) redis: Redis, executions: ExecutionsService) {
     // Typed input from people in a session goes to runs announced in it (checked by the rooms).
-    this.rooms = new LiveRooms(new RedisLiveStore(redis), (m) => this.logger.warn(m), (id, data, eof) => executions.sendInput(id, data, eof), config.liveMaxRoomsPerClient);
+    this.rooms = new LiveRooms(
+      new RedisLiveStore(redis),
+      (m) => this.logger.warn(m),
+      (id, data, eof) => executions.sendInput(id, data, eof),
+      config.liveMaxRoomsPerClient,
+      // An interview submission: the same sandboxed test run a browser would ask for, awaited here.
+      async (request, client) => {
+        const { id } = await executions.create(request, client);
+        const deadline = Date.now() + JUDGE_TIMEOUT_MS;
+        for (;;) {
+          const result = await executions.get(id);
+          if (isTerminalStatus(result.status)) return result;
+          if (Date.now() > deadline) {
+            await executions.cancel(id).catch(() => {});
+            throw new Error("The tests took too long.");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      },
+    );
   }
 
   async onApplicationShutdown() {
@@ -27,6 +46,7 @@ export class LiveService implements OnApplicationShutdown {
 }
 
 const JOIN_TIMEOUT_MS = 10_000;
+const JUDGE_TIMEOUT_MS = 5 * 60_000;
 const MAX_CONTROL_BYTES = 4096;
 /** Messages that carry the interviewer's problem, hidden tests or notes may be larger (up to the frame limit). */
 const LARGE_CONTROL = new Set<string>(["interview-setup", "interview-notes"]);

@@ -93,6 +93,8 @@ export type LiveClientMessage =
   | { type: "interview-extend"; minutes: number }
   /** Interviewer ends the interview, or the candidate finishes early. */
   | { type: "interview-end" }
+  /** Candidate: check the code against every test (samples and hidden). The verdict arrives in the interview state. */
+  | { type: "interview-submit" }
   | { type: "interview-notes"; notes: string; rating: number }
   /** Candidate: what happened in their browser (tab switch, paste…). Interviewer: a run's outcome. */
   | { type: "interview-event"; event: Pick<InterviewEvent, "kind" | "detail" | "chars"> }

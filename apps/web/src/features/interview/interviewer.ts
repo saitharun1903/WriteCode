@@ -51,17 +51,34 @@ if (typeof window !== "undefined") {
     if (!interviewing() || !prev.watchedBy || prev.phase === "idle" || s.phase !== "idle" || !prev.runId) return;
     const tests = useWorkspace.getState().project?.tests ?? [];
     const ids = prev.runTestIds;
-    const passed = ids.filter((id) => {
+    // The candidate's own cases have no expected output; only the examples are scored.
+    const samples = ids.filter((id) => tests.some((t) => t.id === id));
+    const passed = samples.filter((id) => {
       const o = s.outcomes[id];
       const t = tests.find((x) => x.id === id);
       return o?.result && t && judge(o.result.status, t.expected, o.result.stdout).verdict === "passed";
     }).length;
-    const detail = s.compileError ? `${prev.watchedBy}'s sample tests did not compile` : `${prev.watchedBy}'s sample tests: ${passed} / ${ids.length} passed`;
+    const detail = s.compileError ? `${prev.watchedBy}'s code did not compile` : samples.length ? `${prev.watchedBy}'s run: ${passed} / ${samples.length} example tests passed` : `${prev.watchedBy}'s run finished`;
     useLive.getState().sendInterview({ type: "interview-event", event: { kind: "run-result", detail } });
+    if (!s.compileError) autoRunHidden();
   });
 
-  // Results belong to one interview.
   useLive.subscribe((s, prev) => {
-    if (prev.interview && !s.interview) useInterviewTools.getState().reset();
+    // Results belong to one interview.
+    if (prev.interview && !s.interview) return useInterviewTools.getState().reset();
+    // A submission was checked on the server: its hidden tests are the results to show.
+    const sub = s.interviewPrivate?.submission;
+    if (!sub || s.role !== "owner" || sub.at === prev.interviewPrivate?.submission?.at) return;
+    const project = useWorkspace.getState().project;
+    const codeKey = project ? codeKeyOf(project) : undefined;
+    if (sub.verdict.status === "compile-error") {
+      return useInterviewTools.setState({ hidden: { running: false, results: null, compileError: sub.verdict.compileOutput ?? "The program did not compile.", codeKey, ranAt: sub.at } });
+    }
+    if (sub.verdict.status === "error") return;
+    const results = (s.interviewPrivate?.hiddenTests ?? []).flatMap((test, index) => {
+      const r = sub.tests.find((t) => t.id === test.id && t.kind === "hidden");
+      return r ? [{ test, comparison: { verdict: r.verdict }, run: { index, status: r.status as ExecutionStatus, stdout: r.stdout, stderr: r.stderr, executionTime: r.executionTime } }] : [];
+    });
+    if (results.length) useInterviewTools.setState({ hidden: { running: false, results, codeKey, ranAt: sub.at } });
   });
 }

@@ -7,34 +7,34 @@ type Report = (kind: InterviewEventKind, extra?: { detail?: string; chars?: numb
 /**
  * What the candidate's browser reports during an interview (the candidate is
  * told about all of it before starting): leaving the tab, switching to
- * another window, leaving full screen, and pasting or dropping text.
+ * another window and leaving full screen. `onLeave` is called for each of them.
  */
-export function startMonitoring(report: Report): () => void {
-  const onVisibility = () => report(document.hidden ? "tab-hidden" : "tab-visible");
-  // A hidden tab also blurs the window; that is already reported as leaving the tab.
-  const onBlur = () => !document.hidden && report("blur");
-  const onFocus = () => report("focus");
-  const onFullscreen = () => report(document.fullscreenElement ? "fullscreen-enter" : "fullscreen-exit");
-  const pasted = (text: string) => {
-    if (text) report("paste", { chars: text.length, detail: text });
+export function startMonitoring(report: Report, onLeave: () => void): () => void {
+  const onVisibility = () => {
+    report(document.hidden ? "tab-hidden" : "tab-visible");
+    if (document.hidden) onLeave();
   };
-  // Capture phase: the editor's own input element receives pastes too.
-  const onPaste = (e: ClipboardEvent) => pasted(e.clipboardData?.getData("text/plain") ?? "");
-  const onDrop = (e: DragEvent) => pasted(e.dataTransfer?.getData("text/plain") ?? "");
+  // A hidden tab also blurs the window; that is already reported as leaving the tab.
+  const onBlur = () => {
+    if (document.hidden) return;
+    report("blur");
+    onLeave();
+  };
+  const onFocus = () => report("focus");
+  const onFullscreen = () => {
+    report(document.fullscreenElement ? "fullscreen-enter" : "fullscreen-exit");
+    if (!document.fullscreenElement) onLeave();
+  };
 
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("blur", onBlur);
   window.addEventListener("focus", onFocus);
   document.addEventListener("fullscreenchange", onFullscreen);
-  document.addEventListener("paste", onPaste, true);
-  document.addEventListener("drop", onDrop, true);
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("blur", onBlur);
     window.removeEventListener("focus", onFocus);
     document.removeEventListener("fullscreenchange", onFullscreen);
-    document.removeEventListener("paste", onPaste, true);
-    document.removeEventListener("drop", onDrop, true);
   };
 }
 

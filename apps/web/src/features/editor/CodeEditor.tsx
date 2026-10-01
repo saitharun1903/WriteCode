@@ -20,6 +20,7 @@ import { editorBridge } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { liveHistory } from "@/features/live/store";
+import { isRestricted, useRestriction } from "@/features/interview/restrict";
 
 const NO_LINES: number[] = [];
 
@@ -31,6 +32,9 @@ export function CodeEditor() {
   const { fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
   const readOnly = useWorkspace((s) => s.readOnly);
+  // An interview candidate writes the code alone: nothing is suggested, completed or looked up.
+  const restricted = useRestriction((s) => s.restricted);
+  const restrictedKey = useRef<{ set(value: boolean): void } | null>(null);
 
   // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
   const [codeFont] = useState(() => {
@@ -107,6 +111,12 @@ export function CodeEditor() {
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyY, () => history("redo"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyJ, () => runCommand("view.toggleBottomPanel"));
     ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyB, () => runCommand("view.toggleSidebar"));
+    // For an interview candidate, the keys that ask for suggestions, hints, quick fixes and the editor's own command list do nothing.
+    restrictedKey.current = ed.createContextKey<boolean>("cwRestricted", isRestricted());
+    const nothing = () => {};
+    for (const key of [KeyMod.CtrlCmd | KeyCode.Space, KeyMod.CtrlCmd | KeyCode.KeyI, KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space, KeyMod.CtrlCmd | KeyCode.Period, KeyMod.Alt | KeyCode.Backslash, KeyCode.F1, KeyCode.F12, KeyMod.Alt | KeyCode.F12]) {
+      ed.addCommand(key, nothing, "cwRestricted");
+    }
 
     ed.onDidChangeCursorPosition((e) => editorBridge.setCursor(e.position.lineNumber, e.position.column));
     // Right-click menu: ask the assistant about the code under the cursor.
@@ -131,6 +141,10 @@ export function CodeEditor() {
   };
 
   useEffect(() => () => editorBridge.detach(), []);
+
+  useEffect(() => {
+    restrictedKey.current?.set(restricted);
+  }, [restricted, mounted]);
 
   // Breakpoints and the paused line. Re-applied when the file, breakpoints or stop location change.
   useEffect(() => {
@@ -227,8 +241,20 @@ export function CodeEditor() {
         guides: { bracketPairs: bracketColors ? "active" : false, indentation: true },
         autoClosingBrackets: autoClose ? "languageDefined" : "never",
         autoClosingQuotes: autoClose ? "languageDefined" : "never",
-        quickSuggestions: suggestions ? { other: true, comments: false, strings: false } : false,
-        suggestOnTriggerCharacters: suggestions,
+        quickSuggestions: suggestions && !restricted ? { other: true, comments: false, strings: false } : false,
+        suggestOnTriggerCharacters: suggestions && !restricted,
+        wordBasedSuggestions: restricted ? "off" : "matchingDocuments",
+        snippetSuggestions: restricted ? "none" : "inline",
+        parameterHints: { enabled: !restricted },
+        inlineSuggest: { enabled: !restricted },
+        tabCompletion: "off",
+        acceptSuggestionOnEnter: restricted ? "off" : "on",
+        hover: { enabled: restricted ? "off" : "on" },
+        lightbulb: { enabled: (restricted ? "off" : "onCode") as editor.ShowLightbulbIconMode },
+        contextmenu: !restricted,
+        dropIntoEditor: { enabled: !restricted },
+        pasteAs: { enabled: !restricted },
+        links: !restricted,
         // Phones and tablets: the last lines can scroll up from under the floating dock.
         padding: { top: 6, bottom: compact ? 108 : 6 },
         lineDecorationsWidth: compact ? 10 : 18,

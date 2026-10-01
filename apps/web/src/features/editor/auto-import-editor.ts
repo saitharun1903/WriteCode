@@ -3,6 +3,7 @@
 import type { editor } from "monaco-editor";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings } from "@/features/settings/store";
+import { isRestricted } from "@/features/interview/restrict";
 import { missingIncludes, missingJavaImports, missingPythonImports, type ImportEdit } from "./auto-import";
 
 /** Pause after the last keystroke before imports are added. */
@@ -20,7 +21,7 @@ export function installAutoImport(ed: editor.IStandaloneCodeEditor) {
     timer = null;
     const model = ed.getModel();
     const position = ed.getPosition();
-    if (!model || !position || !useSettings.getState().autoImport) return;
+    if (!model || !position || !useSettings.getState().autoImport || isRestricted()) return;
     const language = model.getLanguageId();
     if (!["java", "python", "c", "cpp"].includes(language)) return;
     const code = model.getValue();

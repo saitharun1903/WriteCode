@@ -9,6 +9,7 @@ import { ContextMenu } from "@/components/ui/menu";
 import { EmptyState, Spinner } from "@/components/ui/primitives";
 import { Kbd } from "@/components/ui/kbd";
 import { runCommand } from "@/features/commands/registry";
+import { useRestriction } from "@/features/interview/restrict";
 import { FileIcon } from "@/features/explorer/file-icon";
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -31,6 +32,8 @@ export function EditorTabs() {
   const { openFile, closeTab, closeOtherTabs, setEntryFile } = useWorkspace.getState();
   const diagnostics = useExecution((s) => s.diagnostics);
   const listRef = useRef<HTMLDivElement>(null);
+  // An interview candidate has no file list to reopen a closed tab from.
+  const restricted = useRestriction((r) => r.restricted);
 
   if (openTabs.length === 0) return null;
 
@@ -84,20 +87,22 @@ export function EditorTabs() {
               {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-accent" />}
               <FileIcon name={path} />
               <span className={cn("truncate", errors > 0 && "text-danger underline decoration-wavy decoration-danger/60 underline-offset-2")}>{basename(path)}</span>
-              <button
-                aria-label={`Close ${basename(path)}`}
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(path);
-                }}
-                className={cn(
-                  "ml-0.5 rounded-[4px] p-0.5 text-fg-subtle hover:bg-active hover:text-fg",
-                  active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                )}
-              >
-                <X className="size-3.5" />
-              </button>
+              {!restricted && (
+                <button
+                  aria-label={`Close ${basename(path)}`}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(path);
+                  }}
+                  className={cn(
+                    "ml-0.5 rounded-[4px] p-0.5 text-fg-subtle hover:bg-active hover:text-fg",
+                    active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                  )}
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
           </ContextMenu>
         );

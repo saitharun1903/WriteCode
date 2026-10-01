@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useDragControls, useReducedMotion } from "motion/react";
 import dynamic from "next/dynamic";
-import { Bug, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
+import { Bug, FileText, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
@@ -33,12 +33,16 @@ import { GlassDock, type DockItem } from "./GlassDock";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useUI } from "./ui-store";
+import { useProjectHistory } from "./use-project-history";
 import { JoinDialog, LivePanel, LiveStrip, SessionEndedDialog } from "@/features/live/LiveUI";
 import { promptJoin, useLive } from "@/features/live/store";
 import { InterviewPanel } from "@/features/interview/InterviewPanel";
 import { InterviewSetupDialog } from "@/features/interview/InterviewSetupDialog";
 import { ReplayDialog } from "@/features/interview/ReplayDialog";
 import { CandidateGate } from "@/features/interview/CandidateGate";
+import { CandidateTests } from "@/features/interview/CandidateTests";
+import { useCandidate } from "@/features/interview/candidate";
+import { useRestriction } from "@/features/interview/restrict";
 import "@/features/interview/interviewer";
 import { getLanguage, isLiveRoomId } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
@@ -173,6 +177,45 @@ function DesktopWorkbench() {
   );
 }
 
+const cardClass = "h-full min-h-0 overflow-hidden rounded-xl border border-line bg-surface";
+const gapClass = "relative outline-none after:absolute after:inset-0 after:m-auto after:rounded-full after:bg-line-strong after:transition-colors data-[separator]:hover:after:bg-accent data-[separator=active]:after:bg-accent";
+
+/**
+ * An interview candidate's desk, laid out like a judge: the problem on the
+ * left, the code on the right, and under it the cases to run on and the result.
+ */
+function CandidateWorkbench() {
+  const outer = useDefaultLayout({ id: "cw-candidate", panelIds: ["problem", "code"] });
+  const inner = useDefaultLayout({ id: "cw-candidate-code", panelIds: ["editor", "tests"] });
+  return (
+    <div className="flex min-h-0 flex-1 bg-canvas p-2">
+      <Group orientation="horizontal" id="cw-candidate" defaultLayout={outer.defaultLayout} onLayoutChanged={outer.onLayoutChanged} className="min-w-0 flex-1">
+        <Panel id="problem" defaultSize="40%" minSize="280px" maxSize="65%">
+          <div className={cardClass}>
+            <InterviewPanel />
+          </div>
+        </Panel>
+        <Separator className={cn(gapClass, "w-2 after:h-8 after:w-0.5")} />
+        <Panel id="code" minSize="30%">
+          <Group orientation="vertical" id="cw-candidate-code" defaultLayout={inner.defaultLayout} onLayoutChanged={inner.onLayoutChanged}>
+            <Panel id="editor" defaultSize="60%" minSize="20%">
+              <div className={cardClass}>
+                <EditorArea />
+              </div>
+            </Panel>
+            <Separator className={cn(gapClass, "h-2 after:h-0.5 after:w-8")} />
+            <Panel id="tests" defaultSize="40%" minSize="96px">
+              <div className={cardClass}>
+                <CandidateTests />
+              </div>
+            </Panel>
+          </Group>
+        </Panel>
+      </Group>
+    </div>
+  );
+}
+
 /** Phone and tablet tab bar: the tool windows people reach for most, with Search in the title bar. */
 const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: SideView } | { kind: "bottom"; id: BottomTab } | { kind: "ai"; id: "ai" }))[] = [
   { kind: "side", id: "explorer", label: "Files", icon: <FolderClosed /> },
@@ -268,6 +311,8 @@ function Grabber({ onDragStart }: { onDragStart: (e: React.PointerEvent) => void
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const interview = useLive((s) => !!s.interview);
+  const restricted = useRestriction((s) => s.restricted);
+  const candidateBusy = useCandidate((s) => s.phase !== "idle");
   const setDrawer = useUI((s) => s.setDrawer);
   const updateLayout = useSettings((s) => s.updateLayout);
   const sideView = useSettings((s) => s.layout.sideView);
@@ -279,7 +324,12 @@ function CompactWorkbench() {
   const close = () => setDrawer("none");
 
   const running = !!run && isRunning(run);
-  const items: DockItem[] = TABS.map((t) => {
+  // An interview candidate has two things besides the code: the problem and the tests.
+  const candidateItems: DockItem[] = [
+    { id: "problem", label: "Problem", icon: <FileText />, active: drawer === "assistant", onSelect: () => setDrawer(drawer === "assistant" ? "none" : "assistant") },
+    { id: "tests", label: "Tests", icon: <FlaskConical />, active: drawer === "bottom", dot: candidateBusy ? "run" : undefined, onSelect: () => setDrawer(drawer === "bottom" ? "none" : "bottom") },
+  ];
+  const items: DockItem[] = restricted ? candidateItems : TABS.map((t) => {
     const active = t.kind === "side" ? drawer === "sidebar" && sideView === t.id : t.kind === "bottom" ? drawer === "bottom" && bottomTab === t.id : drawer === "assistant";
     const dot: DockItem["dot"] =
       t.id === "run" && running && run!.mode === "run"
@@ -329,14 +379,14 @@ function CompactWorkbench() {
             onClick={close}
           />
         )}
-        {drawer === "sidebar" && (
+        {drawer === "sidebar" && !restricted && (
           <Sheet key="sidebar" side onClose={close} height="auto">
             <SideView />
           </Sheet>
         )}
         {drawer === "bottom" && (
           <Sheet key="bottom" onClose={close} height="min(72%, 640px)">
-            <BottomPanel onClose={close} />
+            {restricted ? <CandidateTests actions={false} /> : <BottomPanel onClose={close} />}
           </Sheet>
         )}
         {drawer === "assistant" && (
@@ -374,9 +424,11 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
   const theme = useSettings((s) => s.theme);
   const hydrated = useSettings((s) => s.hydrated);
   const compact = useMediaQuery(COMPACT_QUERY);
+  const restricted = useRestriction((s) => s.restricted);
 
   useGlobalKeybindings();
   useDebugSync();
+  useProjectHistory();
 
   useEffect(() => {
     if (!live) return;
@@ -466,9 +518,9 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
             <StartScreen />
           </main>
         ) : (
-          <main className="flex min-h-0 flex-1 flex-col">{compact ? <CompactWorkbench /> : <DesktopWorkbench />}</main>
+          <main className="flex min-h-0 flex-1 flex-col">{compact ? <CompactWorkbench /> : restricted ? <CandidateWorkbench /> : <DesktopWorkbench />}</main>
         )}
-        {!(compact && project) && <StatusBar />}
+        {!(compact && project) && !(restricted && project) && <StatusBar />}
       </div>
       <CommandPalette />
       <NewProjectDialog />

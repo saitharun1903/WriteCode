@@ -32,11 +32,17 @@ interface InterviewToolsState {
 export const codeKeyOf = (p: Project) => JSON.stringify([p.entryFile, p.files.map((f) => [f.path, f.content])]);
 
 /** Runs a test execution of `program` and resolves with its final result. */
-export function runTests(program: { language: string; files: { path: string; content: string }[]; entry: string }, inputs: string[]): Promise<ExecutionResult> {
+export function runTests(
+  program: { language: string; files: { path: string; content: string }[]; entry: string },
+  inputs: string[],
+  /** Called with the execution's id once the server has accepted it. */
+  onStart?: (executionId: string) => void,
+): Promise<ExecutionResult> {
   return new Promise((resolve, reject) => {
     api
       .createExecution({ language: program.language, files: program.files.map((f) => ({ path: f.path, content: f.content })), entry: program.entry, mode: "test", tests: inputs })
       .then(({ id, controlToken }) => {
+        onStart?.(id);
         let done = false;
         const stream = streamExecution(id, controlToken, {
           onEvent: (e) => {
