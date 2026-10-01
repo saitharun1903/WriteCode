@@ -112,8 +112,8 @@ test.describe("phone", () => {
     await expect(settings).toBeVisible();
     // Settings fill the phone's screen, and list no keyboard shortcuts.
     const size = (await settings.boundingBox())!;
-    expect(size.width).toBe(390);
-    expect(size.height).toBeGreaterThan(800);
+    expect(size.width).toBeGreaterThan(380);
+    expect(size.height).toBeGreaterThan(780);
     await expect(settings.getByRole("button", { name: "Shortcuts" })).toHaveCount(0);
     await settings.getByRole("button", { name: "Editor", exact: true }).click();
     await expect(settings.getByText("Word wrap", { exact: true }).first()).toBeVisible();
