@@ -24,6 +24,7 @@ test("creates a Java project from the start screen", async ({ page }) => {
   await freshStart(page);
   await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
 
   await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
   await expect(editorText(page)).toContainText('System.out.println("Hello World");');
@@ -33,6 +34,7 @@ test("creates a Java project from the start screen", async ({ page }) => {
 test("edits persist across reload and the project reopens", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Python project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello World");
 
   // Monaco may use EditContext instead of a textarea, so focus by clicking the text area.
@@ -49,6 +51,7 @@ test("edits persist across reload and the project reopens", async ({ page }) => 
 test("creates, renames and deletes files in the explorer", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New C\+\+ project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByRole("treeitem", { name: /main\.cpp/ })).toBeVisible();
 
   await page.getByRole("button", { name: "New File" }).first().click();
@@ -72,6 +75,7 @@ test("creates, renames and deletes files in the explorer", async ({ page }) => {
 test("rejects unsafe file names inline", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: "New File" }).first().click();
   await page.getByRole("textbox", { name: "Name" }).fill("../evil.java");
   await expect(page.getByText(/cannot contain slashes/)).toBeVisible();
@@ -80,6 +84,7 @@ test("rejects unsafe file names inline", async ({ page }) => {
 test("command palette runs commands", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
 
   await page.keyboard.press("Control+Shift+P");
@@ -91,6 +96,8 @@ test("command palette runs commands", async ({ page }) => {
 test("project search finds matches and navigates", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
   await page.keyboard.press("Control+Shift+F");
   await page.getByRole("textbox", { name: "Search in project" }).fill("println");
   await expect(page.getByText("1 result in 1 file")).toBeVisible();
@@ -100,6 +107,7 @@ test("run reports an actionable error when the execution service is down", async
   test.skip(!!process.env.E2E_EXECUTION, "execution service is running");
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await page.getByRole("button", { name: "Run program" }).click();
   await expect(page.getByText("Execution service unreachable")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
@@ -108,6 +116,7 @@ test("run reports an actionable error when the execution service is down", async
 test("a project that is only opened is not kept as recent work; an edited one is", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
   await page.getByRole("button", { name: "Home" }).click();
   await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
@@ -117,6 +126,7 @@ test("a project that is only opened is not kept as recent work; an edited one is
   await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
 
   await page.getByRole("button", { name: /New Python project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await editorText(page).click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("\n# my change");
@@ -135,6 +145,7 @@ const modelText = (page: Page) =>
 test("familiar snippets: sout and fori expand as in IntelliJ, with Tab stops", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello World");
   await page.evaluate(() => {
     const ed = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco.editor.getEditors()[0]!;
@@ -160,6 +171,7 @@ test("familiar snippets: sout and fori expand as in IntelliJ, with Tab stops", a
 test("automatic imports: using Scanner adds its import, and Ctrl+Z takes back just the import", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello World");
   await page.evaluate(() => {
     const ed = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: object): void; focus(): void }[] } } }).monaco.editor.getEditors()[0]!;
@@ -180,6 +192,7 @@ test("automatic imports: using Scanner adds its import, and Ctrl+Z takes back ju
 test("import files: review what is added, replaced and skipped, then they are in the project", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello World");
 
   await page.getByLabel("Choose files to import").setInputFiles([
@@ -203,6 +216,7 @@ test("import files: review what is added, replaced and skipped, then they are in
 test("dropping files from the desktop onto the Project panel imports them", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Python project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello");
   const data = await page.evaluateHandle(() => {
     const dt = new DataTransfer();
@@ -222,6 +236,7 @@ test("settings: sections, live font preview, and turning automatic imports off i
   const shots = process.env.E2E_SHOTS;
   await freshStart(page);
   await page.getByRole("button", { name: /New Java project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editorText(page)).toContainText("Hello World");
   await page.getByRole("button", { name: "Settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
@@ -261,6 +276,7 @@ test("settings: sections, live font preview, and turning automatic imports off i
 test("the browser's Back button goes from the editor to the start screen, and Forward reopens the project", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New Python project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await editorText(page).click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("# kept");

@@ -43,8 +43,9 @@ const slower = (base: ExecutionLimits): ExecutionLimits => ({ ...base, timeoutMs
 /** `stdinPath` is the program's stdin: the prepared input file, or the interactive FIFO. */
 export async function tracerFor(docker: Docker, request: ExecutionRequest, stdinPath: string): Promise<Tracer> {
   const files = request.files.map((f) => f.path);
-  switch (request.language) {
-    case "python": {
+  // The tooling is chosen by how the language is debugged, so a language added with a known protocol needs nothing here.
+  switch (requireLanguage(request.language).debugger?.protocol) {
+    case "settrace": {
       pythonSource ??= readFile(PYTHON_TRACER_URL, "utf8").catch((e: unknown) => {
         pythonSource = null;
         throw e;
@@ -62,8 +63,8 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         ownsStdin: true,
       };
     }
-    case "java": {
-      const lang = requireLanguage("java");
+    case "jdwp": {
+      const lang = requireLanguage(request.language);
       const mainClass = expandCommand(["{entryClass}"], { entry: request.entry, files: request.files })[0]!;
       const vmOptions = lang.runtime.command.filter((a) => a.startsWith("-X")).concat("-Xmx192m").join(" ");
       const config = { mainClass, classpath: "out", vmOptions, javaHome: JAVA_WRAPPER_HOME, files, out: OUT_PATH, limits: TRACE_LIMITS };
@@ -83,8 +84,7 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         ownsStdin: false,
       };
     }
-    case "javascript":
-    case "typescript": {
+    case "inspector": {
       jsSources ??= Promise.all([readFile(JS_TRACER_URL, "utf8"), readFile(JS_TRACER_WORKER_URL, "utf8")]).catch((e: unknown) => {
         jsSources = null;
         throw e;
@@ -106,8 +106,7 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         ownsStdin: true,
       };
     }
-    case "c":
-    case "cpp": {
+    case "gdb": {
       gdbSource ??= readFile(GDB_TRACER_URL, "utf8").catch((e: unknown) => {
         gdbSource = null;
         throw e;

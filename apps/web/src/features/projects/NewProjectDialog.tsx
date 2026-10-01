@@ -14,7 +14,7 @@ import { useWorkspace } from "./store";
 export function NewProjectDialog() {
   const open = useUI((s) => s.newProjectOpen);
   const setDialogOpen = useUI((s) => s.setNewProjectOpen);
-  const [language, setLanguage] = useState("java");
+  const [language, setLanguage] = useState(LANGUAGES[0]!.id);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const lang = getLanguage(language)!;
@@ -25,6 +25,7 @@ export function NewProjectDialog() {
   };
 
   const submit = async () => {
+    if (!name.trim() || busy) return;
     setBusy(true);
     await useWorkspace.getState().createProject(language, name.trim() || undefined);
     setBusy(false);
@@ -40,7 +41,7 @@ export function NewProjectDialog() {
       footer={
         <>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="primary" onClick={submit} disabled={busy}>
+          <Button variant="primary" onClick={submit} disabled={busy || !name.trim()}>
             Create
           </Button>
         </>
@@ -75,7 +76,7 @@ export function NewProjectDialog() {
         >
           <label className="grid grid-cols-[88px_1fr] items-center gap-3">
             <span className="text-sm text-fg">Name:</span>
-            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={`${lang.name} project`} />
+            <Input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder={`${lang.name} project`} aria-label="Project name" />
           </label>
           <div className="grid grid-cols-[88px_1fr] items-center gap-3 text-sm">
             <span className="text-fg">Toolchain:</span>

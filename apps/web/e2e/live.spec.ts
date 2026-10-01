@@ -31,6 +31,7 @@ async function freshPage(browser: Browser): Promise<Page> {
 /** Owner: a new project shared as "Teacher"; returns the invite link. */
 async function startSession(page: Page, language: "Java" | "Python" = "Java"): Promise<string> {
   await page.getByRole("button", { name: new RegExp(`New ${language} project`) }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText(language === "Java" ? "Hello World" : "Hello");
   await page.getByRole("button", { name: "Share live session" }).click();
   const dialog = page.getByRole("dialog", { name: "Code together, live" });

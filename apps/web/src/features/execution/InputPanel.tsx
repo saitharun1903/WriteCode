@@ -15,7 +15,8 @@ export function InputPanel() {
   const project = useWorkspace((s) => s.project);
   const bytes = utf8ByteLength(stdin);
   const over = bytes > REQUEST_BOUNDS.maxStdinBytes;
-  const entry = project ? entryOf(project) : "";
+  const activeFile = useWorkspace((s) => s.activeFile);
+  const entry = project ? entryOf(project, activeFile) : "";
   const source = project?.files.find((f) => f.path === entry)?.content ?? "";
   const language = project?.language ?? "";
   // What the program reads, from its current code, so the input can be checked against it.

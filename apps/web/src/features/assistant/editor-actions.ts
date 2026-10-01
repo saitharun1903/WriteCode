@@ -1,6 +1,7 @@
 "use client";
 
 import type { Monaco } from "@monaco-editor/react";
+import { LANGUAGES } from "@cw/shared";
 import { isRestricted } from "@/features/interview/restrict";
 import type { editor, languages } from "monaco-editor";
 import { askAssistant } from "@/features/commands/registry";
@@ -18,7 +19,7 @@ export function installAiQuickFix(monaco: Monaco) {
   monaco.editor.registerCommand("cw.ai.fixMarker", (_accessor: unknown, file: string, line: number, message: string) => {
     askAssistant(`Fix the problem on line ${line} of ${file}: "${message}"`);
   });
-  for (const language of ["java", "python", "c", "cpp", "javascript", "typescript"]) {
+  for (const language of new Set(LANGUAGES.map((l) => l.monacoLanguage))) {
     monaco.languages.registerCodeActionProvider(language, {
       provideCodeActions(model: editor.ITextModel, _range: unknown, context: languages.CodeActionContext) {
         const marker = context.markers.find((m: editor.IMarkerData) => m.severity >= monaco.MarkerSeverity.Warning);

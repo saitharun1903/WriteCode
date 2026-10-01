@@ -175,7 +175,7 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
   const current = live.interview;
   const project = useWorkspace.getState().project;
   const [name, setName] = useState(live.name || "");
-  const [language, setLanguage] = useState(project?.language ?? "java");
+  const [language, setLanguage] = useState(project?.language ?? LANGUAGES[0]!.id);
   const [duration, setDuration] = useState(current?.durationMin ?? 45);
   const [maxLeaves, setMaxLeaves] = useState<number>(current ? (current.maxLeaves ?? 0) : INTERVIEW_LIMITS.defaultMaxLeaves);
   const [title, setTitle] = useState(current?.title ?? "");

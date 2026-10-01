@@ -13,6 +13,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { cn } from "@/lib/cn";
 import { useExport, type Transfer } from "./api";
 import { safeFileName, saveFile } from "./code-pdf";
+import { DownloadDialog } from "./DownloadDialog";
 import { qrSvg } from "./qr";
 
 const SITE = "writecode.in";
@@ -347,8 +348,11 @@ function TransferDialog() {
 export function ExportDialogs() {
   const dialog = useExport((s) => s.dialog);
   const close = useExport((s) => s.close);
+  const project = useWorkspace((s) => s.project);
+  const activeFile = useWorkspace((s) => s.activeFile);
   return (
     <>
+      <DownloadDialog source={dialog === "download" && project ? { name: project.name, language: project.language, entryFile: project.entryFile, files: project.files, activeFile } : null} onClose={close} />
       <Dialog open={dialog === "share"} onOpenChange={(o) => !o && close()} title="Share this code" description="A link to a read-only copy of the project, as it is now." className="top-[6vh] max-h-[90vh] max-w-md overflow-y-auto">
         {dialog === "share" && <ShareDialog />}
       </Dialog>
@@ -359,13 +363,13 @@ export function ExportDialogs() {
   );
 }
 
-/** Title bar: download the code as a PDF, share it by link, or move projects to another device. */
+/** Title bar: download the code as one file, share it by link, or move projects to another device. */
 export function ExportButton() {
   return (
     <DropdownMenu
       align="end"
       entries={[
-        { label: "Download as PDF", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
+        { label: "Download code…", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
         { label: "Share a link to this code…", icon: <Link2 />, onSelect: () => runCommand("file.shareLink") },
         { kind: "separator" },
         { label: "Move projects to another device…", icon: <Smartphone />, onSelect: () => runCommand("project.transfer") },

@@ -247,7 +247,8 @@ function IgnoresInputNotice() {
   const ignores = useMemo(() => !!project && !readsInput(project.language, project.files), [project]);
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
-  const entry = project ? entryOf(project) : "";
+  const activeFile = useWorkspace((s) => s.activeFile);
+  const entry = project ? entryOf(project, activeFile) : "";
   const source = project?.files.find((f) => f.path === entry)?.content ?? "";
   const rewrite = useMemo(() => (project && ignores ? readInputFor(project.language, source) : null), [project, ignores, source]);
   if (!project || !ignores) return null;
@@ -310,7 +311,8 @@ function IgnoresInputNotice() {
 /** What the entry file reads from input, in order, from its current code. */
 function useReads(): string[] {
   const project = useWorkspace((s) => s.project);
-  const entry = project ? entryOf(project) : "";
+  const activeFile = useWorkspace((s) => s.activeFile);
+  const entry = project ? entryOf(project, activeFile) : "";
   const source = project?.files.find((f) => f.path === entry)?.content ?? "";
   const language = project?.language ?? "";
   return useMemo(() => describeReads(language, source), [language, source]);

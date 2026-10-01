@@ -15,6 +15,7 @@ import {
 } from "@cw/shared";
 import type { EventEmitter } from "./events.js";
 import { classifyCompile, classifyRun, explainRuntimeError, messageFor, timeLimitMessage } from "./sandbox/classify.js";
+import { compileProgram } from "./sandbox/compile.js";
 import { INPUT_FIFO, InputChannel, applyInput, readCommands } from "./sandbox/input.js";
 import { STDIN_PATH, Sandbox } from "./sandbox/sandbox.js";
 import { tracerFor, type Tracer } from "./visualize/tracers.js";
@@ -87,28 +88,12 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
     let compileTime: number | undefined;
     if (lang.compiler) {
       events.status("COMPILING");
-      const argv = expandCommand((tracer && lang.debugger?.compiler) || lang.compiler.command, {
-        entry: request.entry,
-        files: request.files,
-        sourceExtensions: lang.compiler.sourceExtensions,
-      });
-      const compile = await sandbox.runStep({
-        argv,
-        timeoutMs: limits.compileTimeoutMs,
-        maxOutputBytes: limits.maxOutputBytes,
-        onStdout: (c) => {
-          compileOutput += c;
-          events.chunk("compile", c);
-        },
-        onStderr: (c) => {
-          compileOutput += c;
-          events.chunk("compile", c);
-        },
-        isCancelled: ctx.isCancelled,
-      });
+      const compile = await compileProgram(sandbox, lang, request, (tracer && lang.debugger?.compiler) || lang.compiler.command, limits, ctx.isCancelled);
+      compileOutput = compile.output;
+      if (compileOutput) events.chunk("compile", compileOutput);
       compileTime = compile.durationMs;
-      const failed = classifyCompile(compile);
-      if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.exitCode ?? undefined });
+      const failed = classifyCompile(compile.step);
+      if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.step.exitCode ?? undefined });
     }
 
     if (tests) return finish("SUCCESS", { compileTime, ...(await runTests(ctx, sandbox, tests, limits)) });

@@ -65,12 +65,15 @@ export function StartScreen() {
   const createProject = useWorkspace((s) => s.createProject);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  /** The language chosen for a new project, while its name is being asked. */
+  const [naming, setNaming] = useState<string | null>(null);
   const filtered = projects.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
 
-  const create = async (id: string) => {
+  const create = async (id: string, name: string) => {
     setBusy(id);
-    await createProject(id);
+    await createProject(id, name);
     setBusy(null);
+    setNaming(null);
   };
 
   return (
@@ -79,7 +82,7 @@ export function StartScreen() {
         <header className="mb-9">
           <h1 className="text-[28px] font-bold tracking-tight text-fg">{PRODUCT.name}</h1>
           <p className="mt-1.5 text-[15px] text-fg-muted">
-            Free online compiler, debugger and visualizer for Java, Python, C, C++, JavaScript and TypeScript.
+            Free online compiler, debugger and visualizer for {LANGUAGES.slice(0, -1).map((l) => l.name).join(", ")} and {LANGUAGES[LANGUAGES.length - 1]!.name}.
           </p>
         </header>
         <section aria-labelledby="new-heading">
@@ -97,7 +100,7 @@ export function StartScreen() {
                 key={lang.id}
                 aria-label={`New ${lang.name} project`}
                 disabled={!!busy}
-                onClick={() => create(lang.id)}
+                onClick={() => setNaming(lang.id)}
                 className={cn(
                   "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
                   "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_6px_20px_-10px_rgb(53_116_240/0.5)] disabled:opacity-60",
@@ -113,6 +116,8 @@ export function StartScreen() {
             ))}
           </div>
         </section>
+
+        <NameDialog key={naming ?? "none"} language={naming} taken={allProjects.map((p) => p.name)} busy={!!busy} onCancel={() => setNaming(null)} onCreate={(name) => void create(naming!, name)} />
 
         {status === "error" && (
           <p className="mt-10 rounded-lg border border-danger/40 bg-danger-soft p-3 text-sm text-fg">
@@ -172,6 +177,49 @@ export function StartScreen() {
         </nav>
       </div>
     </div>
+  );
+}
+
+/** A name not used yet: "Java project", then "Java project 2", ... */
+export function suggestName(base: string, taken: readonly string[]): string {
+  const used = new Set(taken.map((n) => n.trim().toLowerCase()));
+  if (!used.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) if (!used.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+}
+
+/** Asks what to call a new project before it is made and opened. */
+function NameDialog({ language, taken, busy, onCancel, onCreate }: { language: string | null; taken: string[]; busy: boolean; onCancel: () => void; onCreate: (name: string) => void }) {
+  const lang = language ? getLanguage(language) : undefined;
+  // A suggestion, selected, so typing replaces it and Enter accepts it.
+  const [name, setName] = useState(() => (lang ? suggestName(`${lang.name} project`, taken) : ""));
+  const trimmed = name.trim();
+  return (
+    <Dialog
+      open={!!lang}
+      onOpenChange={(open) => !open && onCancel()}
+      title={lang ? `New ${lang.name} project` : "New project"}
+      description="Give the project a name. You can change it later."
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (trimmed && !busy) onCreate(trimmed);
+        }}
+      >
+        <div className="flex items-center gap-3">
+          {lang && <LanguageMark id={lang.id} size={36} />}
+          <Input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.target.select()} placeholder="Project name" aria-label="Project name" className="h-9 flex-1" />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!trimmed || busy}>
+            Create
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

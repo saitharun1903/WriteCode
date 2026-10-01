@@ -27,6 +27,7 @@ async function freshProject(page: Page, button: RegExp) {
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: button }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText("Hello World");
 }
 

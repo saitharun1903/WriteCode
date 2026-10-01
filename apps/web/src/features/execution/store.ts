@@ -2,10 +2,9 @@
 
 import { create } from "zustand";
 import {
-  anyFileIsRunnable,
-  findEntryPoints,
   isTerminalStatus,
   parseDiagnostics,
+  runTarget,
   type DebugCommand,
   type Diagnostic,
   type ExecutionMode,
@@ -62,9 +61,11 @@ interface ExecutionState {
 
   checkHealth: () => Promise<void>;
   /**
-   * Runs or debugs the project's entry file. `entry` runs another file and
-   * remembers it as the entry. When the entry file has no entry point and
-   * several files do, asks which one to run instead of guessing.
+   * Runs or debugs the program in the editor: the open file when it is a
+   * program of its own, otherwise the project's entry file. `entry` runs a
+   * given file instead. What ran is remembered as the entry file. When the
+   * program cannot be told (the open file and the entry file have no entry
+   * point and several other files do), asks which one to run instead of guessing.
    */
   execute: (options?: { mode?: ExecutionMode; entry?: string }) => Promise<void>;
   /** Sends a line (or raw text) of input to the running program; `eof` closes its stdin. */
@@ -323,19 +324,17 @@ export const useExecution = create<ExecutionState>((set, get) => {
       let project = useWorkspace.getState().project;
       if (!project) return;
 
-      // Compiled languages start from a main function; resolve which file holds it.
-      if (!anyFileIsRunnable(project.language)) {
-        const entries = findEntryPoints(project.language, project.files);
-        const entryFiles = [...new Set(entries.map((e) => e.file))];
-        if (entries.length > 0 && !entryFiles.includes(project.entryFile)) {
-          if (entryFiles.length === 1) {
-            useWorkspace.getState().setEntryFile(entryFiles[0]!);
-            project = useWorkspace.getState().project!;
-          } else if (entryChooser.open) {
-            entryChooser.open(mode);
-            return;
-          }
-        }
+      // What is on screen is what runs; other programs in the project are left alone.
+      const target = runTarget(project, entry ?? useWorkspace.getState().activeFile);
+      if (target.choices && entryChooser.open) {
+        entryChooser.open(mode);
+        return;
+      }
+      if (target.entry !== project.entryFile) {
+        useWorkspace.getState().setEntryFile(target.entry);
+        project = useWorkspace.getState().project ?? project;
+        // A read-only copy cannot remember the choice; it still runs what was asked.
+        if (project.entryFile !== target.entry) project = { ...project, entryFile: target.entry };
       }
       if (!project.files.some((f) => f.path === project.entryFile)) {
         set({

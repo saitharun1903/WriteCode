@@ -30,6 +30,7 @@ async function fresh(browser: Browser): Promise<Page> {
 
 async function projectWithCode(page: Page) {
   await page.getByRole("button", { name: "New Python project" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText("Hello World");
   await editor(page).click();
   await page.evaluate((text) => {
@@ -59,11 +60,90 @@ async function scan(code: Locator): Promise<string | undefined> {
   return jsQR(Uint8ClampedArray.from(pixels), side, side)?.data;
 }
 
+test("a new project asks for its name before it opens", async ({ browser }) => {
+  const page = await fresh(browser);
+  await page.getByRole("button", { name: "New C++ project" }).click();
+  const dialog = page.getByRole("dialog", { name: "New C++ project" });
+  const name = dialog.getByRole("textbox", { name: "Project name" });
+  // A name is suggested; nothing is made until it is confirmed.
+  await expect(name).toHaveValue("C++ project");
+  await expect(editor(page)).toHaveCount(0);
+  await name.fill("   ");
+  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
+  await name.fill("Sorting practice");
+  await name.press("Enter");
+  await expect(editor(page)).toContainText("Hello World");
+  await expect(page.getByRole("button", { name: "Sorting practice" }).first()).toBeVisible();
+
+  // Cancelling makes nothing.
+  await page.getByRole("button", { name: "Home" }).click();
+  await page.getByRole("button", { name: "New Java project" }).click();
+  await page.getByRole("dialog", { name: "New Java project" }).getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(editor(page)).toHaveCount(0);
+});
+
+test("a download asks which files and which format, and makes one file", async ({ browser }) => {
+  const page = await fresh(browser);
+  await projectWithCode(page);
+  await page.getByRole("button", { name: "New File" }).first().click();
+  await page.getByRole("textbox", { name: "Name" }).fill("notes.py");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name: /notes\.py/ })).toHaveAttribute("aria-selected", "true");
+  await page.evaluate(() => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue("# only notes\nLIMIT = 3\n");
+  });
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
+
+  await page.getByRole("button", { name: "Download and share" }).click();
+  await page.getByRole("menuitem", { name: "Download code…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Download code" });
+  const files = dialog.getByRole("list", { name: "Files to include" });
+  await expect(files.getByRole("checkbox")).toHaveCount(2);
+  await expect(dialog.getByText("2 files, 7 lines, in one PDF file.")).toBeVisible();
+
+  // Everything, as text: both files in one file, the watermark at the foot.
+  await dialog.getByRole("radio", { name: /Text/ }).click();
+  let [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Download", exact: true }).click()]);
+  expect(download.suggestedFilename()).toBe("Python-project.txt");
+  let text = await readFile((await download.path())!, "utf8");
+  expect(text).toContain("----- main.py");
+  expect(text).toContain("----- notes.py");
+  expect(text).toContain("LIMIT = 3");
+  expect(text.trimEnd().endsWith("WriteCode  ·  writecode.in")).toBe(true);
+  await expect(dialog).toHaveCount(0);
+
+  // Only the open file, as a Word document.
+  await page.getByRole("button", { name: "Download and share" }).click();
+  await page.getByRole("menuitem", { name: "Download code…" }).click();
+  await dialog.getByRole("button", { name: "Only the open file" }).click();
+  await expect(files.getByRole("checkbox", { checked: true })).toHaveCount(1);
+  await dialog.getByRole("radio", { name: /Word/ }).click();
+  await expect(dialog.getByText("1 file, 2 lines, in one Word file.")).toBeVisible();
+  [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Download", exact: true }).click()]);
+  expect(download.suggestedFilename()).toBe("Python-project.doc");
+  text = await readFile((await download.path())!, "utf8");
+  expect(text).toContain("notes.py");
+  expect(text).toContain("LIMIT");
+  expect(text).not.toContain("greet");
+  expect(text).toContain("writecode.in");
+
+  // Nothing chosen: nothing to download.
+  await page.getByRole("button", { name: "Download and share" }).click();
+  await page.getByRole("menuitem", { name: "Download code…" }).click();
+  await files.getByRole("checkbox").first().uncheck();
+  await files.getByRole("checkbox").last().uncheck();
+  await expect(dialog.getByRole("button", { name: "Download", exact: true })).toBeDisabled();
+  await expect(dialog.getByText("Choose at least one file.")).toBeVisible();
+});
+
 test("the code downloads as a PDF with every line and the product's name", async ({ browser }) => {
   const page = await fresh(browser);
   await projectWithCode(page);
   await page.getByRole("button", { name: "Download and share" }).click();
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Download as PDF" }).click()]);
+  await page.getByRole("menuitem", { name: "Download code…" }).click();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("dialog", { name: "Download code" }).getByRole("button", { name: "Download", exact: true }).click()]);
   expect(download.suggestedFilename()).toBe("Python-project.pdf");
   const pdf = await readFile((await download.path())!, "latin1");
   expect(pdf.startsWith("%PDF-1.4")).toBe(true);

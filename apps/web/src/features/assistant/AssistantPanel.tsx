@@ -37,7 +37,7 @@ import { toast } from "@/components/ui/toast";
 import { useSettings } from "@/features/settings/store";
 import { useVisualize } from "@/features/visualize/store";
 import { cn } from "@/lib/cn";
-import type { AssistantEffort } from "@cw/shared";
+import { monacoLanguageForPath, type AssistantEffort } from "@cw/shared";
 import { parseEditBlock, resolveEdit, type ResolvedHunk } from "./edits";
 import { plainMath } from "./plain-math";
 import { editTarget, useAssistant, type ChatMessage } from "./store";
@@ -199,7 +199,9 @@ function EditCard({ body, index }: { body: string; index: number }) {
 
   const resolved = applied ? null : resolveEdit(content, { ...block, file: target ?? block.file });
   const hunks = applied ? applied.hunks : resolved?.ok ? resolved.hunks : null;
-  const lang = /\.py$/.test(block.file) ? "python" : /\.(c|h)$/.test(block.file) ? "c" : /\.(cpp|cc|hpp)$/.test(block.file) ? "cpp" : /\.ts$/.test(block.file) ? "typescript" : /\.js$/.test(block.file) ? "javascript" : language;
+  // Coloured as the file's own language, whichever it is; the project's language when the name does not say.
+  const known = monacoLanguageForPath(block.file);
+  const lang = known === "plaintext" ? language : known;
   const lineLabel = hunks
     ? hunks.length === 1
       ? hunks[0]!.added.length > 1

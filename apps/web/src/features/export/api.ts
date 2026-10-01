@@ -62,11 +62,11 @@ export interface Transfer {
 }
 
 interface ExportState {
-  dialog: "share" | "transfer" | null;
+  dialog: "share" | "transfer" | "download" | null;
   /** The link being made for the open dialog. Started when the dialog opens, once. */
   share: Promise<string> | null;
   transfer: Promise<Transfer> | null;
-  open: (dialog: "share" | "transfer") => void;
+  open: (dialog: "share" | "transfer" | "download") => void;
   /** A fresh code after the last one expired. */
   renewTransfer: () => void;
   close: () => void;
@@ -95,7 +95,8 @@ export const useExport = create<ExportState>((set) => ({
   transfer: null,
   open: (dialog) => {
     const project = useWorkspace.getState().project;
-    if (dialog === "share") set({ dialog, share: project ? quiet(createShare(project)) : null });
+    if (dialog === "download") set({ dialog });
+    else if (dialog === "share") set({ dialog, share: project ? quiet(createShare(project)) : null });
     else set({ dialog, transfer: quiet(startTransfer()) });
   },
   renewTransfer: () => set({ transfer: quiet(startTransfer()) }),

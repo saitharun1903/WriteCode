@@ -1,3 +1,6 @@
+import { getLanguage } from "../languages/registry.js";
+import type { DiagnosticFormat } from "../languages/types.js";
+
 export type DiagnosticSeverity = "error" | "warning" | "info";
 
 export interface Diagnostic {
@@ -141,6 +144,14 @@ function parseNode(text: string, files: ReadonlySet<string>): Diagnostic[] {
   return [];
 }
 
+const PARSERS: Record<DiagnosticFormat, (text: string, files: ReadonlySet<string>) => Diagnostic[]> = {
+  gcc: parseGcc,
+  javac: parseJavac,
+  "jvm-trace": parseJvmTrace,
+  python: parsePython,
+  node: parseNode,
+};
+
 /**
  * Extracts navigable diagnostics from compiler output or program stderr.
  * `knownFiles` are project paths; diagnostics outside the project are dropped.
@@ -148,18 +159,5 @@ function parseNode(text: string, files: ReadonlySet<string>): Diagnostic[] {
 export function parseDiagnostics(languageId: string, text: string, knownFiles: Iterable<string>): Diagnostic[] {
   if (!text) return [];
   const files = new Set(knownFiles);
-  switch (languageId) {
-    case "c":
-    case "cpp":
-      return parseGcc(text, files);
-    case "java":
-      return [...parseJavac(text, files), ...parseJvmTrace(text, files)];
-    case "python":
-      return parsePython(text, files);
-    case "javascript":
-    case "typescript":
-      return parseNode(text, files);
-    default:
-      return [];
-  }
+  return (getLanguage(languageId)?.diagnostics ?? []).flatMap((format) => PARSERS[format](text, files));
 }

@@ -33,6 +33,7 @@ async function freshProject(page: Page, language: "Java" | "Python" | "JavaScrip
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: `New ${language} project` }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText("Hello World");
 }
 
@@ -434,6 +435,8 @@ test("several main classes: asks which to run and remembers the choice", async (
   await addFile(page, "Tool.java", 'public class Tool {\n    public static void main(String[] args) {\n        System.out.println("tool " + Main.helper());\n    }\n}\n');
   await addFile(page, "Demo.java", 'public class Demo {\n    public static void main(String[] args) {\n        System.out.println("demo");\n    }\n}\n');
 
+  // The open file is not a program, and neither is the entry file: two others are.
+  await openFile(page, "Main.java");
   await page.getByRole("button", { name: "Run program" }).click();
   const dialog = page.getByRole("dialog", { name: "Select entry point" });
   await expect(dialog).toBeVisible();
@@ -446,7 +449,41 @@ test("several main classes: asks which to run and remembers the choice", async (
   await expect(page.getByText("Success", { exact: true })).toBeVisible({ timeout: 120_000 });
   await expect(output(page)).toContainText("tool helper");
   await expect(page.getByRole("button", { name: "Run configuration" })).toContainText("Tool.java");
+
+  // A program in the editor is the one that runs.
+  await openFile(page, "Demo.java");
+  await expect(page.getByRole("button", { name: "Run configuration" })).toContainText("Demo.java");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("demo", { timeout: 120_000 });
+  await expect(output(page)).not.toContainText("tool helper");
 });
+
+for (const [language, own, broken, program, expected] of [
+  ["Java", "Second.java", "Broken.java", 'public class Second {\n    public static void main(String[] args) {\n        System.out.println("second runs");\n    }\n}\n', "second runs"],
+  ["C++", "second.cpp", "broken.cpp", '#include <iostream>\nint main() {\n    std::cout << "second runs" << std::endl;\n}\n', "second runs"],
+  ["C", "second.c", "broken.c", '#include <stdio.h>\nint main(void) {\n    printf("second runs\\n");\n    return 0;\n}\n', "second runs"],
+  ["Python", "second.py", "broken.py", 'print("second runs")\n', "second runs"],
+  ["JavaScript", "second.js", "broken.js", 'console.log("second runs");\n', "second runs"],
+  ["TypeScript", "second.ts", "broken.ts", 'const text: string = "second runs";\nconsole.log(text);\n', "second runs"],
+] as const) {
+  test(`${language}: Run starts the file in the editor; a broken file beside it is left alone`, async ({ page }) => {
+    await freshProject(page, language);
+    await addFile(page, broken, "this is not a program {\n");
+    await addFile(page, own, program);
+    await expect(page.getByRole("button", { name: "Run configuration" })).toContainText(own);
+    await page.getByRole("button", { name: "Run program" }).click();
+    await expect(output(page)).toContainText(expected, { timeout: 120_000 });
+    await expect(page.getByText("Success", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(output(page)).not.toContainText("Hello World");
+
+    // Back on the starter file, that is the one that runs.
+    await page.getByRole("tab").first().click();
+    await page.getByRole("button", { name: "Run program" }).click();
+    await expect(output(page)).toContainText("Hello World", { timeout: 120_000 });
+    await expect(page.getByText("Success", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(output(page)).not.toContainText(expected);
+  });
+}
 
 test("recent projects: running the untouched starter does not count; changing the code does", async ({ page }) => {
   await freshProject(page, "Python");
@@ -456,6 +493,7 @@ test("recent projects: running the untouched starter does not count; changing th
   await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "New Python project" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello");
   await setCode(page, `print('mine')
 `);
@@ -727,6 +765,7 @@ test("errors and output belong to their project: opening another project starts 
 
   await page.getByRole("button", { name: "Home" }).click();
   await page.getByRole("button", { name: "New Java project" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello");
   await expect(page.locator(".monaco-editor .squiggly-error")).toHaveCount(0);
   await page.getByRole("button", { name: "Run program" }).click();

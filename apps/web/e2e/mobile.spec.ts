@@ -21,6 +21,7 @@ async function freshPython(page: Page) {
   });
   await page.reload();
   await page.getByRole("button", { name: "New Python project" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello World");
 }
 

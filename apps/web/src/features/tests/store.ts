@@ -2,8 +2,7 @@
 
 import { create } from "zustand";
 import {
-  anyFileIsRunnable,
-  findEntryPoints,
+  runTarget,
   parseDiagnostics,
   TEST_LIMITS,
   type ExecutionResult,
@@ -61,11 +60,22 @@ let generation = 0;
 
 const tests = (): TestCase[] => useWorkspace.getState().project?.tests ?? [];
 
-/** The file with the main function when the entry file has none (same rule as Run). */
-export function entryOf(project: Project): string {
-  if (anyFileIsRunnable(project.language)) return project.entryFile;
-  const files = [...new Set(findEntryPoints(project.language, project.files).map((e) => e.file))];
-  return files.length && !files.includes(project.entryFile) ? files[0]! : project.entryFile;
+/**
+ * The program tests run, by the same rule as Run: the file in the editor when
+ * it is a program of its own, else the entry file (or the file with the main
+ * function when the entry file has none).
+ */
+export function entryOf(project: Project, activeFile: string | null = useWorkspace.getState().activeFile): string {
+  const target = runTarget(project, activeFile);
+  return target.choices?.[0] ?? target.entry;
+}
+
+/** `entryOf`, remembered as the project's entry file so that Run, the tests and a live session agree on the program. */
+export function chooseEntry(project: Project): string {
+  const entry = entryOf(project);
+  const ws = useWorkspace.getState();
+  if (entry !== project.entryFile && ws.project?.id === project.id) ws.setEntryFile(entry);
+  return entry;
 }
 
 export const useTests = create<TestsState>((set, get) => {
@@ -201,7 +211,7 @@ export const useTests = create<TestsState>((set, get) => {
         created = await api.createExecution({
           language: project.language,
           files: project.files.map((f) => ({ path: f.path, content: f.content })),
-          entry: entryOf(project),
+          entry: chooseEntry(project),
           mode: "test",
           tests: chosen.map((t) => t.input),
         });

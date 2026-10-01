@@ -1,7 +1,6 @@
 import type Docker from "dockerode";
 import type { Redis } from "ioredis";
 import {
-  expandCommand,
   parseDebugCommand,
   requireLanguage,
   type DebugCommand,
@@ -13,6 +12,7 @@ import {
 } from "@cw/shared";
 import type { EventEmitter } from "../events.js";
 import { classifyCompile, explainRuntimeError } from "../sandbox/classify.js";
+import { compileProgram } from "../sandbox/compile.js";
 import { INPUT_FIFO, InputChannel, applyInput, readCommands } from "../sandbox/input.js";
 import { Sandbox } from "../sandbox/sandbox.js";
 import { debugAdapterFor, type DebugAdapter } from "./adapters.js";
@@ -113,23 +113,12 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
     let compileTime: number | undefined;
     if (lang.compiler) {
       events.status("COMPILING");
-      const compile = await sandbox.runStep({
-        argv: expandCommand(lang.debugger?.compiler ?? lang.compiler.command, { entry: request.entry, files: request.files, sourceExtensions: lang.compiler.sourceExtensions }),
-        timeoutMs: limits.compileTimeoutMs,
-        maxOutputBytes: limits.maxOutputBytes,
-        onStdout: (c) => {
-          compileOutput += c;
-          events.chunk("compile", c);
-        },
-        onStderr: (c) => {
-          compileOutput += c;
-          events.chunk("compile", c);
-        },
-        isCancelled: ctx.isCancelled,
-      });
+      const compile = await compileProgram(sandbox, lang, request, lang.debugger?.compiler ?? lang.compiler.command, limits, ctx.isCancelled);
+      compileOutput = compile.output;
+      if (compileOutput) events.chunk("compile", compileOutput);
       compileTime = compile.durationMs;
-      const failed = classifyCompile(compile);
-      if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.exitCode ?? undefined });
+      const failed = classifyCompile(compile.step);
+      if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.step.exitCode ?? undefined });
     }
 
     const channel = interactive

@@ -49,9 +49,10 @@ function source(url: URL, cached: Promise<string> | null, set: (p: Promise<strin
 /** `stdinPath` is the program's stdin: the input file, or the interactive FIFO. */
 export async function debugAdapterFor(docker: Docker, request: ExecutionRequest, stdinPath = STDIN_PATH): Promise<DebugAdapter> {
   const common = { stdinPath, files: request.files.map((f) => f.path), breakpoints: request.breakpoints ?? {} };
-  switch (request.language) {
-    case "java": {
-      const lang = requireLanguage("java");
+  // The tooling is chosen by how the language is debugged, so a language added with a known protocol needs nothing here.
+  switch (requireLanguage(request.language).debugger?.protocol) {
+    case "jdwp": {
+      const lang = requireLanguage(request.language);
       const mainClass = expandCommand(["{entryClass}"], { entry: request.entry, files: request.files })[0]!;
       // Program JVM flags mirror normal runs, with a heap cap so both JVMs fit.
       const vmOptions = lang.runtime.command.filter((a) => a.startsWith("-X")).concat("-Xmx192m").join(" ");
@@ -67,7 +68,7 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         monitorInput: true,
       };
     }
-    case "python": {
+    case "settrace": {
       pythonSource ??= readFile(PYTHON_ADAPTER_URL, "utf8").catch((e: unknown) => {
         pythonSource = null;
         throw e;
@@ -81,8 +82,7 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         monitorInput: false,
       };
     }
-    case "javascript":
-    case "typescript": {
+    case "inspector": {
       const lang = requireLanguage(request.language);
       return {
         files: [{ path: NODE_ADAPTER_PATH, content: await source(NODE_ADAPTER_URL, nodeSource, (p) => (nodeSource = p)) }],
@@ -99,8 +99,7 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         monitorInput: true,
       };
     }
-    case "c":
-    case "cpp":
+    case "gdb":
       return {
         files: [{ path: GDB_ADAPTER_PATH, content: await source(GDB_ADAPTER_URL, gdbSource, (p) => (gdbSource = p)) }],
         // gdb runs the adapter; the program is gdb's child, reading its stdin as in a normal run.

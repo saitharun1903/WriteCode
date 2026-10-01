@@ -1,7 +1,7 @@
 "use client";
 
 import { Bug, ChevronDown, ClipboardList, Ellipsis, FileDown, Link2, Menu, Smartphone, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
-import { anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
+import { anyFileIsRunnable, findEntryPoints, getLanguage, runTarget } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
@@ -107,9 +107,12 @@ function ThemeToggle() {
 /** Grouped run controls: run configuration, Run, Debug and Stop in one capsule. */
 function RunControls() {
   const project = useWorkspace((s) => s.project)!;
+  const activeFile = useWorkspace((s) => s.activeFile);
   const run = useExecution((s) => s.run);
   const running = isOwnRun(run);
   const lang = getLanguage(project.language);
+  // What Run starts: the program in the editor, else the project's entry file.
+  const target = runTarget(project, activeFile).entry;
   // Compiled languages list their main functions; interpreted ones can run any source file.
   const runnable = !lang
     ? []
@@ -122,12 +125,16 @@ function RunControls() {
       <DropdownMenu
         align="end"
         entries={[
-          { kind: "label", label: "Entry point" },
+          { kind: "label", label: "Program to run" },
           ...(runnable.length
             ? runnable.map((r) => ({
                 label: r.label,
-                checked: r.file === project.entryFile,
-                onSelect: () => useWorkspace.getState().setEntryFile(r.file),
+                checked: r.file === target,
+                // Run starts what is in the editor, so choosing a program opens it.
+                onSelect: () => {
+                  useWorkspace.getState().setEntryFile(r.file);
+                  useWorkspace.getState().openFile(r.file);
+                },
               }))
             : [{ label: anyFileIsRunnable(project.language) ? `No ${lang?.name ?? ""} files` : "No main function found", disabled: true, onSelect: () => {} }]),
           { kind: "separator" },
@@ -138,8 +145,8 @@ function RunControls() {
             aria-label="Run configuration"
             className="flex h-full max-w-48 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-fg transition-colors hover:bg-hover data-[state=open]:bg-active"
           >
-            <FileIcon name={project.entryFile || "file"} />
-            <span className="hidden truncate sm:inline">{project.entryFile ? project.entryFile.split("/").pop() : "No entry file"}</span>
+            <FileIcon name={target || "file"} />
+            <span className="hidden truncate sm:inline">{target ? target.split("/").pop() : "No entry file"}</span>
             <ChevronDown className="size-3.5 shrink-0 text-fg-subtle" />
           </button>
         }
@@ -179,7 +186,7 @@ function PhoneMenu({ interview }: { interview: boolean }) {
   const theme = useResolvedTheme();
   const entries: MenuEntry[] = [
     { label: "Share live session", icon: <Users />, onSelect: () => useLive.getState().setPanelOpen(true) },
-    { label: "Download as PDF", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
+    { label: "Download code…", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
     { label: "Share a link to this code", icon: <Link2 />, onSelect: () => runCommand("file.shareLink") },
     { label: "Move projects to another device", icon: <Smartphone />, onSelect: () => runCommand("project.transfer") },
     ...(interview ? [{ label: "Interview mode", icon: <ClipboardList />, onSelect: () => runCommand("interview.start") }] : []),

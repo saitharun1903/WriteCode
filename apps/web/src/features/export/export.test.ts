@@ -2,6 +2,8 @@ import jsQR from "jsqr";
 import { describe, expect, it } from "vitest";
 import { cleanSharedCode, cleanTransferProject } from "@cw/shared";
 import { highlight, languageOf } from "@/lib/highlight";
+import { suggestName } from "@/features/projects/StartScreen";
+import { CODE_FORMATS, buildCodeText, buildCodeWordHtml } from "./code-doc";
 import { buildCodePdf } from "./code-pdf";
 import { QUIET, inFinder, makeQr, qrSvg } from "./qr";
 
@@ -154,5 +156,65 @@ describe("what a link may carry", () => {
     expect(cleanTransferProject({ ...good, id: "p1", updatedAt: 9_999_999 }, 1_000)?.updatedAt).toBe(1_000);
     expect(cleanTransferProject({ ...good, id: "has space" })).toBeNull();
     expect(cleanTransferProject(good)).toBeNull();
+  });
+});
+
+describe("code as one file, in the chosen format", () => {
+  const input = {
+    name: "Sorting <demo>",
+    language: "cpp",
+    entryFile: "main.cpp",
+    at: Date.UTC(2026, 0, 5),
+    files: [
+      { path: "util.h", content: "int twice(int n);\n" },
+      { path: "main.cpp", content: '#include "util.h"\nint main() { return twice(2) < 5; }\n' },
+    ],
+  };
+
+  it("text: the title, every chosen file under its name, the product's name at the foot", () => {
+    const text = buildCodeText(input);
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Sorting <demo>");
+    expect(lines[1]).toContain("2 files");
+    expect(lines[1]).toContain("3 lines");
+    // The file that runs comes first.
+    expect(text.indexOf("----- main.cpp")).toBeLessThan(text.indexOf("----- util.h"));
+    expect(text).toContain('#include "util.h"\nint main() { return twice(2) < 5; }');
+    expect(lines.filter(Boolean).at(-1)).toBe("WriteCode  ·  writecode.in");
+    // Only what was chosen is in the file.
+    const one = buildCodeText({ ...input, files: input.files.slice(0, 1) });
+    expect(one).not.toContain("main.cpp");
+    expect(one).toContain("1 file  ·  1 line");
+  });
+
+  it("Word: coloured code that cannot break out of the page, and the watermark", () => {
+    const html = buildCodeWordHtml(input);
+    expect(html).toContain("<h1");
+    expect(html).toContain("Sorting &lt;demo&gt;");
+    expect(html).not.toContain("<demo>");
+    expect(html).toContain(") &lt; </span>");
+    expect(html).toMatch(/font-weight:bold">return<\/span>/);
+    expect(html.indexOf(">main.cpp<")).toBeLessThan(html.indexOf(">util.h<"));
+    expect(html).toContain("WriteCode");
+    expect(html).toContain("writecode.in");
+  });
+
+  it("every format is one file with its own extension", () => {
+    expect(CODE_FORMATS.map((f) => f.extension)).toEqual(["pdf", "doc", "txt"]);
+  });
+
+  it("colours a file by its own language in every project", () => {
+    expect(languageOf("util.h", "c")).toBe("c");
+    expect(languageOf("util.h", "cpp")).toBe("cpp");
+    expect(languageOf("tool.py", "java")).toBe("python");
+    expect(languageOf("main.mts", "javascript")).toBe("typescript");
+    expect(languageOf("notes.txt", "java")).toBe("java");
+  });
+});
+
+describe("a new project's name", () => {
+  it("suggests one that is not taken", () => {
+    expect(suggestName("Java project", [])).toBe("Java project");
+    expect(suggestName("Java project", ["java project", "Java project 2 "])).toBe("Java project 3");
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/shared";
+import { canRunFile, getLanguage, parentOf } from "@cw/shared";
 import { blockedForCandidate, isRestricted } from "@/features/interview/restrict";
 import { useInterviewUI } from "@/features/interview/ui";
 import { useCandidate } from "@/features/interview/candidate";
@@ -58,12 +58,8 @@ function showSide(view: SideView) {
 /** True when the active file can be run on its own: it has a main function, or the language runs any file. */
 function activeFileRunnable(): boolean {
   const { project, activeFile } = useWorkspace.getState();
-  if (!project || !activeFile) return false;
-  const lang = getLanguage(project.language);
-  if (!lang?.extensions.some((e) => activeFile.toLowerCase().endsWith(e))) return false;
-  if (anyFileIsRunnable(project.language)) return true;
-  const file = project.files.find((f) => f.path === activeFile);
-  return !!file && findEntryPoints(project.language, [file]).length > 0;
+  const file = project && activeFile ? project.files.find((f) => f.path === activeFile) : undefined;
+  return !!project && !!file && canRunFile(project.language, file);
 }
 
 /** True when the open project's language has a working visualizer. */
@@ -287,16 +283,11 @@ export const COMMANDS: Command[] = [
   },
   {
     id: "file.downloadPdf",
-    title: "Download Code as PDF",
+    title: "Download Code (PDF, Word or Text)…",
     category: "File",
     enabled: hasProject,
-    run: () => {
-      const project = useWorkspace.getState().project;
-      if (!project) return;
-      void import("@/features/export/code-pdf")
-        .then((m) => m.downloadCodePdf({ name: project.name, language: project.language, entryFile: project.entryFile, files: project.files }))
-        .catch(() => toast.error("The PDF could not be made", "Try again."));
-    },
+    // Asks which files and which format first.
+    run: () => useExport.getState().open("download"),
   },
   {
     id: "file.shareLink",

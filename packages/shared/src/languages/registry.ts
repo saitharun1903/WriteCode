@@ -8,6 +8,8 @@ const java: LanguageDefinition = {
   monacoLanguage: "java",
   supportLevel: "stable",
   entryFile: "Main.java",
+  entryPoints: "class-main",
+  diagnostics: ["javac", "jvm-trace"],
   template: [
     {
       path: "Main.java",
@@ -21,8 +23,9 @@ const java: LanguageDefinition = {
   ],
   compiler: {
     // Serial GC and C1-only JIT keep javac fast and small inside a 1-CPU sandbox.
-    command: ["javac", "-J-XX:+UseSerialGC", "-J-XX:TieredStopAtLevel=1", "-g", "-encoding", "UTF-8", "-d", "out", "{sources}"],
+    command: ["javac", "-J-XX:+UseSerialGC", "-J-XX:TieredStopAtLevel=1", "-g", "-encoding", "UTF-8", "-implicit:class", "-sourcepath", "{sourceRoots}", "-d", "out", "{sources}"],
     sourceExtensions: [".java"],
+    builds: "classes",
   },
   runtime: {
     image: "eclipse-temurin:21-jdk",
@@ -40,6 +43,9 @@ const python: LanguageDefinition = {
   monacoLanguage: "python",
   supportLevel: "stable",
   entryFile: "main.py",
+  entryPoints: "main-guard",
+  imports: [String.raw`^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b`, String.raw`^[ \t]*import[ \t]+([\w., \t]+)`],
+  diagnostics: ["python"],
   template: [
     {
       path: "main.py",
@@ -71,6 +77,8 @@ const cpp: LanguageDefinition = {
   monacoLanguage: "cpp",
   supportLevel: "stable",
   entryFile: "main.cpp",
+  entryPoints: "function-main",
+  diagnostics: ["gcc"],
   template: [
     {
       path: "main.cpp",
@@ -86,6 +94,7 @@ int main() {
   compiler: {
     command: ["g++", "-std=c++20", "-O2", "-g", "-Wall", "-o", "out/main", "{sources}"],
     sourceExtensions: [".cpp", ".cc", ".cxx"],
+    builds: "program",
   },
   runtime: {
     image: "gcc:14",
@@ -108,6 +117,8 @@ const c: LanguageDefinition = {
   monacoLanguage: "c",
   supportLevel: "beta",
   entryFile: "main.c",
+  entryPoints: "function-main",
+  diagnostics: ["gcc"],
   template: [
     {
       path: "main.c",
@@ -123,6 +134,7 @@ int main(void) {
   compiler: {
     command: ["gcc", "-std=c17", "-O2", "-g", "-Wall", "-o", "out/main", "{sources}", "-lm"],
     sourceExtensions: [".c"],
+    builds: "program",
   },
   runtime: {
     image: "gcc:14",
@@ -171,6 +183,8 @@ const javascript: LanguageDefinition = {
   monacoLanguage: "javascript",
   supportLevel: "beta",
   entryFile: "main.js",
+  imports: [String.raw`(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*["']([^"'\n]+)["']`],
+  diagnostics: ["node"],
   template: [
     {
       path: "main.js",
@@ -194,6 +208,8 @@ const typescript: LanguageDefinition = {
   monacoLanguage: "typescript",
   supportLevel: "beta",
   entryFile: "main.ts",
+  imports: [String.raw`(?:\bfrom|\bimport|\brequire\s*\(|\bimport\s*\()\s*["']([^"'\n]+)["']`],
+  diagnostics: ["node"],
   template: [
     {
       path: "main.ts",

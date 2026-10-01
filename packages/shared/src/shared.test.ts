@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   LANGUAGES,
+  anyFileIsRunnable,
   buildTree,
+  canRunFile,
+  compilePlans,
   expandCommand,
   findEntryPoints,
+  classFilesUsed,
+  modulesUsed,
+  runTarget,
   getLanguage,
   isSafeRelativePath,
   monacoLanguageForPath,
@@ -243,5 +249,124 @@ describe("debug protocol", () => {
     expect(parseDebugCommand({ cmd: "evaluate", expression: "x * 2", frame: 0 })).toEqual({ cmd: "evaluate", expression: "x * 2", frame: 0 });
     expect(parseDebugCommand({ cmd: "evaluate", expression: " ", frame: 0 })).toBeNull();
     expect(parseDebugCommand({ cmd: "launch" })).toBeNull();
+  });
+});
+
+describe("what Run builds and starts", () => {
+  const javaMain = (name: string, body = "") => `public class ${name} {\n  public static void main(String[] args) {${body}}\n}\n`;
+
+  it("runs the file in the editor when it is a program, in every language", () => {
+    const java = { language: "java", entryFile: "Main.java", files: [{ path: "Main.java", content: javaMain("Main") }, { path: "Other.java", content: javaMain("Other") }, { path: "Helper.java", content: "class Helper {}" }] };
+    expect(runTarget(java, "Other.java")).toEqual({ entry: "Other.java" });
+    // A class with no main method is not a program: the entry file runs.
+    expect(runTarget(java, "Helper.java")).toEqual({ entry: "Main.java" });
+    expect(runTarget(java, null)).toEqual({ entry: "Main.java" });
+
+    const c = { language: "c", entryFile: "main.c", files: [{ path: "main.c", content: "int main(void) { return 0; }" }, { path: "b.c", content: "int main(void) { return 1; }" }, { path: "b.h", content: "" }] };
+    expect(runTarget(c, "b.c")).toEqual({ entry: "b.c" });
+    expect(runTarget(c, "b.h")).toEqual({ entry: "main.c" });
+
+    for (const [language, ext] of [["python", "py"], ["javascript", "js"], ["typescript", "ts"]] as const) {
+      const p = { language, entryFile: `main.${ext}`, files: [{ path: `main.${ext}`, content: "" }, { path: `two.${ext}`, content: "" }, { path: "data.txt", content: "" }] };
+      expect(runTarget(p, `two.${ext}`)).toEqual({ entry: `two.${ext}` });
+      expect(runTarget(p, "data.txt")).toEqual({ entry: `main.${ext}` });
+    }
+  });
+
+  it("a module the entry program loads runs that program; a program of its own runs itself", () => {
+    const py = {
+      language: "python",
+      entryFile: "main.py",
+      files: [
+        { path: "main.py", content: "import sys, shapes\nfrom tools.maths import twice\nprint(twice(2))\n" },
+        { path: "shapes.py", content: "from tools import paint\ndef area(): return 1\n" },
+        { path: "tools/maths.py", content: "def twice(n): return n * 2\n" },
+        { path: "tools/paint.py", content: "def red(): return 'red'\n" },
+        { path: "tools/__init__.py", content: "" },
+        { path: "sum.py", content: "print(sum([1, 2]))\n" },
+        { path: "guarded.py", content: "def f(): return 1\n\nif __name__ == '__main__':\n    print(f())\n" },
+      ],
+    };
+    expect(modulesUsed("python", "main.py", py.files)).toEqual(["shapes.py", "tools/__init__.py", "tools/maths.py"]);
+    expect(runTarget(py, "shapes.py")).toEqual({ entry: "main.py" });
+    expect(runTarget(py, "tools/maths.py")).toEqual({ entry: "main.py" });
+    // Not loaded by main.py (the word "sum" in its code is not an import): a program of its own.
+    expect(runTarget(py, "sum.py")).toEqual({ entry: "sum.py" });
+    expect(runTarget(py, "tools/paint.py")).toEqual({ entry: "tools/paint.py" });
+    // Loaded or not, a file with a start of its own runs itself.
+    expect(runTarget({ ...py, files: [{ path: "main.py", content: "import guarded\n" }, ...py.files.slice(1)] }, "guarded.py")).toEqual({ entry: "guarded.py" });
+
+    for (const [language, ext, load] of [
+      ["javascript", "js", 'const { Stack } = require("./lib/stack");\nimport("./lazy.js");\n'],
+      ["typescript", "ts", 'import { Stack } from "./lib/stack.ts";\nconst lazy = await import("./lazy.ts");\n'],
+    ] as const) {
+      const p = {
+        language,
+        entryFile: `main.${ext}`,
+        files: [
+          { path: `main.${ext}`, content: load },
+          { path: `lib/stack.${ext}`, content: language === "javascript" ? 'const node = require("./node");\n' : 'import { Node } from "./node";\n' },
+          { path: `lib/node.${ext}`, content: "" },
+          { path: `lazy.${ext}`, content: "" },
+          { path: `other.${ext}`, content: 'console.log("stack");\n' },
+        ],
+      };
+      expect(modulesUsed(language, p.entryFile, p.files), language).toEqual([`lazy.${ext}`, `lib/node.${ext}`, `lib/stack.${ext}`]);
+      expect(runTarget(p, `lib/node.${ext}`), language).toEqual({ entry: `main.${ext}` });
+      expect(runTarget(p, `other.${ext}`), language).toEqual({ entry: `other.${ext}` });
+    }
+  });
+
+  it("asks when the program cannot be told", () => {
+    const p = { language: "java", entryFile: "Gone.java", files: [{ path: "A.java", content: javaMain("A") }, { path: "B.java", content: javaMain("B") }, { path: "notes.txt", content: "" }] };
+    expect(runTarget(p, "notes.txt")).toEqual({ entry: "Gone.java", choices: ["A.java", "B.java"] });
+    expect(runTarget({ ...p, files: p.files.slice(1) }, null)).toEqual({ entry: "B.java" });
+  });
+
+  it("every language says how it is built, where programs start and how errors read", () => {
+    for (const lang of LANGUAGES) {
+      expect(lang.diagnostics.length, lang.id).toBeGreaterThan(0);
+      expect(anyFileIsRunnable(lang.id), lang.id).toBe(!lang.compiler);
+      // A compiled language has to say where a program starts, or Run could not tell programs apart.
+      if (lang.compiler) expect(lang.entryPoints, lang.id).toBeDefined();
+      expect(canRunFile(lang.id, lang.template.find((f) => f.path === lang.entryFile)!), lang.id).toBe(true);
+    }
+  });
+
+  it("Java: gives the compiler the file being run and the files it uses", () => {
+    const java = getLanguage("java")!;
+    const files = [
+      { path: "Main.java", content: javaMain("Main", ' new Node(); Tools.twice(2); /* Broken */ String s = "Broken"; ') },
+      { path: "util/Tools.java", content: "public class Tools { static int twice(int n) { return Maths.twice(n); } }" },
+      { path: "util/Maths.java", content: "public class Maths { static int twice(int n) { return n * 2; } }" },
+      { path: "lists/LinkedList.java", content: "public class LinkedList {}\nclass Node {}\n" },
+      { path: "Broken.java", content: "public class Broken {" },
+    ];
+    const plans = compilePlans(java, { entry: "Main.java", files });
+    // A name in a comment or a string is not a use: Broken.java stays out.
+    expect(plans.map((p) => p.sources)).toEqual([["Main.java", "lists/LinkedList.java", "util/Maths.java", "util/Tools.java"]]);
+    const argv = plans[0]!.argv;
+    expect(argv[argv.indexOf("-sourcepath") + 1]).toBe(".:lists:util");
+    expect(argv.slice(-4)).toEqual(plans[0]!.sources);
+    expect(classFilesUsed("java", "Broken.java", files)).toEqual([]);
+    expect(classFilesUsed("java", "util/Tools.java", files)).toEqual(["util/Maths.java"]);
+    // One file: one build.
+    expect(compilePlans(java, { entry: "Main.java", files: files.slice(0, 1) })).toHaveLength(1);
+  });
+
+  it("C and C++: leaves out the other programs, then the helpers too", () => {
+    const cpp = getLanguage("cpp")!;
+    const files = [
+      { path: "main.cpp", content: "int main() {}" },
+      { path: "other.cpp", content: "int main() {}" },
+      { path: "util.cpp", content: "int twice(int n) { return n * 2; }" },
+      { path: "util.h", content: "" },
+    ];
+    expect(compilePlans(cpp, { entry: "main.cpp", files }).map((p) => p.sources)).toEqual([["main.cpp", "util.cpp"], ["main.cpp"]]);
+    expect(compilePlans(cpp, { entry: "other.cpp", files }).map((p) => p.sources)).toEqual([["other.cpp", "util.cpp"], ["other.cpp"]]);
+    expect(compilePlans(cpp, { entry: "main.cpp", files: files.slice(0, 2) }).map((p) => p.sources)).toEqual([["main.cpp"]]);
+    // The debugger's build follows the same plan.
+    expect(compilePlans(cpp, { entry: "main.cpp", files }, cpp.debugger!.compiler)[0]!.argv).toEqual(["g++", "-std=c++20", "-O0", "-g3", "-Wall", "-o", "out/main", "main.cpp", "util.cpp"]);
+    expect(compilePlans(getLanguage("python")!, { entry: "main.py", files: [] })).toEqual([]);
   });
 });

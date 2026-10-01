@@ -1170,3 +1170,80 @@ describe.skipIf(!enabled).concurrent("Test mode", () => {
     expect(o.result.tests).toBeUndefined();
   });
 });
+
+// ================================================================== Only the program being run
+
+describe.skipIf(!enabled).concurrent("Only the program being run is built", () => {
+  const BROKEN_JAVA = "public class Broken {\n    public static void main(String[] args) {\n        int x = ;\n    }\n}\n";
+
+  it("Java: a mistake in another program does not stop this one", { timeout: T }, async () => {
+    const o = await run("java", { "Main.java": main(`        System.out.println("ok");`), "Broken.java": BROKEN_JAVA, "notes/Half.java": "public class Half {" });
+    expectOk(o, "ok\n");
+    expect(o.result.compileOutput).toBe("");
+  });
+
+  it("Java: the file being run still reports its own mistakes, and only those", { timeout: T }, async () => {
+    const o = await run("java", { "Main.java": main(`        int y = ;`), "Broken.java": BROKEN_JAVA });
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(o.result.compileOutput).toContain("Main.java:3: error");
+    expect(o.result.compileOutput).not.toContain("Broken.java");
+  });
+
+  it("Java: a mistake in a class the program uses is reported", { timeout: T }, async () => {
+    const o = await run("java", { "Main.java": main(`        System.out.println(new Helper().value());`), "Helper.java": "public class Helper {\n    int value() { return ; }\n}\n", "Broken.java": BROKEN_JAVA });
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(o.result.compileOutput).toContain("Helper.java:2: error");
+    expect(o.result.compileOutput).not.toContain("Broken.java");
+  });
+
+  it("Java: classes in a folder, and a class kept in a file with another name, are found", { timeout: T }, async () => {
+    const files = {
+      "Main.java": main(`        System.out.println(new Node(4).value + Tools.twice(3));`),
+      "lists/LinkedList.java": "public class LinkedList {\n    Node head;\n}\n\nclass Node {\n    int value;\n    Node(int v) { value = v; }\n}\n",
+      "util/Tools.java": "public class Tools {\n    static int twice(int n) { return n * 2; }\n}\n",
+      "Broken.java": BROKEN_JAVA,
+    };
+    expectOk(await run("java", files), "10\n");
+  });
+
+  it("C++: each file with a main function is a program of its own", { timeout: T }, async () => {
+    const files = {
+      "first.cpp": '#include <iostream>\nint main() { std::cout << "first\\n"; }\n',
+      "second.cpp": '#include <iostream>\nint main() { std::cout << "second\\n"; }\n',
+      "broken.cpp": "int main() { return x }\n",
+    };
+    expectOk(await run("cpp", files, { entry: "second.cpp" }), "second\n");
+    expectOk(await run("cpp", files, { entry: "first.cpp" }), "first\n");
+    const bad = await run("cpp", files, { entry: "broken.cpp" });
+    expect(bad.result.status).toBe("COMPILATION_ERROR");
+    expect(bad.result.compileOutput).toContain("broken.cpp:1");
+    expect(bad.result.compileOutput).not.toContain("second.cpp");
+  });
+
+  it("C++: the files a program needs are linked; a broken one it does not need is left out", { timeout: T }, async () => {
+    const program = '#include <iostream>\n#include "math.h"\nint main() { std::cout << twice(21) << "\\n"; }\n';
+    const uses = { "main.cpp": program, "math.h": "int twice(int n);\n", "math.cpp": '#include "math.h"\nint twice(int n) { return n * 2; }\n', "other.cpp": "int main() { return 0; }\n" };
+    expectOk(await run("cpp", uses), "42\n");
+    const alone = { "main.cpp": '#include <iostream>\nint main() { std::cout << "alone\\n"; }\n', "draft.cpp": "int half(int n) { return n / ; }\n" };
+    expectOk(await run("cpp", alone), "alone\n");
+    const needed = await run("cpp", { ...uses, "math.cpp": '#include "math.h"\nint twice(int n) { return n * ; }\n' });
+    expect(needed.result.status).toBe("COMPILATION_ERROR");
+    expect(needed.result.compileOutput).toContain("math.cpp:2");
+  });
+
+  it("C: two programs in one project, and the tests of the one being run", { timeout: T }, async () => {
+    const files = {
+      "sum.c": '#include <stdio.h>\nint main(void) { int a, b; scanf("%d %d", &a, &b); printf("%d\\n", a + b); return 0; }\n',
+      "broken.c": "int main(void) { return }\n",
+    };
+    const o = await run("c", files, { tests: ["1 2", "40 2"] });
+    expect(o.result.status).toBe("SUCCESS");
+    expect(o.result.tests!.map((t) => t.stdout)).toEqual(["3\n", "42\n"]);
+  });
+
+  it("interpreted languages run the chosen file; a broken file beside it is not read", { timeout: T }, async () => {
+    expectOk(await run("python", { "b.py": 'print("b")\n', "a.py": "def broken(:\n" }, { entry: "b.py" }), "b\n");
+    expectOk(await run("javascript", { "b.js": 'console.log("b");\n', "a.js": "function (\n" }, { entry: "b.js" }), "b\n");
+    expectOk(await run("typescript", { "b.ts": 'const s: string = "b";\nconsole.log(s);\n', "a.ts": "const = ;\n" }, { entry: "b.ts" }), "b\n");
+  });
+});

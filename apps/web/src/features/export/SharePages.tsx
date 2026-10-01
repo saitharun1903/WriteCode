@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 import { highlight, languageOf } from "@/lib/highlight";
 import { createId } from "@/lib/id";
 import { openShare, openTransfer } from "./api";
-import { downloadCodePdf } from "./code-pdf";
+import { DownloadDialog } from "./DownloadDialog";
 
 const SITE = "writecode.in";
 /** The project the editor opens first (the same key the workspace keeps). */
@@ -133,7 +133,7 @@ async function openCopy(code: SharedCode) {
   } catch {}
 }
 
-/** `/share#<id>`: code someone shared, to read, copy, keep as a PDF or open in the editor. */
+/** `/share#<id>`: code someone shared, to read, copy, download or open in the editor. */
 export function SharedCodePage() {
   useAppTheme();
   const id = useHashId(SHARE_ID);
@@ -141,7 +141,8 @@ export function SharedCodePage() {
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [busy, setBusy] = useState<"open" | "pdf" | null>(null);
+  const [busy, setBusy] = useState<"open" | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -208,14 +209,10 @@ export function SharedCodePage() {
                 type="button"
                 className={action}
                 disabled={busy !== null}
-                onClick={async () => {
-                  setBusy("pdf");
-                  await downloadCodePdf({ ...code, at: code.createdAt }).catch(() => {});
-                  setBusy(null);
-                }}
+                onClick={() => setDownloading(true)}
               >
-                {busy === "pdf" ? <Spinner className="size-4" /> : <FileDown className="size-4" />}
-                PDF
+                <FileDown className="size-4" />
+                Download
               </button>
               <button
                 type="button"
@@ -257,6 +254,7 @@ export function SharedCodePage() {
           <CodeView path={shown.path} content={shown.content} language={code.language} />
         </article>
       </div>
+      <DownloadDialog source={downloading ? { ...code, at: code.createdAt, activeFile: shown.path } : null} onClose={() => setDownloading(false)} />
       <p className="mt-3 text-center text-xs text-fg-subtle">A read-only copy. &ldquo;Open in editor&rdquo; gives you your own copy to run, debug and change.</p>
     </Frame>
   );

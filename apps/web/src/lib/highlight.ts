@@ -5,6 +5,8 @@
  * code readable at a glance; it does not try to understand the program.
  */
 
+import { LANGUAGES, getLanguage } from "@cw/shared";
+
 export type TokenKind = "plain" | "comment" | "string" | "number" | "keyword";
 
 export interface Token {
@@ -57,11 +59,17 @@ const RULES: Record<string, Rules> = {
   typescript: { line: ["//"], block: ["/*", "*/"], multiline: ["`"], quotes: ['"', "'"], keywords: words(`${JS} abstract any as boolean declare enum implements interface keyof namespace never number private protected public readonly string type unknown`) },
 };
 
-const EXTENSION: Record<string, string> = { py: "python", java: "java", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp", hpp: "cpp", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript" };
-
-/** The colouring rules for a file, from its name (falling back to the project's language). */
+/**
+ * The colouring rules for a file: its project's language when the file is one
+ * of that language's (a `.h` in a C project is C), else the language its name
+ * belongs to, else the project's language.
+ */
 export function languageOf(path: string, fallback?: string): string | undefined {
-  return EXTENSION[path.split(".").pop()?.toLowerCase() ?? ""] ?? fallback;
+  const lower = path.toLowerCase();
+  const owns = (l: { extensions: string[] }) => l.extensions.some((ext) => lower.endsWith(ext));
+  const own = fallback ? getLanguage(fallback) : undefined;
+  if (own && owns(own)) return own.id;
+  return LANGUAGES.find(owns)?.id ?? fallback;
 }
 
 const WORD = /[A-Za-z_$][\w$]*/y;

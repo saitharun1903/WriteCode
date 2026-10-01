@@ -37,7 +37,7 @@ export function EntryPointDialog() {
       open={mode !== null}
       onOpenChange={(open) => !open && setMode(null)}
       title="Select entry point"
-      description={`Several files have a main method. Choose which one to ${mode === "debug" ? "debug" : "run"}; it is remembered for this project.`}
+      description={`Several files are programs of their own. Open the one you want and press Run, or choose which one to ${mode === "debug" ? "debug" : "run"}; it is remembered for this project.`}
     >
       <ul aria-label="Entry points" className="max-h-72 overflow-y-auto px-2 pb-3">
         {entries.map((e) => (

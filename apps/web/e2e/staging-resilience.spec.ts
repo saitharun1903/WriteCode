@@ -21,6 +21,7 @@ async function pythonProject(page: Page, code: string) {
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "New Python project" }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello World");
   await page.evaluate((t) => (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco.editor.getEditors()[0].getModel().setValue(t), code);
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });

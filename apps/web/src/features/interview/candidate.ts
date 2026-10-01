@@ -6,7 +6,7 @@ import { ApiError } from "@/features/execution/api";
 import { useExecution } from "@/features/execution/store";
 import { useLive } from "@/features/live/store";
 import { useWorkspace } from "@/features/projects/store";
-import { entryOf } from "@/features/tests/store";
+import { chooseEntry } from "@/features/tests/store";
 import { useUI } from "@/features/workspace/ui-store";
 import { createId } from "@/lib/id";
 import { COMPACT_QUERY } from "@/lib/use-media";
@@ -127,7 +127,7 @@ export const useCandidate = create<CandidateState>((set, get) => ({
     showTests();
     try {
       const r = await runTests(
-        { language: project.language, files: project.files, entry: entryOf(project) },
+        { language: project.language, files: project.files, entry: chooseEntry(project) },
         cases.map((c) => c.input),
         (id) => useLive.getState().announceTests(id, cases.map((c) => c.id)),
       );
