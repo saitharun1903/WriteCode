@@ -179,11 +179,13 @@ test("command palette runs commands", async ({ page }) => {
   await page.getByRole("button", { name: /New Java project/ }).click();
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.getByRole("tab", { name: /Main\.java/ })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
   await page.keyboard.press("Control+Shift+P");
   await page.getByPlaceholder("Type a command…").fill("toggle light");
   await page.keyboard.press("Enter");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  // The site starts in the light theme; the command switches to dark.
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
 test("project search finds matches and navigates", async ({ page }) => {

@@ -38,7 +38,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  theme: "dark",
+  theme: "light",
   fontSize: 14,
   codeFont: DEFAULT_CODE_FONT,
   tabSize: 4,
@@ -112,7 +112,7 @@ export function useResolvedTheme(): "dark" | "light" {
   const system = useSyncExternalStore(
     subscribeToSystemTheme,
     () => resolveTheme("system"),
-    () => "dark" as const,
+    () => "light" as const,
   );
   return theme === "system" ? system : theme;
 }

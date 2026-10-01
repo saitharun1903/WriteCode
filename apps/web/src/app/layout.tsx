@@ -45,7 +45,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#10121a",
+  themeColor: "#f7f8fa",
   // Phones: draw under the notch and home bar (the dock keeps clear with safe-area insets),
   // and let the on-screen keyboard shrink the layout instead of covering the code.
   viewportFit: "cover",
@@ -53,11 +53,11 @@ export const viewport: Viewport = {
 };
 
 /** Applies the persisted theme and code font before first paint, so nothing flashes or changes shape. */
-const themeScript = `try{var s=JSON.parse(localStorage.getItem("cw:settings")||"{}"),t=s.theme,f=s.codeFont;if(typeof f==="string"&&/^[a-z]+$/.test(f))document.documentElement.style.setProperty("--font-code","var(--font-code-"+f+")");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light"}catch(e){}`;
+const themeScript = `try{var s=JSON.parse(localStorage.getItem("cw:settings")||"{}"),t=s.theme,f=s.codeFont;if(typeof f==="string"&&/^[a-z]+$/.test(f))document.documentElement.style.setProperty("--font-code","var(--font-code-"+f+")");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)document.documentElement.dataset.theme="dark"}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" data-theme="dark" className={FONT_VARIABLES} suppressHydrationWarning>
+    <html lang="en" data-theme="light" className={FONT_VARIABLES} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

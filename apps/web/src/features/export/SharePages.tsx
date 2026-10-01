@@ -130,6 +130,8 @@ async function openCopy(code: SharedCode) {
   await projectRepo.put(project);
   try {
     localStorage.setItem(LAST_PROJECT_KEY, JSON.stringify(project.id));
+    // The editor reopens the last project only for someone who was just here: this visitor is, now.
+    localStorage.setItem("cw:last-seen", JSON.stringify(Date.now()));
   } catch {}
 }
 
