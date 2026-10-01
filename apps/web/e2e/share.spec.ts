@@ -103,15 +103,17 @@ test("a download asks which files and which format, and makes one file", async (
   await expect(files.getByRole("checkbox")).toHaveCount(2);
   await expect(dialog.getByText("2 files, 7 lines, in one PDF file.")).toBeVisible();
 
-  // Everything, as text: both files in one file, the watermark at the foot.
+  // Everything, as text: both files in one file, and only their code.
   await dialog.getByRole("radio", { name: /Text/ }).click();
   let [download] = await Promise.all([page.waitForEvent("download"), dialog.getByRole("button", { name: "Download", exact: true }).click()]);
   expect(download.suggestedFilename()).toBe("Python-project.txt");
   let text = await readFile((await download.path())!, "utf8");
-  expect(text).toContain("----- main.py");
-  expect(text).toContain("----- notes.py");
+  expect(text).toContain("===== main.py =====");
+  expect(text).toContain("===== notes.py =====");
   expect(text).toContain("LIMIT = 3");
-  expect(text.trimEnd().endsWith("WriteCode  ·  writecode.in")).toBe(true);
+  // Only the code: no title, date or product name.
+  expect(text).not.toContain("WriteCode");
+  expect(text).not.toContain("Python project");
   await expect(dialog).toHaveCount(0);
 
   // Only the open file, as a Word document.

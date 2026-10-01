@@ -171,20 +171,14 @@ describe("code as one file, in the chosen format", () => {
     ],
   };
 
-  it("text: the title, every chosen file under its name, the product's name at the foot", () => {
+  it("text: only the code, with nothing added to a single file", () => {
+    // One file is exactly its code: no title, no date, no product name.
+    const one = buildCodeText({ ...input, files: input.files.slice(1) });
+    expect(one).toBe('#include "util.h"\nint main() { return twice(2) < 5; }\n');
+    // Several files: each under a line with its name, the file that runs first, and nothing else.
     const text = buildCodeText(input);
-    const lines = text.split("\n");
-    expect(lines[0]).toBe("Sorting <demo>");
-    expect(lines[1]).toContain("2 files");
-    expect(lines[1]).toContain("3 lines");
-    // The file that runs comes first.
-    expect(text.indexOf("----- main.cpp")).toBeLessThan(text.indexOf("----- util.h"));
-    expect(text).toContain('#include "util.h"\nint main() { return twice(2) < 5; }');
-    expect(lines.filter(Boolean).at(-1)).toBe("WriteCode  ·  writecode.in");
-    // Only what was chosen is in the file.
-    const one = buildCodeText({ ...input, files: input.files.slice(0, 1) });
-    expect(one).not.toContain("main.cpp");
-    expect(one).toContain("1 file  ·  1 line");
+    expect(text).toBe('===== main.cpp =====\n#include "util.h"\nint main() { return twice(2) < 5; }\n\n===== util.h =====\nint twice(int n);\n');
+    for (const added of ["Sorting", "WriteCode", "writecode.in", "lines", "2026"]) expect(text).not.toContain(added);
   });
 
   it("Word: coloured code that cannot break out of the page, and the watermark", () => {

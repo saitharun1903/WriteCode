@@ -10,7 +10,7 @@ export type CodeFormat = "pdf" | "word" | "text";
 export const CODE_FORMATS: { id: CodeFormat; label: string; extension: string; detail: string }[] = [
   { id: "pdf", label: "PDF", extension: "pdf", detail: "Framed pages with coloured code. Best for printing and sending." },
   { id: "word", label: "Word", extension: "doc", detail: "Opens in Word and Google Docs, where it can be edited." },
-  { id: "text", label: "Text", extension: "txt", detail: "Plain text, one file after another. Opens anywhere." },
+  { id: "text", label: "Text", extension: "txt", detail: "Only the code, as plain text. Opens anywhere." },
 ];
 
 export type CodeInput = Omit<CodePdfInput, "logo">;
@@ -31,15 +31,15 @@ function facts(input: CodeInput): string {
   return `${lang ? `${lang.name} ${lang.version}` : input.language}  ·  ${files} file${files === 1 ? "" : "s"}  ·  ${lines} line${lines === 1 ? "" : "s"}  ·  ${when}`;
 }
 
-/** The chosen files as one plain text file: a title, each file under its name, the product's name at the foot. */
+/**
+ * The chosen files as plain text: the code and nothing else. One file is
+ * exactly its code. Several files follow one another, each under a line with
+ * its name, which is the only thing added (without it they could not be told apart).
+ */
 export function buildCodeText(input: CodeInput): string {
-  const rule = "=".repeat(72);
-  const out = [input.name, facts(input), rule, ""];
-  for (const file of ordered(input)) {
-    out.push(`----- ${file.path} ${"-".repeat(Math.max(3, 64 - file.path.length))}`, "", clean(file.content) || "(empty file)", "", "");
-  }
-  out.push(rule, `${PRODUCT.name}  ·  ${SITE}`, "");
-  return out.join("\n");
+  const files = ordered(input);
+  if (files.length === 1) return `${clean(files[0]!.content)}\n`;
+  return files.map((file) => `===== ${file.path} =====\n${clean(file.content)}\n`).join("\n");
 }
 
 const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
