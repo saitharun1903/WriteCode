@@ -12,6 +12,7 @@ import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
 import { LANDING_PAGES } from "@/features/seo/pages";
 import { useInterviewUI } from "@/features/interview/ui";
+import { TransferButton } from "@/features/export/ExportUI";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -143,6 +144,7 @@ export function StartScreen() {
               <h2 id="recent-heading" className="text-lg font-semibold tracking-tight text-fg">
                 Recent projects <span className="ml-1 text-sm font-normal text-fg-subtle">{projects.length}</span>
               </h2>
+              <TransferButton className="sm:ml-auto" />
               <div className="relative w-full sm:w-64">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
                 <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />

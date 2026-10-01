@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, ClipboardList, Ellipsis, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
+import { Bug, ChevronDown, ClipboardList, Ellipsis, FileDown, Link2, Menu, Smartphone, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
 import { anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -19,6 +19,7 @@ import { InterviewClock } from "@/features/interview/Clock";
 import { useLive } from "@/features/live/store";
 import { RunSubmit } from "@/features/interview/CandidateTests";
 import { CameraChip } from "@/features/interview/CameraView";
+import { ExportButton } from "@/features/export/ExportUI";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
 function fromCommands(ids: (string | "-")[]): MenuEntry[] {
@@ -30,7 +31,7 @@ function fromCommands(ids: (string | "-")[]): MenuEntry[] {
 }
 
 const MENUS: { label: string; items: (string | "-")[] }[] = [
-  { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "file.import", "file.importFolder", "-", "file.save", "project.snapshot", "-", "file.setEntry", "file.closeTab", "project.close"] },
+  { label: "File", items: ["project.new", "project.switch", "-", "file.newFile", "file.newFolder", "file.import", "file.importFolder", "-", "file.save", "project.snapshot", "-", "file.downloadPdf", "file.shareLink", "project.transfer", "-", "file.setEntry", "file.closeTab", "project.close"] },
   { label: "Edit", items: ["edit.find", "edit.replace", "-", "edit.toggleComment", "edit.format", "edit.goToLine"] },
   { label: "View", items: ["workbench.commandPalette", "workbench.quickOpen", "-", "view.explorer", "view.search", "view.history", "-", "view.run", "view.debug", "view.visualize", "view.problems", "view.input", "-", "view.toggleSidebar", "view.toggleBottomPanel", "view.resetLayout"] },
   { label: "Run", items: ["run.execute", "run.currentFile", "debug.startOrContinue", "run.visualize", "run.cancel", "-", "run.clearOutput", "view.input"] },
@@ -178,6 +179,9 @@ function PhoneMenu({ interview }: { interview: boolean }) {
   const theme = useResolvedTheme();
   const entries: MenuEntry[] = [
     { label: "Share live session", icon: <Users />, onSelect: () => useLive.getState().setPanelOpen(true) },
+    { label: "Download as PDF", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
+    { label: "Share a link to this code", icon: <Link2 />, onSelect: () => runCommand("file.shareLink") },
+    { label: "Move projects to another device", icon: <Smartphone />, onSelect: () => runCommand("project.transfer") },
     ...(interview ? [{ label: "Interview mode", icon: <ClipboardList />, onSelect: () => runCommand("interview.start") }] : []),
     { label: "Search files and actions", icon: <Search />, onSelect: () => runCommand("workbench.quickOpen") },
     { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: () => runCommand("prefs.toggleTheme") },
@@ -287,6 +291,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
             <LiveButton />
           </span>
         )}
+        {project && !restricted && !compact && <ExportButton />}
         {project && restricted && <CameraChip />}
         {project && !compact && !restricted && (
           <span className="ml-1.5 mr-1">

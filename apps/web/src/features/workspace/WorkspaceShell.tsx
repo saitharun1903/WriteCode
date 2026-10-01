@@ -40,6 +40,7 @@ import { InterviewPanel } from "@/features/interview/InterviewPanel";
 import { InterviewSetupDialog } from "@/features/interview/InterviewSetupDialog";
 import { ReplayDialog } from "@/features/interview/ReplayDialog";
 import { CandidateGate } from "@/features/interview/CandidateGate";
+import { ExportDialogs } from "@/features/export/ExportUI";
 import { CandidateTests } from "@/features/interview/CandidateTests";
 import { useCandidate } from "@/features/interview/candidate";
 import { useRestriction } from "@/features/interview/restrict";
@@ -533,6 +534,7 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
       <InterviewSetupDialog />
       <ReplayDialog />
       <CandidateGate />
+      <ExportDialogs />
       <SessionEndedDialog />
       <Toaster />
     </TooltipProvider>

@@ -268,7 +268,9 @@ function Replay({ updates }: { updates: Update[] }) {
       <div className="relative h-[44vh] overflow-hidden rounded-lg border border-line-strong/60">
         {/* One editor for the whole replay: it is never taken down, even while the project is still empty. */}
         <Editor
-          path={`replay/${shown ?? "empty"}`}
+          // One document for the whole replay, and not a project file: the main editor clears away
+          // documents of files the project no longer has, which must never include this one.
+          path="inmemory://replay/recording"
           value={text}
           language={shown ? monacoLanguageForPath(shown) : "plaintext"}
           theme={theme === "light" ? "cw-light" : "cw-dark"}

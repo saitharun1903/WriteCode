@@ -4,6 +4,7 @@ import { anyFileIsRunnable, findEntryPoints, getLanguage, parentOf } from "@cw/s
 import { blockedForCandidate, isRestricted } from "@/features/interview/restrict";
 import { useInterviewUI } from "@/features/interview/ui";
 import { useCandidate } from "@/features/interview/candidate";
+import { useExport } from "@/features/export/api";
 import { useLive } from "@/features/live/store";
 import { toast } from "@/components/ui/toast";
 import { useAssistant } from "@/features/assistant/store";
@@ -283,6 +284,32 @@ export const COMMANDS: Command[] = [
     shortcut: "Mod+P",
     enabled: hasProject,
     run: () => useUI.getState().openPalette("files"),
+  },
+  {
+    id: "file.downloadPdf",
+    title: "Download Code as PDF",
+    category: "File",
+    enabled: hasProject,
+    run: () => {
+      const project = useWorkspace.getState().project;
+      if (!project) return;
+      void import("@/features/export/code-pdf")
+        .then((m) => m.downloadCodePdf({ name: project.name, language: project.language, entryFile: project.entryFile, files: project.files }))
+        .catch(() => toast.error("The PDF could not be made", "Try again."));
+    },
+  },
+  {
+    id: "file.shareLink",
+    title: "Share a Link to This Code…",
+    category: "File",
+    enabled: hasProject,
+    run: () => useExport.getState().open("share"),
+  },
+  {
+    id: "project.transfer",
+    title: "Move Projects to Another Device…",
+    category: "Project",
+    run: () => useExport.getState().open("transfer"),
   },
   {
     id: "interview.start",
