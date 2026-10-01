@@ -185,7 +185,7 @@ function WatchRows() {
             aria-label={`${expr} = ${value}`}
             className="group flex h-[26px] items-center gap-1.5 pl-2 pr-1 font-mono text-[13px] hover:bg-hover"
           >
-            <Eye className="size-3.5 shrink-0 text-accent" />
+            <Eye className="size-3.5 shrink-0 text-accent-ink" />
             <span className="shrink-0 text-fg">{expr}</span>
             <span className="shrink-0 text-fg-faint">=</span>
             <span
@@ -354,7 +354,7 @@ function WhereBar({ stop }: { stop: StopInfo }) {
         {frame.file && (
           <>
             at
-            <button onClick={() => goToLocation(frame.file!, frame.line)} className="font-mono text-[12px] text-accent hover:underline">
+            <button onClick={() => goToLocation(frame.file!, frame.line)} className="font-mono text-[12px] text-accent-ink hover:underline">
               {basename(frame.file)}:{frame.line}
             </button>
           </>

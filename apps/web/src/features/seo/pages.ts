@@ -391,13 +391,47 @@ export const LANDING_PAGES: LandingPage[] = [
   },
 ];
 
-/** What the home page says the product does, under the start screen. Each links to the page about it. */
-export const HOME_FEATURES: { title: string; text: string; slug: string }[] = [
-  { title: "Online compiler", text: "Write and run Java, Python, C, C++, JavaScript and TypeScript in the browser. Type the program's input in the console while it runs. Nothing to install.", slug: "online-compiler" },
-  { title: "Online debugger", text: "Set breakpoints, step through the code line by line, and watch variables and the call stack, in every language.", slug: "online-debugger" },
-  { title: "Code visualizer", text: "See arrays, linked lists, trees and recursion drawn as the program runs, one line at a time.", slug: "code-visualizer" },
-  { title: "Test cases", text: "Save inputs with their expected outputs and check your program against all of them in one click.", slug: "online-compiler-with-test-cases" },
-  { title: "Code together", text: "Share a link and edit the same files live, with cursors, shared runs and coding interviews with hidden tests.", slug: "code-together" },
+/**
+ * What the home page says the product does, one card each. `title` is what
+ * people search for; `head` and `text` say it the way one person tells another.
+ * Each links to the page about it.
+ */
+export const HOME_FEATURES: { title: string; head: string; text: string; more: string; slug: string }[] = [
+  {
+    title: "Online compiler",
+    head: "Type it, run it",
+    text: "Pick a language and press Run. Your program is built by the real compiler (JDK 21, GCC 14, Python 3.13, Node.js 22) and the output appears under the code. When it asks for input, you type it in the console, the way you would in a terminal.",
+    more: "About the online compiler",
+    slug: "online-compiler",
+  },
+  {
+    title: "Online debugger",
+    head: "Stop on any line",
+    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in all six languages.",
+    more: "About the online debugger",
+    slug: "online-debugger",
+  },
+  {
+    title: "Code visualizer",
+    head: "See what the code is doing",
+    text: "Arrays, linked lists, trees and the call stack are drawn while your program runs. Go forward or back one line at a time. Good for recursion, and for the bug you cannot find by reading.",
+    more: "About the code visualizer",
+    slug: "code-visualizer",
+  },
+  {
+    title: "Test cases",
+    head: "Check every case at once",
+    text: "Write an input and the output you expect, as many as you need, and run them together. A test that fails shows the first line where your output is different.",
+    more: "About test cases",
+    slug: "online-compiler-with-test-cases",
+  },
+  {
+    title: "Code together",
+    head: "Two people, one file",
+    text: "Send a link and you are both in the same files, each with a named cursor. Runs and test results are shared. There is an interview mode too, with hidden tests and a report at the end.",
+    more: "About coding together",
+    slug: "code-together",
+  },
 ];
 
 export const HOME_FAQS: Faq[] = [

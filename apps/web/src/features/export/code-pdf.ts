@@ -5,10 +5,10 @@ import { highlight, languageOf, type TokenKind } from "@/lib/highlight";
 type Rgb = [number, number, number];
 
 /** The brand's colours, as they print on white paper. */
-export const BLUE: Rgb = [0.25, 0.39, 0.95];
-export const VIOLET: Rgb = [0.42, 0.33, 0.9];
-export const PINK: Rgb = [0.65, 0.25, 0.83];
-export const TINT: Rgb = [0.955, 0.95, 1];
+export const TILE: Rgb = [0.082, 0.086, 0.102];
+export const AMBER_INK: Rgb = [0.56, 0.33, 0];
+export const AMBER: Rgb = [1, 0.698, 0.141];
+export const TINT: Rgb = [0.992, 0.968, 0.91];
 
 const TOKEN: Record<TokenKind, Rgb> = {
   plain: INK,
@@ -41,12 +41,12 @@ export function pageFurniture(pdf: Pdf, name: string, hasLogo: boolean, index: n
   const h = pdf.height;
   const ops: string[] = [];
   // The frame: a violet line with a hairline inside it.
-  ops.push(`${rgb(VIOLET, "RG")} 1.3 w ${roundRectPath(20, 20, w - 40, h - 40, 13)} S`);
+  ops.push(`${rgb(AMBER_INK, "RG")} 1.3 w ${roundRectPath(20, 20, w - 40, h - 40, 13)} S`);
   ops.push(`0.86 0.85 0.97 RG 0.5 w ${roundRectPath(24.5, 24.5, w - 49, h - 49, 9.5)} S`);
   // Two corners carry the brand's gradient: blue at the top left, pink at the bottom right.
   ops.push("1 J 1 j 3.2 w");
-  ops.push(`${rgb(BLUE, "RG")} ${n(20)} ${n(h - 96)} m ${n(20)} ${n(h - 33)} l ${n(20)} ${n(h - 26)} ${n(26)} ${n(h - 20)} ${n(33)} ${n(h - 20)} c ${n(96)} ${n(h - 20)} l S`);
-  ops.push(`${rgb(PINK, "RG")} ${n(w - 20)} ${n(96)} m ${n(w - 20)} ${n(33)} l ${n(w - 20)} ${n(26)} ${n(w - 26)} ${n(20)} ${n(w - 33)} ${n(20)} c ${n(w - 96)} ${n(20)} l S`);
+  ops.push(`${rgb(TILE, "RG")} ${n(20)} ${n(h - 96)} m ${n(20)} ${n(h - 33)} l ${n(20)} ${n(h - 26)} ${n(26)} ${n(h - 20)} ${n(33)} ${n(h - 20)} c ${n(96)} ${n(h - 20)} l S`);
+  ops.push(`${rgb(AMBER, "RG")} ${n(w - 20)} ${n(96)} m ${n(w - 20)} ${n(33)} l ${n(w - 20)} ${n(26)} ${n(w - 26)} ${n(20)} ${n(w - 33)} ${n(20)} c ${n(w - 96)} ${n(20)} l S`);
   ops.push("0 J 0 j");
   // The watermark: the product's name and address, centred at the foot of every page.
   const brand = PRODUCT.name;
@@ -60,7 +60,7 @@ export function pageFurniture(pdf: Pdf, name: string, hasLogo: boolean, index: n
     ops.push(`q 12 0 0 12 ${n(x)} ${n(y - 2.5)} cm /Im1 Do Q`);
     x += 17;
   }
-  ops.push(`BT /F2 9.5 Tf ${rgb(VIOLET, "rg")} ${n(x)} ${n(y)} Td (${pdfString(brand)}) Tj ET`);
+  ops.push(`BT /F2 9.5 Tf ${rgb(AMBER_INK, "rg")} ${n(x)} ${n(y)} Td (${pdfString(brand)}) Tj ET`);
   ops.push(`BT /F1 9 Tf ${rgb(MUTED, "rg")} ${n(x + brandWidth)} ${n(y)} Td (${pdfString(rest)}) Tj ET`);
   const page = `Page ${index + 1} of ${total}`;
   ops.push(`BT /F1 8 Tf ${rgb(MUTED, "rg")} ${n(w - pdf.margin - textWidth(page, "regular", 8))} ${n(y)} Td (${pdfString(page)}) Tj ET`);
@@ -100,7 +100,7 @@ function rows(tokens: { text: string; kind: TokenKind }[], max: number): { text:
 /** The brand's rule under a title: blue, violet, pink. */
 export function brandRule(pdf: Pdf) {
   const third = pdf.inner / 3;
-  [BLUE, VIOLET, PINK].forEach((c, i) => pdf.raw(`${rgb(c, "RG")} 1.6 w ${n(pdf.margin + third * i)} ${n(pdf.height - pdf.y)} m ${n(pdf.margin + third * (i + 1))} ${n(pdf.height - pdf.y)} l S`));
+  [TILE, AMBER_INK, AMBER].forEach((c, i) => pdf.raw(`${rgb(c, "RG")} 1.6 w ${n(pdf.margin + third * i)} ${n(pdf.height - pdf.y)} m ${n(pdf.margin + third * (i + 1))} ${n(pdf.height - pdf.y)} l S`));
 }
 
 /**
@@ -117,7 +117,7 @@ export function drawCodeFile(pdf: Pdf, file: ProjectFile, language: string, note
   // The file's name on a tinted band; never left alone at the foot of a page.
   pdf.need(22 + LEAD * 3);
   pdf.raw(`${rgb(TINT, "rg")} ${roundRectPath(pdf.margin, pdf.height - pdf.y - 20, pdf.inner, 20, 5)} f`);
-  pdf.line(file.path, pdf.margin + 9, { font: "bold", size: 9.5, color: VIOLET });
+  pdf.line(file.path, pdf.margin + 9, { font: "bold", size: 9.5, color: AMBER_INK });
   const count = `${text ? source.length : 0} line${text && source.length === 1 ? "" : "s"}${note ? `  ·  ${note}` : ""}`;
   pdf.y += 1;
   pdf.line(count, pdf.margin + pdf.inner - 9 - textWidth(count, "regular", 8), { size: 8, color: MUTED });

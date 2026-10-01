@@ -30,7 +30,7 @@ const LOOK: Record<Shown, { label: string; icon: React.ReactNode; tone: string }
   "compile-error": { label: "Compile error", icon: <OctagonAlert />, tone: "text-danger" },
   ran: { label: "Ran", icon: <CircleDot />, tone: "text-info" },
   queued: { label: "Waiting", icon: <CircleDashed />, tone: "text-fg-faint" },
-  running: { label: "Running", icon: <Loader2 className="animate-spin" />, tone: "text-accent" },
+  running: { label: "Running", icon: <Loader2 className="animate-spin" />, tone: "text-accent-ink" },
   "not-run": { label: "Not run", icon: <Circle />, tone: "text-fg-faint" },
   stale: { label: "Input changed", icon: <Circle />, tone: "text-fg-subtle" },
 };
@@ -402,7 +402,7 @@ function TestDetail({ test, number }: { test: TestCase; number: number }) {
               <div className="hidden h-[118px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong/70 text-xs text-fg-subtle @[900px]:mt-[22px] @[900px]:flex">
                 {outcome ? (
                   <>
-                    <Loader2 className="size-4 animate-spin text-accent" /> {outcome.state === "running" ? "Running…" : "Waiting for the tests before it"}
+                    <Loader2 className="size-4 animate-spin text-accent-ink" /> {outcome.state === "running" ? "Running…" : "Waiting for the tests before it"}
                   </>
                 ) : (
                   "Run the test to compare its output here"

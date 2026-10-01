@@ -260,7 +260,7 @@ export function FileExplorer() {
     >
       {importing && (
         <div className="pointer-events-none absolute inset-1.5 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-accent bg-accent-soft/40 text-sm text-fg">
-          <Upload className="size-5 text-accent" />
+          <Upload className="size-5 text-accent-ink" />
           Drop to import into the project
         </div>
       )}

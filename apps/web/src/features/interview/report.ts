@@ -1,5 +1,5 @@
 import { getLanguage, type ComplexityEstimate, type InterviewEvent, type InterviewPrivate, type InterviewPublic, type InterviewVerdict, type Project } from "@cw/shared";
-import { VIOLET, brandRule, drawCodeFile, pageFurniture, rgb, type CodePdfInput } from "@/features/export/code-pdf";
+import { AMBER_INK, brandRule, drawCodeFile, pageFurniture, rgb, type CodePdfInput } from "@/features/export/code-pdf";
 import { formatDuration } from "./monitor";
 import { AMBER, GREEN, INK, MUTED, Pdf, RED, pdfNumber, pdfSafe, roundRectPath, textWidth } from "./pdf";
 import type { Growth, HiddenResult } from "./store";
@@ -196,7 +196,7 @@ function roundBox(pdf: Pdf, x: number, top: number, width: number, height: numbe
 function section(pdf: Pdf, title: string) {
   pdf.need(60);
   pdf.y += 16;
-  roundBox(pdf, pdf.margin, pdf.y + 1, 3.2, 12, VIOLET, 1.6);
+  roundBox(pdf, pdf.margin, pdf.y + 1, 3.2, 12, AMBER_INK, 1.6);
   pdf.line(title, pdf.margin + 10, { font: "bold", size: 12.5 });
   pdf.y += 19;
   pdf.rule([0.9, 0.9, 0.94]);
@@ -234,7 +234,7 @@ export function buildReportPdf(r: ReportInput & { logo?: CodePdfInput["logo"] })
   pdf.y = 44;
   const textX = pdf.margin + (r.logo ? 40 : 0);
   if (r.logo) pdf.raw(`q 30 0 0 30 ${pdfNumber(pdf.margin)} ${pdfNumber(pdf.height - pdf.y - 33)} cm /Im1 Do Q`);
-  pdf.line("INTERVIEW REPORT", textX, { font: "bold", size: 8, color: VIOLET });
+  pdf.line("INTERVIEW REPORT", textX, { font: "bold", size: 8, color: AMBER_INK });
   pdf.y += 12;
   pdf.line(pdfSafe(iv.title).slice(0, 56), textX, { font: "bold", size: 18 });
   pdf.y += 24;

@@ -55,8 +55,8 @@ function CandidatePanel() {
   const verdicts = iv.verdicts ?? [];
   const limit = iv.maxLeaves ?? 0;
   const tabs = [
-    { id: "description" as const, label: "Description", icon: <FileText className="size-4 text-accent" /> },
-    { id: "submissions" as const, label: "Submissions", icon: <History className="size-4 text-accent" /> },
+    { id: "description" as const, label: "Description", icon: <FileText className="size-4 text-accent-ink" /> },
+    { id: "submissions" as const, label: "Submissions", icon: <History className="size-4 text-accent-ink" /> },
   ];
   return (
     <section aria-label="Interview" className="flex h-full min-h-0 flex-col bg-surface">
@@ -309,7 +309,7 @@ function Overview({ go }: { go: (tab: Tab) => void }) {
               {concerns.length > 0 && (
                 <>
                   {" "}
-                  <button type="button" onClick={() => go("activity")} className="text-accent hover:underline">
+                  <button type="button" onClick={() => go("activity")} className="text-accent-ink hover:underline">
                     See when
                   </button>
                 </>
@@ -510,8 +510,8 @@ function Complexity() {
 
       <div className={cn(card, "p-3")}>
         <div className="mb-2 flex items-center gap-2">
-          <Workflow className="size-4 text-accent" />
-          <h3 className="text-[13px] font-semibold text-accent">Approach</h3>
+          <Workflow className="size-4 text-accent-ink" />
+          <h3 className="text-[13px] font-semibold text-accent-ink">Approach</h3>
           <button type="button" disabled={c.loading || !project} onClick={analyse} className="ml-auto flex items-center gap-1 text-xs text-fg-subtle hover:text-fg disabled:opacity-50">
             {c.loading ? <Spinner className="size-3" /> : <RotateCw className="size-3" />}
             {c.loading ? "Analysing…" : e ? "Analyse again" : "Analyse the code"}
@@ -548,8 +548,8 @@ function Complexity() {
               )}
             </dl>
             <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
-              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent">Time {e.time}</span>
-              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent">Space {e.space}</span>
+              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent-ink">Time {e.time}</span>
+              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent-ink">Space {e.space}</span>
             </div>
             <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{e.explanation}</p>
             {stale && <p className="mt-2 text-xs text-warning">The code changed since this analysis.</p>}
@@ -681,7 +681,7 @@ function InterviewerPanel({ onClose }: { onClose: () => void }) {
   return (
     <section aria-label="Interview" className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex shrink-0 items-center gap-2.5 border-b border-line px-3 py-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent-ink">
           <ClipboardList className="size-4" />
         </span>
         <div className="min-w-0 flex-1">

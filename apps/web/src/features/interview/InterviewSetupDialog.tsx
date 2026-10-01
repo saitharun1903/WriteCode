@@ -110,7 +110,7 @@ function Writer({ disabled, onDone }: { disabled: boolean; onDone: (p: Awaited<R
   return (
     <section aria-label="Write the problem from a topic" className="rounded-xl border border-accent/30 bg-accent/[0.06] p-3.5">
       <div className="flex items-center gap-2">
-        <PenLine className="size-4 text-accent" />
+        <PenLine className="size-4 text-accent-ink" />
         <h3 className="text-[13px] font-semibold text-fg">Write it for me</h3>
         <span className="text-xs text-fg-subtle">Type a topic; the statement and tests are filled in, every answer checked by running it.</span>
       </div>

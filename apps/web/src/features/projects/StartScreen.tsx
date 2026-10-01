@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -10,9 +10,10 @@ import { Input } from "@/components/ui/primitives";
 import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
-import { HOME_FAQS, HOME_FEATURES, LANDING_PAGES } from "@/features/seo/pages";
+import { HOME_FAQS, LANDING_PAGES } from "@/features/seo/pages";
 import { useInterviewUI } from "@/features/interview/ui";
 import { TransferButton } from "@/features/export/ExportUI";
+import { FeatureDeck } from "./FeatureDeck";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -83,18 +84,23 @@ export function StartScreen() {
   return (
     <div className="h-full overflow-y-auto bg-surface-2">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-        <header className="mb-9">
-          <h1 className="text-[28px] font-bold tracking-tight text-fg max-lg:leading-tight">{PRODUCT.name}</h1>
-          <p className="mt-1.5 text-[15px] text-fg-muted max-lg:mt-2.5 max-lg:leading-snug">
+        <header className="mb-10">
+          <h1 className="text-[32px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[38px]" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
+            {PRODUCT.name}
+            <span aria-hidden className="cw-caret" />
+          </h1>
+          <p className="mt-3 max-w-2xl text-[15px] leading-snug text-fg-muted">
             Free online compiler, debugger and visualizer for {LANGUAGES.slice(0, -1).map((l) => l.name).join(", ")} and {LANGUAGES[LANGUAGES.length - 1]!.name}.
           </p>
+          <p className="mt-2 font-mono text-xs text-fg-subtle">no sign-up · nothing to install · saved in this browser</p>
         </header>
+
         <section aria-labelledby="new-heading">
-          <div className="flex items-end justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
               New project
             </h2>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 role="switch"
@@ -103,22 +109,28 @@ export function StartScreen() {
                 title="A temporary project is not saved: it is erased when you close it"
                 onClick={() => useWorkspace.getState().setTemporaryMode(!temporary)}
                 className={cn(
-                  "flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors",
-                  temporary ? "border-accent bg-accent-soft text-fg" : "border-line-strong/80 text-fg-muted hover:bg-hover hover:text-fg",
+                  "flex h-9 items-center gap-2 rounded-full border pl-3 pr-1.5 text-[13px] font-medium transition-colors",
+                  temporary ? "border-accent bg-accent-soft text-fg" : "border-line-strong text-fg-muted hover:bg-hover hover:text-fg",
                 )}
               >
-                <Hourglass className="size-3.5" />
+                <Hourglass className={cn("size-3.5", temporary && "text-accent-ink")} />
                 Temporary
+                <span className={cn("relative ml-0.5 h-6 w-10 rounded-full transition-colors", temporary ? "bg-accent" : "bg-surface-3")}>
+                  <span className={cn("absolute left-0.5 top-0.5 size-5 rounded-full shadow-sm transition-transform duration-150", temporary ? "translate-x-4 bg-accent-fg" : "bg-fg-subtle")} />
+                </span>
               </button>
-              <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+              <Button variant="secondary" className="h-9 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
                 Custom…
               </Button>
             </div>
           </div>
           {temporary && (
-            <p role="status" className="mt-3 rounded-lg border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[13px] text-fg-muted">
-              <b className="font-medium text-fg">Temporary is on.</b> The project you start now is not saved, keeps no history, and is erased when you close it or leave the page.
-            </p>
+            <div role="status" className="mt-4 flex items-start gap-3 rounded-xl border border-dashed border-accent bg-accent-soft/40 px-4 py-3">
+              <Hourglass className="mt-0.5 size-4 shrink-0 text-accent-ink" />
+              <p className="text-[13px] leading-relaxed text-fg-muted">
+                <b className="font-semibold text-fg">Temporary is on.</b> Pick a language and start typing. Nothing is saved and no history is kept: the project is erased when you close it or leave the page. If you want it after all, keep it from the Temporary button at the top of the editor.
+              </p>
+            </div>
           )}
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {LANGUAGES.map((lang) => (
@@ -128,16 +140,19 @@ export function StartScreen() {
                 disabled={!!busy}
                 onClick={() => pick(lang.id)}
                 className={cn(
-                  "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
+                  "group flex items-center gap-4 rounded-xl border bg-surface p-4 text-left transition-[border-color,transform] duration-150",
                   "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
+                  temporary ? "border-dashed border-accent/60" : "border-line-strong",
                 )}
               >
-                <LanguageMark id={lang.id} size={44} />
+                <LanguageMark id={lang.id} size={46} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-base font-semibold text-fg">{lang.name}</span>
-                  <span className="block truncate text-sm text-fg-subtle">{lang.version}</span>
+                  <span className="block truncate text-sm text-fg-subtle">{temporary ? "Not saved" : lang.version}</span>
                 </span>
-                <ArrowRight className="size-4 shrink-0 text-fg-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-fg-faint transition-colors group-hover:bg-accent group-hover:text-accent-fg">
+                  {temporary ? <Hourglass className="size-3.5" /> : <ArrowRight className="size-4" />}
+                </span>
               </button>
             ))}
           </div>
@@ -151,67 +166,72 @@ export function StartScreen() {
           </p>
         )}
 
-        {interviews.length > 0 && (
-          <section aria-labelledby="interviews-heading" className="mt-12">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <h2 id="interviews-heading" className="text-lg font-semibold tracking-tight text-fg">
-                Interviews <span className="ml-1 text-sm font-normal text-fg-subtle">{interviews.length}</span>
-              </h2>
-              <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useInterviewUI.getState().openSetup("create")}>
-                New interview
-              </Button>
-            </div>
+        <section aria-labelledby="recent-heading" className="mt-12">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="recent-heading" className="text-xl font-semibold tracking-tight text-fg">
+              Recent projects {projects.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{projects.length}</span>}
+            </h2>
+            <TransferButton className="sm:ml-auto" />
+            {projects.length > 0 && (
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
+              </div>
+            )}
+          </div>
+          {projects.length > 0 ? (
+            <>
+              <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {filtered.map((p) => (
+                  <ProjectCard key={p.id} project={p} />
+                ))}
+              </ul>
+              {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
+            </>
+          ) : (
+            <Empty icon={<FolderOpen className="size-5" />}>Nothing here yet. A project shows up once you run it or change its code, and it stays saved in this browser.</Empty>
+          )}
+        </section>
+
+        <section aria-labelledby="interviews-heading" className="mt-12">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="interviews-heading" className="text-xl font-semibold tracking-tight text-fg">
+              Interviews {interviews.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{interviews.length}</span>}
+            </h2>
+            <Button variant="secondary" className="h-8 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useInterviewUI.getState().openSetup("create")}>
+              New interview
+            </Button>
+          </div>
+          {interviews.length > 0 ? (
             <ul aria-label="Interviews" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {interviews.map((p) => (
                 <InterviewCard key={p.id} project={p} />
               ))}
             </ul>
-          </section>
-        )}
+          ) : (
+            <Empty icon={<ClipboardList className="size-5" />}>No interviews yet. Set a question with hidden tests and send the candidate a link. Afterwards their code, your notes and the report are kept here.</Empty>
+          )}
+        </section>
 
-        {projects.length > 0 && (
-          <section aria-labelledby="recent-heading" className="mt-12">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <h2 id="recent-heading" className="text-lg font-semibold tracking-tight text-fg">
-                Recent projects <span className="ml-1 text-sm font-normal text-fg-subtle">{projects.length}</span>
-              </h2>
-              <TransferButton className="sm:ml-auto" />
-              <div className="relative w-full sm:w-64">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
-                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
-              </div>
-            </div>
-            <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((p) => (
-                <ProjectCard key={p.id} project={p} />
-              ))}
-            </ul>
-            {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
-          </section>
-        )}
-
-        <section aria-labelledby="about-heading" className="mt-14 border-t border-line-strong/60 pt-8">
-          <h2 id="about-heading" className="text-lg font-semibold tracking-tight text-fg">
-            What you can do in {PRODUCT.name}
+        <section aria-labelledby="about-heading" className="mt-16">
+          <h2 id="about-heading" className="text-xl font-semibold tracking-tight text-fg">
+            What’s inside
           </h2>
-          <ul className="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-            {HOME_FEATURES.map((f) => (
-              <li key={f.slug}>
-                <h3 className="text-sm font-semibold text-fg">
-                  <a href={`/${f.slug}`} className="hover:text-accent hover:underline">
-                    {f.title}
-                  </a>
-                </h3>
-                <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">{f.text}</p>
-              </li>
-            ))}
-          </ul>
-          <h2 className="mt-10 text-lg font-semibold tracking-tight text-fg">Questions and answers</h2>
-          <div className="mt-3 divide-y divide-line-strong/60 rounded-xl border border-line-strong/60 bg-surface">
+          <FeatureDeck />
+        </section>
+
+        <section aria-labelledby="faq-heading" className="mt-12">
+          <h2 id="faq-heading" className="text-xl font-semibold tracking-tight text-fg">
+            Questions and answers
+          </h2>
+          <div className="mt-4 divide-y divide-line-strong/60 rounded-xl border border-line-strong bg-surface">
             {HOME_FAQS.map((f) => (
-              <details key={f.q} className="px-4 py-3">
-                <summary className="cursor-pointer text-sm font-medium text-fg">{f.q}</summary>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{f.a}</p>
+              <details key={f.q} className="group px-4 py-3.5">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
+                  {f.q}
+                  <Plus className="size-4 shrink-0 text-fg-subtle transition-transform group-open:rotate-45" />
+                </summary>
+                <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-fg-muted">{f.a}</p>
               </details>
             ))}
           </div>
@@ -229,6 +249,16 @@ export function StartScreen() {
           </ul>
         </nav>
       </div>
+    </div>
+  );
+}
+
+/** A list with nothing in it yet: what will appear there. */
+function Empty({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <div className="mt-4 flex items-center gap-3.5 rounded-xl border border-dashed border-line-strong px-4 py-4 text-fg-subtle">
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-surface-3 text-fg-muted">{icon}</span>
+      <p className="max-w-2xl text-[13px] leading-relaxed">{children}</p>
     </div>
   );
 }
@@ -297,7 +327,7 @@ function InterviewCard({ project }: { project: ProjectSummary }) {
   return (
     <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
       <button onClick={() => void openProject(project.id)} className="flex w-full items-start gap-3 p-4 pr-12 text-left">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent/15 text-accent">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent-soft text-accent-ink">
           <ClipboardList className="size-5" />
         </span>
         <span className="min-w-0 flex-1">

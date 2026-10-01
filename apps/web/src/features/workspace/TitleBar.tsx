@@ -57,7 +57,7 @@ function InterviewButton() {
         open ? "border-accent/60 bg-accent/15 text-fg" : "border-line-strong/80 text-fg-muted hover:text-fg",
       )}
     >
-      <ClipboardList className="size-3.5 text-accent" />
+      <ClipboardList className="size-3.5 text-accent-ink" />
       {owner ? "Interview" : "Problem"}
       <InterviewClock className="text-xs" />
     </button>
@@ -77,18 +77,16 @@ function AssistantButton() {
         onClick={() => runCommand("assistant.toggle")}
         className={cn(
           "group rounded-full p-px transition-shadow",
-          open
-            ? "bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea]"
-            : "bg-gradient-to-r from-[#6d8cff]/55 via-[#8a7cf5]/55 to-[#c26cea]/55 hover:from-[#6d8cff] hover:via-[#8a7cf5] hover:to-[#c26cea]",
+          open ? "bg-accent" : "bg-line-strong hover:bg-accent",
         )}
       >
         <span
           className={cn(
             "flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors",
-            open ? "bg-[color-mix(in_srgb,var(--canvas)_82%,#8a7cf5)] text-fg" : "bg-canvas text-fg-muted group-hover:text-fg",
+            open ? "bg-accent-soft text-fg" : "bg-canvas text-fg-muted group-hover:text-fg",
           )}
         >
-          <Sparkles className="size-3.5 text-[#8a7cf5]" />
+          <Sparkles className="size-3.5 text-accent-ink" />
           Ask AI
         </span>
       </button>
@@ -169,7 +167,7 @@ function RunControls() {
         </IconButton>
       )}
       {canVisualize() && (
-        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 rounded-[7px] text-accent">
+        <IconButton label="Visualize execution" shortcut="Mod+Alt+Enter" disabled={running} onClick={() => runCommand("run.visualize")} className="size-7 rounded-[7px] text-accent-ink">
           <Workflow />
         </IconButton>
       )}
@@ -294,7 +292,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
               ]}
               trigger={
                 <button aria-label="Temporary project" title="Temporary: not saved, erased when you close it" className="ml-1 flex h-[26px] shrink-0 items-center gap-1 rounded-full border border-accent/50 bg-accent-soft/50 px-2 text-xs font-medium text-fg hover:bg-accent-soft data-[state=open]:bg-accent-soft">
-                  <Hourglass className="size-3 text-accent" />
+                  <Hourglass className="size-3 text-accent-ink" />
                   {/* Where the search box sits in the middle of the bar, the mark alone leaves it room. */}
                   <span className="hidden sm:inline xl:hidden 2xl:inline">Temporary</span>
                 </button>
@@ -343,7 +341,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
               compact && project ? "hidden sm:flex" : "flex",
             )}
           >
-            <ClipboardList className="size-3.5 text-accent" />
+            <ClipboardList className="size-3.5 text-accent-ink" />
             <span className={cn(compact && "hidden sm:inline")}>Interview</span>
           </button>
         )}

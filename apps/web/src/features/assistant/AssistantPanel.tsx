@@ -43,7 +43,8 @@ import { plainMath } from "./plain-math";
 import { editTarget, useAssistant, type ChatMessage } from "./store";
 
 const LANG_ALIASES: Record<string, string> = { py: "python", js: "javascript", ts: "typescript", "c++": "cpp", cc: "cpp", h: "c", sh: "shell", bash: "shell" };
-const AI_GRADIENT = "bg-gradient-to-br from-[#6d8cff] via-[#8a7cf5] to-[#c26cea]";
+/** The assistant's own tiles and its send button: the logo's amber, with its ink on it. */
+const AI_GRADIENT = "bg-accent";
 
 /** Highlights code with the editor's own colours; one HTML string per line. */
 function useColorized(code: string, lang: string): string[] | null {
@@ -191,7 +192,7 @@ function EditCard({ body, index }: { body: string; index: number }) {
   if (!block || !block.complete) {
     return (
       <div className="my-2.5 flex items-center gap-2 rounded-lg border border-line-strong bg-canvas px-3 py-2.5 text-[12.5px]">
-        <Wrench className="size-3.5 text-[#8a7cf5]" />
+        <Wrench className="size-3.5 text-accent-ink" />
         <span className={pending ? "cw-shimmer" : "text-fg-subtle"}>{pending ? "Preparing a fix…" : "This fix was cut off."}</span>
       </div>
     );
@@ -301,7 +302,7 @@ const components: Components = {
   h2: ({ children }) => <h3 className="mb-1 mt-3 text-[13.5px] font-semibold">{children}</h3>,
   h3: ({ children }) => <h4 className="mb-1 mt-3 text-[13px] font-semibold">{children}</h4>,
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-ink underline underline-offset-2">
       {children}
     </a>
   ),
@@ -403,7 +404,7 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-md bg-[color-mix(in_srgb,#8a7cf5_16%,var(--surface-2))] px-3.5 py-2 text-[13.5px] leading-relaxed text-fg">{message.display ?? message.text}</div>
+        <div className="max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-md bg-[color-mix(in_srgb,var(--accent)_16%,var(--surface-2))] px-3.5 py-2 text-[13.5px] leading-relaxed text-fg">{message.display ?? message.text}</div>
       </div>
     );
   }
@@ -411,7 +412,7 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   const done = !message.pending && !!message.text && text.length >= message.text.length;
   return (
     <div className="group flex gap-3" aria-busy={message.pending}>
-      <div className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white", AI_GRADIENT)}>
+      <div className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-accent-fg", AI_GRADIENT)}>
         <Sparkles className={cn("size-3.5", message.pending && !message.text && "animate-pulse")} />
       </div>
       <div className="min-w-0 flex-1 text-[13.5px] leading-[1.65] text-fg">
@@ -493,19 +494,13 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
   const rest = suggestions.filter((s) => !s.primary);
   return (
     <div className="relative flex flex-1 flex-col justify-end overflow-hidden px-4 pb-5 pt-10">
-      {/* A soft glow behind the mark gives the empty panel some depth without moving. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -left-16 bottom-40 size-80 rounded-full opacity-60 blur-3xl [background:radial-gradient(circle,color-mix(in_srgb,#8a7cf5_28%,transparent),transparent_65%)]"
-      />
       <motion.div {...rise(0)} className="relative">
-        <div className={cn("relative mb-4 flex size-12 items-center justify-center rounded-[15px] text-white", AI_GRADIENT)}>
+        <div className={cn("relative mb-4 flex size-12 items-center justify-center rounded-[15px] text-accent-fg", AI_GRADIENT)}>
           <span aria-hidden className="absolute inset-0 rounded-[15px] ring-1 ring-inset ring-white/25" />
-          <span aria-hidden className="absolute inset-x-2 top-1 h-1/3 rounded-full bg-white/20 blur-[6px]" />
-          <Sparkles className="relative size-[22px]" />
+                    <Sparkles className="relative size-[22px]" />
         </div>
         <h3 className="text-[19px] font-semibold tracking-[-0.01em] text-fg">
-          How can I <span className="bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea] bg-clip-text text-transparent">help</span> with your code?
+          How can I <span className="underline decoration-accent decoration-[3px] underline-offset-4">help</span> with your code?
         </h3>
       </motion.div>
 
@@ -516,15 +511,15 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
             key={s.label}
             type="button"
             onClick={() => onPick(s.prompt)}
-            className="group relative rounded-2xl bg-gradient-to-r from-[#6d8cff]/70 via-[#8a7cf5]/70 to-[#c26cea]/70 p-px text-left"
+            className="group relative rounded-2xl bg-line-strong p-px hover:bg-accent text-left"
           >
-            <span className="flex items-center gap-3 rounded-[15px] bg-surface-2 px-3.5 py-3 transition-colors group-hover:bg-[color-mix(in_srgb,var(--surface-2)_90%,#8a7cf5)]">
+            <span className="flex items-center gap-3 rounded-[15px] bg-surface-2 px-3.5 py-3 transition-colors group-hover:bg-[color-mix(in_srgb,var(--surface-2)_90%,var(--accent))]">
               <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-[10px] text-white [&_svg]:size-4", AI_GRADIENT)}>{s.icon}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13.5px] font-medium text-fg">{s.label}</span>
                 <span className="block truncate text-[12px] text-fg-subtle">{s.hint}</span>
               </span>
-              <ArrowRight className="size-4 shrink-0 text-[#8a7cf5] transition-transform group-hover:translate-x-0.5" />
+              <ArrowRight className="size-4 shrink-0 text-accent-ink transition-transform group-hover:translate-x-0.5" />
             </span>
           </motion.button>
         ))}
@@ -573,7 +568,7 @@ function ContextChips() {
       )}
       {vizOpen && vizStep && (
         <span className={chip}>
-          <Workflow className="size-3.5 text-[#8a7cf5]" />
+          <Workflow className="size-3.5 text-accent-ink" />
           visualizer step {vizStep}
         </span>
       )}
@@ -622,10 +617,10 @@ function EffortControl() {
         onClick={() => setOpen(!open)}
         className={cn(
           "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] transition-colors",
-          open ? "border-[#8a7cf5]/70 bg-[#8a7cf5]/10 text-fg" : "border-line-strong text-fg-muted hover:border-fg-faint hover:text-fg",
+          open ? "border-accent/70 bg-accent/10 text-fg" : "border-line-strong text-fg-muted hover:border-fg-faint hover:text-fg",
         )}
       >
-        <Gauge className="size-3.5 text-[#8a7cf5]" />
+        <Gauge className="size-3.5 text-accent-ink" />
         <span className="text-fg-subtle">Effort</span>
         <span className="font-medium text-fg">{current.label}</span>
       </button>
@@ -647,7 +642,7 @@ function EffortControl() {
             {/* Track with a dot per level; the native range input on top keeps keyboard and screen readers working. */}
             <div className="absolute inset-x-0 top-1/2 h-6 -translate-y-1/2 rounded-full bg-hover">
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-[#6d8cff]/35 to-[#c26cea]/45 transition-[width] duration-200"
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-accent/40 to-accent/40 transition-[width] duration-200"
                 style={{ width: `calc(24px + (100% - 24px) * ${index / (EFFORTS.length - 1)})` }}
               />
               {EFFORTS.map((e, i) => (
@@ -736,7 +731,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
   return (
     <section aria-label="AI Assistant" className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line pl-3.5 pr-1.5">
-        <span className={cn("flex size-5 items-center justify-center rounded-md text-white", AI_GRADIENT)}>
+        <span className={cn("flex size-5 items-center justify-center rounded-md text-accent-fg", AI_GRADIENT)}>
           <Sparkles className="size-3" />
         </span>
         <h2 className="flex-1 truncate text-[13.5px] font-semibold text-fg">AI Assistant</h2>
@@ -752,7 +747,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-fg-subtle">
           <Sparkles className="size-6 text-fg-faint" />
           <p>The AI assistant isn&apos;t available on this server right now.</p>
-          <button type="button" className="text-xs text-accent hover:underline" onClick={() => void checkAvailability()}>
+          <button type="button" className="text-xs text-accent-ink hover:underline" onClick={() => void checkAvailability()}>
             Check again
           </button>
         </div>
@@ -779,7 +774,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
 
           <div className="shrink-0 px-3 pb-3 pt-1">
             {/* A hairline border that turns into the assistant's gradient while typing. */}
-            <div className="rounded-[18px] bg-line-strong/80 p-px shadow-[0_8px_24px_-16px_rgb(0_0_0/0.35)] focus-within:bg-gradient-to-r focus-within:from-[#6d8cff] focus-within:via-[#8a7cf5] focus-within:to-[#c26cea]">
+            <div className="rounded-[18px] bg-line-strong/80 p-px shadow-[0_8px_24px_-16px_rgb(0_0_0/0.35)] focus-within:bg-accent">
             <form
               className="flex flex-col rounded-[17px] bg-surface-2"
               onSubmit={(e) => {
@@ -817,7 +812,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                     disabled={!draft.trim()}
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-full transition-all active:scale-95",
-                      draft.trim() ? cn("text-white hover:brightness-110", AI_GRADIENT) : "bg-hover text-fg-faint",
+                      draft.trim() ? cn("text-accent-fg hover:brightness-110", AI_GRADIENT) : "bg-hover text-fg-faint",
                     )}
                   >
                     <ArrowUp className="size-4" />

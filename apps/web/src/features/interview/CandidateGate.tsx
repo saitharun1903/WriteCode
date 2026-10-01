@@ -150,7 +150,7 @@ export function CandidateGate() {
       <div role="dialog" aria-modal="true" aria-labelledby="interview-rules" className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-canvas/95 p-4 backdrop-blur">
         <div className="w-full max-w-lg space-y-5 rounded-2xl border border-line-strong bg-surface p-6 shadow-float">
           <div className="flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-accent/15 text-accent-ink">
               <ShieldCheck className="size-5" />
             </span>
             <div>

@@ -1060,7 +1060,7 @@ function EmptyState({ recording, failed, message }: { recording: boolean; failed
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-fg-subtle">
       <div className="relative flex size-12 items-center justify-center rounded-2xl bg-accent-soft/60">
-        <Workflow className={cn("size-6 text-accent", recording && "animate-pulse")} />
+        <Workflow className={cn("size-6 text-accent-ink", recording && "animate-pulse")} />
         {recording && <span className="absolute inset-0 animate-ping rounded-2xl border border-accent/40" />}
       </div>
       {recording ? (
@@ -1095,7 +1095,7 @@ function Recording({ waiting }: { waiting: boolean }) {
     <div className="flex h-full min-h-0 flex-col">
       <div aria-live="polite" className={cn("flex h-10 shrink-0 items-center gap-2.5 border-b px-3 text-sm", waiting ? "border-warning/40 bg-warning-soft/60" : "border-line")}>
         <span className="relative flex size-6 items-center justify-center rounded-lg bg-accent-soft/60">
-          <Workflow className="size-3.5 animate-pulse text-accent" />
+          <Workflow className="size-3.5 animate-pulse text-accent-ink" />
         </span>
         <span className="text-fg">Recording every step of the program…</span>
         {waiting && <span className="text-warning">It is waiting for your input: type it below and press Enter.</span>}

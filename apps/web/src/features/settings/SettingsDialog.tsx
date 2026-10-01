@@ -267,7 +267,7 @@ export function SettingsDialog() {
                 section === sec.id ? "bg-accent-soft/70 text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
               )}
             >
-              <span className={section === sec.id ? "text-accent" : "text-fg-subtle"}>{sec.icon}</span>
+              <span className={section === sec.id ? "text-accent-ink" : "text-fg-subtle"}>{sec.icon}</span>
               {sec.label}
             </button>
           ))}

@@ -21,7 +21,8 @@
 
   /*
    * A deep night blue rather than grey: the chrome is a shade lighter than the
-   * editor it frames, lines are hairlines, and the accent is the logo's blue.
+   * editor it frames, lines are hairlines, and the accent is the amber of the
+   * logo's cursor, with the ink of its tile written on it.
    */
   /* Main toolbar, stripes and status bar. */
   --canvas: #10121a;
@@ -41,10 +42,12 @@
   --fg-subtle: #8b91a7;
   --fg-faint: #555c72;
 
-  --accent: #4b7bff;
-  --accent-fg: #ffffff;
-  --accent-soft: #1e2c57;
-  --accent-line: #5d88ff;
+  --accent: #ffb224;
+  --accent-fg: #15161a;
+  /* The accent as text and icons. */
+  --accent-ink: #ffbe4d;
+  --accent-soft: #3a2d12;
+  --accent-line: #ffc353;
 
   --success: #4fcb7c;
   --success-soft: rgb(79 203 124 / 0.14);
@@ -61,7 +64,7 @@
 
   /* Editor line highlights. */
   --breakpoint-line: #3a1c26;
-  --execution-line: #1c2f5a;
+  --execution-line: #3a3015;
 
   --shadow-float: 0 0 0 1px #2d3347, 0 18px 44px -12px rgb(0 0 0 / 0.75);
 }
@@ -83,10 +86,12 @@
   --fg-subtle: #6c707e;
   --fg-faint: #a8adbd;
 
-  --accent: #3574f0;
-  --accent-fg: #ffffff;
-  --accent-soft: #d4e2ff;
-  --accent-line: #3574f0;
+  --accent: #ffb224;
+  --accent-fg: #15161a;
+  /* Amber is too light to read on white: text and icons use a deeper one. */
+  --accent-ink: #a05e00;
+  --accent-soft: #ffecc0;
+  --accent-line: #c98200;
 
   --success: #208a3c;
   --success-soft: rgb(32 138 60 / 0.1);
@@ -102,7 +107,7 @@
   --active: #d3d5db;
 
   --breakpoint-line: #fae3e3;
-  --execution-line: #dbe7ff;
+  --execution-line: #fff1cc;
 
   --shadow-float: 0 0 0 1px #c9ccd6, 0 10px 28px -8px rgb(0 0 0 / 0.18);
 }
@@ -121,6 +126,7 @@
   --color-fg-faint: var(--fg-faint);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-accent-line: var(--accent-line);
   --color-success: var(--success);
@@ -199,7 +205,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--accent-line);
     outline-offset: -2px;
   }
 
@@ -548,10 +554,10 @@
   color: rgb(15 18 25);
 }
 .cw-dock-fg-ai {
-  color: #c4bbff;
+  color: #ffc353;
 }
 [data-theme="light"] .cw-dock-fg-ai {
-  color: #5b4bd1;
+  color: #8a5000;
 }
 .cw-dock-capsule {
   overflow: hidden;
@@ -563,9 +569,9 @@
   will-change: transform;
 }
 .cw-dock-capsule-ai {
-  background: linear-gradient(180deg, rgb(160 146 255 / 0.34), rgb(122 104 245 / 0.14));
+  background: linear-gradient(180deg, rgb(255 178 36 / 0.3), rgb(255 178 36 / 0.12));
   box-shadow:
-    inset 0 1px 0 rgb(214 207 255 / 0.45),
+    inset 0 1px 0 rgb(255 226 170 / 0.4),
     inset 0 -1px 0 rgb(0 0 0 / 0.2);
 }
 [data-theme="light"] .cw-dock-capsule {
@@ -576,7 +582,7 @@
     0 4px 12px -4px rgb(15 23 42 / 0.3);
 }
 [data-theme="light"] .cw-dock-capsule-ai {
-  background: linear-gradient(180deg, rgb(238 235 255), rgb(222 216 255));
+  background: linear-gradient(180deg, rgb(255 244 219), rgb(255 232 184));
 }
 /* A band of light that sweeps across the capsule when it lands on a tab. */
 .cw-dock-sheen {
@@ -615,13 +621,17 @@
   margin-left: 3px;
 }
 
-/* Shared code and codes to scan: a frame in the brand's gradient. */
+/* Shared code and codes to scan: a frame in the ink of the logo's tile. */
 .cw-glow-card,
 .cw-qr-frame {
   position: relative;
   padding: 1.5px;
   border-radius: 20.5px;
-  background: linear-gradient(135deg, #6d8cff, #8a7cf5 45%, #c26cea);
+  background: #15161a;
+}
+[data-theme="dark"] .cw-glow-card,
+[data-theme="dark"] .cw-qr-frame {
+  background: var(--line-strong);
 }
 .cw-qr-frame {
   padding: 3px;
@@ -640,14 +650,14 @@
   padding: 0 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
-  background: linear-gradient(135deg, #4f6ff5, #7a5cf0 55%, #b04fe0);
+  color: var(--accent-fg);
+  background: var(--accent);
   transition:
     filter 120ms ease,
     transform 120ms ease;
 }
 .cw-cta:hover {
-  filter: brightness(1.08);
+  filter: brightness(1.06);
 }
 .cw-cta:active {
   transform: scale(0.98);
@@ -683,4 +693,19 @@
 .cw-tok-comment {
   color: var(--tok-comment);
   font-style: italic;
+}
+
+/* The start screen's name ends in the logo's cursor. */
+.cw-caret {
+  display: inline-block;
+  width: 0.56em;
+  height: 0.13em;
+  margin-left: 0.1em;
+  background: var(--accent);
+  animation: cw-blink 1.15s steps(1) infinite;
+}
+@keyframes cw-blink {
+  50% {
+    opacity: 0;
+  }
 }

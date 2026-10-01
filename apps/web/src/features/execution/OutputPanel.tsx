@@ -131,7 +131,7 @@ function LinkedText({ text, query }: { text: string; query: string }) {
         type="button"
         title={`Open ${seg.file} at line ${seg.line}`}
         onClick={() => goToLocation(seg.file, seg.line, seg.column)}
-        className="cursor-pointer underline decoration-current/40 underline-offset-2 hover:text-accent hover:decoration-accent"
+        className="cursor-pointer underline decoration-current/40 underline-offset-2 hover:text-accent-ink hover:decoration-accent"
       >
         {highlight(seg.text, query)}
       </button>
@@ -249,7 +249,7 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
               <p className="text-danger">{run.error.title}</p>
               {run.error.detail && <p className="text-fg-subtle">{run.error.detail}</p>}
               {run.error.requestId && <p className="font-mono text-xs text-fg-faint">Request ID: {run.error.requestId}</p>}
-              <button onClick={() => runCommand("run.execute")} className="mt-1 text-accent hover:underline">
+              <button onClick={() => runCommand("run.execute")} className="mt-1 text-accent-ink hover:underline">
                 Retry
               </button>
             </div>

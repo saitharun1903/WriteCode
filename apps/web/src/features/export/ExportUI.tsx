@@ -71,12 +71,8 @@ async function cardPng(text: string, title: string, caption: string): Promise<Bl
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
   };
-  // The frame: the brand's gradient, with a white card inside it.
-  const frame = ctx.createLinearGradient(0, 0, W, H);
-  frame.addColorStop(0, "#6d8cff");
-  frame.addColorStop(0.5, "#8a7cf5");
-  frame.addColorStop(1, "#c26cea");
-  ctx.fillStyle = frame;
+  // The frame: the ink of the logo's tile, with a white card inside it.
+  ctx.fillStyle = "#15161a";
   round(0, 0, W, H, 64);
   ctx.fill();
   ctx.fillStyle = "#fff";
@@ -247,11 +243,11 @@ function ShareDialog() {
         <>
           <CopyField value={link} label="Copy link" />
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent hover:underline">
+            <a href={link} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-accent-ink hover:underline">
               <ExternalLink className="size-3.5" /> Open the shared page
             </a>
             {typeof navigator !== "undefined" && typeof navigator.share === "function" && (
-              <button type="button" className="flex items-center gap-1 text-accent hover:underline" onClick={() => void navigator.share({ title: `${project.name} on ${PRODUCT.name}`, url: link }).catch(() => {})}>
+              <button type="button" className="flex items-center gap-1 text-accent-ink hover:underline" onClick={() => void navigator.share({ title: `${project.name} on ${PRODUCT.name}`, url: link }).catch(() => {})}>
                 <Share2 className="size-3.5" /> Send with an app
               </button>
             )}

@@ -165,7 +165,7 @@ export function EditorArea() {
               <Fragment key={label}>
                 <dt className="text-right text-fg-subtle">{label}</dt>
                 <dd>
-                  <Kbd shortcut={shortcut} className="text-sm text-accent" />
+                  <Kbd shortcut={shortcut} className="text-sm text-accent-ink" />
                 </dd>
               </Fragment>
             ))}

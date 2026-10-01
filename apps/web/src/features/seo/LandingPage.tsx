@@ -109,7 +109,7 @@ export function LandingPage({ page }: { page: Page }) {
       <main>
         <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-12 md:grid-cols-[1.05fr_1fr] md:pt-20">
           <div>
-            <p className="mb-3 text-[13px] font-medium uppercase tracking-[0.08em] text-accent">{SITE.tagline}</p>
+            <p className="mb-3 text-[13px] font-medium uppercase tracking-[0.08em] text-accent-ink">{SITE.tagline}</p>
             <h1 className="text-[34px] font-bold leading-[1.1] tracking-tight md:text-[46px]">{page.h1}</h1>
             <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-fg-muted">{page.intro}</p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -149,7 +149,7 @@ export function LandingPage({ page }: { page: Page }) {
           <ol className="mt-8 grid gap-4 md:grid-cols-2">
             {page.steps.map((s, i) => (
               <li key={s} className="flex gap-4 rounded-xl border border-line-strong/60 p-5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">{i + 1}</span>
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent-ink">{i + 1}</span>
                 <p className="text-[14.5px] leading-relaxed text-fg-muted">{s}</p>
               </li>
             ))}
