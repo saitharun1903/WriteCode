@@ -63,8 +63,9 @@ if up "$TAG" && ready; then
     docker image ls "writecode/$target" --format '{{.CreatedAt}}\t{{.Tag}}' | sort -r | tail -n +4 | cut -f2 \
       | xargs -r -I{} docker image rm "writecode/$target:{}" >/dev/null 2>&1 || true
   done
-  # Build cache grows with every deployment; keep only the last week's.
-  docker builder prune -f --filter until=168h >/dev/null 2>&1 || true
+  # Build cache grows by gigabytes with every deployment (a week of frequent deploys filled 60 GB).
+  # Keep the newest 5 GB, enough for the next build to reuse its layers.
+  docker builder prune -f --max-used-space 5GB >/dev/null 2>&1 || true
   exit 0
 fi
 
