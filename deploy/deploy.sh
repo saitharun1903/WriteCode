@@ -25,6 +25,8 @@ set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+# The camera relay runs only where it has been set up (a secret in the env file).
+if [ -n "${TURN_SECRET:-}" ]; then COMPOSE+=(--profile turn); fi
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 

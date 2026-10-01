@@ -67,6 +67,10 @@ else
   sudo ufw allow OpenSSH
   sudo ufw allow 80/tcp
   sudo ufw allow 443/tcp
+  # Camera relay for interviews (the "turn" service): its port and the UDP ports it hands out.
+  sudo ufw allow 3478/udp
+  sudo ufw allow 3478/tcp
+  sudo ufw allow 49160:49259/udp
   sudo ufw --force enable
 fi
 

@@ -698,6 +698,13 @@ export class LiveRooms {
     return timingSafeEqual(sha256(token), Buffer.from(meta.ownerTokenHash, 'hex')) ? meta : null;
   }
 
+  /** True when `roomId` is an interview that has not ended (its people may use the camera relay). */
+  async isOpenInterview(roomId: unknown): Promise<boolean> {
+    if (!isLiveRoomId(roomId)) return false;
+    const meta = this.rooms.get(roomId)?.meta ?? (await this.store.getMeta(roomId));
+    return !!meta && !meta.ended && !!meta.interview && !meta.interview.public.endedAt;
+  }
+
   /** Saves every open session (on shutdown). */
   async saveAll() {
     await Promise.all([...this.rooms.values()].map((r) => r.save()));

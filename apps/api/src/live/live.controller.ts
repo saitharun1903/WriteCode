@@ -8,12 +8,15 @@ import { emailAvailable, inviteEmail, sendEmail } from "../email/resend.js";
 import { REDIS } from "../infra/infra.module.js";
 import { LiveService } from "./live.gateway.js";
 import { LiveError, cleanName } from "./rooms.js";
+import { iceServers } from "./turn.js";
 
 const EMAIL = /^[^\s@,;<>"]{1,64}@[^\s@,;<>"]{1,190}\.[A-Za-z]{2,}$/;
 /** Emails one person may send per hour, and one session per day: enough to invite a class, too few to spam. */
 const PER_CLIENT_HOUR = 40;
 const PER_ROOM_DAY = 60;
 const MAX_RECIPIENTS = 10;
+/** Camera set-ups one person may ask for per hour (each interview needs one or two). */
+const ICE_PER_CLIENT_HOUR = 60;
 
 @Controller()
 export class LiveController {
@@ -38,6 +41,22 @@ export class LiveController {
       if (e instanceof LiveError && e.code === "rate") throw new HttpException(e.message, 429);
       throw e;
     }
+  }
+
+  /**
+   * The servers a browser uses to connect an interview's camera: STUN, and the relay (TURN)
+   * with a credential that expires. Only for interviews that are open, and rate-limited,
+   * so the relay cannot be used as a free service.
+   */
+  @Post("live/ice")
+  @HttpCode(200)
+  async ice(@Body() body: unknown, @Req() req: Request) {
+    const room = body && typeof body === "object" ? (body as { room?: unknown }).room : undefined;
+    if (!(await this.live.rooms.isOpenInterview(room))) throw new ForbiddenException("The camera is only used in an interview that is open.");
+    const key = `ice:c:${clientHash(req.ip)}:${Math.floor(Date.now() / 3_600_000)}`;
+    const counts = await this.redis.multi().incr(key).expire(key, 3601).exec();
+    if (Number(counts?.[0]?.[1] ?? 0) > ICE_PER_CLIENT_HOUR) throw new HttpException("Too many camera connections. Try again later.", 429);
+    return { iceServers: iceServers(config.turn, String(room).slice(0, 8)) };
   }
 
   /** Whether invitations can be emailed from this server. */

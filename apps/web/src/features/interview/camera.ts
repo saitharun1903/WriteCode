@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { LiveRtcSignal } from "@cw/shared";
+import { API_URL } from "@/features/execution/api";
 import { rtcBridge, useLive } from "@/features/live/store";
 
 /**
@@ -11,8 +12,37 @@ import { rtcBridge, useLive } from "@/features/live/store";
  * Nothing is recorded or stored.
  */
 
-/** Public STUN servers: they tell each browser its own address so the two can reach each other. */
-const ICE_SERVERS: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
+/**
+ * How the two browsers find each other. STUN servers tell each its own address;
+ * when a network allows no direct connection (strict office and college
+ * networks), the site's relay (TURN) carries the picture and sound instead.
+ * The relay's short-lived credential comes from the server when the interview opens.
+ */
+let iceServers: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }];
+let iceFor: string | null = null;
+
+async function loadIceServers(room: string) {
+  if (iceFor === room) return;
+  iceFor = room;
+  try {
+    const res = await fetch(`${API_URL}/api/v1/live/ice`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ room }), signal: AbortSignal.timeout(6000) });
+    const body = (await res.json()) as { iceServers?: RTCIceServer[] };
+    if (res.ok && Array.isArray(body.iceServers) && body.iceServers.length) iceServers = body.iceServers;
+    else iceFor = null;
+  } catch {
+    // Direct connections still work; the next interview asks again.
+    iceFor = null;
+  }
+}
+
+/** For checking the relay: with `cw:rtc:relay` set to 1 in this browser's storage, only the relay is used. */
+function relayOnly(): boolean {
+  try {
+    return localStorage.getItem("cw:rtc:relay") === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface CameraState {
   /** Candidate: this browser's camera and microphone, once allowed. */
@@ -50,7 +80,7 @@ function drop(id: string) {
 function connection(id: string, call: string): RTCPeerConnection {
   drop(id);
   calls.set(id, call);
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers, ...(relayOnly() ? { iceTransportPolicy: "relay" as const } : {}) });
   peers.set(id, pc);
   waiting.set(id, []);
   pc.onicecandidate = (e) => e.candidate && send(id, { kind: "ice", call, candidate: e.candidate.toJSON() });
@@ -226,6 +256,8 @@ export function stopCamera() {
 
 if (typeof window !== "undefined") {
   useLive.subscribe((s, prev) => {
+    // An interview is open: have the relay's credential ready before any camera connects.
+    if (s.interview && !s.interview.endedAt && s.roomId) void loadIceServers(s.roomId);
     // The interview is over, or the session was left: the camera goes off at once.
     if ((prev.interview && !s.interview) || (s.interview?.endedAt && !prev.interview?.endedAt)) return stopCamera();
     if (!s.interview || s.interview.endedAt || s.participants === prev.participants) return;

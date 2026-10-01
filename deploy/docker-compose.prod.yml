@@ -68,6 +68,9 @@ services:
       # Optional: email invitations through Resend (the key stays on the server).
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
+      # Optional: the camera relay below. The API signs short-lived credentials with the secret.
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_URLS: ${TURN_URLS:-}
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -79,6 +82,61 @@ services:
     networks: [edge, backend]
     # Ceilings so one service cannot starve the others; sandboxes have their own limits.
     mem_limit: 1g
+    logging: *logging
+
+  # Camera relay for interviews (TURN): when two browsers cannot reach each other directly
+  # (strict office and college networks), the picture and sound pass through here.
+  # Started only with the "turn" profile, i.e. when TURN_SECRET is set (see deploy.sh).
+  # Host networking: a relay hands out UDP ports, which Docker's port mapping handles badly.
+  # Open in the firewall: 3478/udp, 3478/tcp and 49160-49259/udp.
+  turn:
+    image: coturn/coturn:4.6-alpine
+    profiles: [turn]
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --external-ip=${TURN_EXTERNAL_IP:-127.0.0.1}
+      - --min-port=49160
+      - --max-port=49259
+      - --realm=${PUBLIC_HOST}
+      # Credentials are signed by the API with this secret and expire; there are no accounts.
+      - --use-auth-secret
+      - --static-auth-secret=${TURN_SECRET:-unset}
+      - --fingerprint
+      - --stale-nonce=600
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-tcp-relay
+      - --no-multicast-peers
+      - --no-software-attribute
+      # One interview is two relayed streams; these keep the relay from being used for anything bigger.
+      - --user-quota=6
+      - --total-quota=80
+      - --max-bps=250000
+      # Never relay into private networks (this server's own services, Docker's networks, the cloud's metadata address).
+      - --no-loopback-peers
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.0.0.0-192.0.0.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=198.18.0.0-198.19.255.255
+      - --denied-peer-ip=224.0.0.0-255.255.255.255
+      - --denied-peer-ip=::1
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+    read_only: true
+    tmpfs: [/var/lib/coturn, /tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 192m
     logging: *logging
 
   worker:

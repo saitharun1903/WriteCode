@@ -50,6 +50,18 @@ export const config = {
     /** Global queue depth after which new executions are refused. */
     maxQueueDepth: int("MAX_QUEUE_DEPTH", 200),
   },
+  /**
+   * TURN relay for interview cameras (coturn with a shared secret, see deploy/). Optional:
+   * without it, cameras connect directly, which some office and college networks block.
+   * The secret never leaves the server; browsers get credentials that expire.
+   */
+  turn: {
+    secret: process.env.TURN_SECRET ?? "",
+    urls: (process.env.TURN_URLS ?? "")
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean),
+  },
   /** Live sessions one client may have going at once (development machines run many test sessions). */
   liveMaxRoomsPerClient: int("LIVE_MAX_ROOMS_PER_CLIENT", production ? LIVE_LIMITS.maxRoomsPerClient : 100),
   /**
