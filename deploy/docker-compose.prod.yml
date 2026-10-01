@@ -118,7 +118,6 @@ services:
       - --total-quota=80
       - --max-bps=250000
       # Never relay into private networks (this server's own services, Docker's networks, the cloud's metadata address).
-      - --no-loopback-peers
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=10.0.0.0-10.255.255.255
       - --denied-peer-ip=100.64.0.0-100.127.255.255
