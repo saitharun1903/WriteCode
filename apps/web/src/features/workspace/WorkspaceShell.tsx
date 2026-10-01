@@ -510,13 +510,16 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
       <div className="flex h-dvh flex-col bg-canvas">
         <TitleBar compact={compact} />
         <LiveStrip />
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center gap-2 text-sm text-fg-subtle">
-            <Spinner /> Loading workspace…
-          </div>
-        ) : !project ? (
-          <main className="min-h-0 flex-1">
+        {loading || !project ? (
+          // The start screen is part of the page as it is served (search engines read it there);
+          // while the saved projects load, it waits behind the loading notice.
+          <main className="relative min-h-0 flex-1">
             <StartScreen />
+            {loading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-canvas text-sm text-fg-subtle">
+                <Spinner /> Loading workspace…
+              </div>
+            )}
           </main>
         ) : (
           <main className="flex min-h-0 flex-1 flex-col">{compact ? <CompactWorkbench /> : restricted ? <CandidateWorkbench /> : <DesktopWorkbench />}</main>

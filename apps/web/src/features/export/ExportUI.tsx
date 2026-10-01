@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { useExport, type Transfer } from "./api";
 import { safeFileName, saveFile } from "./code-pdf";
 import { DownloadDialog } from "./DownloadDialog";
+import { FilePicker, inOrder, linesOf } from "./FilePicker";
 import { qrSvg } from "./qr";
 
 const SITE = "writecode.in";
@@ -201,6 +202,29 @@ function CopyField({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Before the link is made, for a project of several files: which of them the link shows. */
+function ShareFiles() {
+  const project = useWorkspace((s) => s.project);
+  const activeFile = useWorkspace((s) => s.activeFile);
+  const files = useMemo(() => (project ? inOrder(project.files, project.entryFile) : []), [project]);
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(files.map((f) => f.path)));
+  const picked = files.filter((f) => chosen.has(f.path));
+  const lines = picked.reduce((n, f) => n + linesOf(f.content), 0);
+  return (
+    <div className="space-y-4">
+      <FilePicker id="share-files" files={files} activeFile={activeFile} chosen={chosen} onChange={setChosen} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-strong/60 pt-3">
+        <p aria-live="polite" className="text-xs text-fg-muted">
+          {picked.length === 0 ? "Choose at least one file." : `The link will show ${picked.length} file${picked.length === 1 ? "" : "s"}, ${lines} line${lines === 1 ? "" : "s"}.`}
+        </p>
+        <Button variant="primary" disabled={picked.length === 0} icon={<Link2 className="size-4" />} onClick={() => useExport.getState().shareFiles(new Set(picked.map((f) => f.path)))}>
+          Create link
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Share the open project's code as a link anyone can open. */
 function ShareDialog() {
   const project = useWorkspace((s) => s.project);
@@ -220,6 +244,7 @@ function ShareDialog() {
     };
   }, [job]);
   if (!project) return null;
+  if (!job) return <ShareFiles />;
   return (
     <div className="space-y-4">
       {error ? (
@@ -243,7 +268,7 @@ function ShareDialog() {
           </div>
           <QrCard text={link} title={project.name.slice(0, 26)} caption="Scan to open this code" fileName={`${project.name}-link`} />
           <p className="text-xs leading-relaxed text-fg-subtle">
-            Anyone with the link can read the code and open their own copy; they cannot change yours. It is the code as it is now: later edits are not included. The link works for 90 days after it was last opened.
+            Anyone with the link can read {project.files.length > 1 ? "the files you chose" : "the code"} and open their own copy; they cannot change yours. It is the code as it is now: later edits are not included. The link works for 90 days after it was last opened.
           </p>
         </>
       )}
@@ -353,7 +378,7 @@ export function ExportDialogs() {
   return (
     <>
       <DownloadDialog source={dialog === "download" && project ? { name: project.name, language: project.language, entryFile: project.entryFile, files: project.files, activeFile } : null} onClose={close} />
-      <Dialog open={dialog === "share"} onOpenChange={(o) => !o && close()} title="Share this code" description="A link to a read-only copy of the project, as it is now." className="top-[6vh] max-h-[90vh] max-w-md overflow-y-auto">
+      <Dialog open={dialog === "share"} onOpenChange={(o) => !o && close()} title="Share this code" description="A link to a read-only copy of the code, as it is now." className="top-[6vh] max-h-[90vh] max-w-md overflow-y-auto">
         {dialog === "share" && <ShareDialog />}
       </Dialog>
       <Dialog open={dialog === "transfer"} onOpenChange={(o) => !o && close()} title="Move projects to another device" description="Scan a code and your projects appear in the other browser." className="top-[6vh] max-h-[90vh] max-w-md overflow-y-auto">

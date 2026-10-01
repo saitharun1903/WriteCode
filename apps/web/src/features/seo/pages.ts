@@ -391,4 +391,24 @@ export const LANDING_PAGES: LandingPage[] = [
   },
 ];
 
+/** What the home page says the product does, under the start screen. Each links to the page about it. */
+export const HOME_FEATURES: { title: string; text: string; slug: string }[] = [
+  { title: "Online compiler", text: "Write and run Java, Python, C, C++, JavaScript and TypeScript in the browser. Type the program's input in the console while it runs. Nothing to install.", slug: "online-compiler" },
+  { title: "Online debugger", text: "Set breakpoints, step through the code line by line, and watch variables and the call stack, in every language.", slug: "online-debugger" },
+  { title: "Code visualizer", text: "See arrays, linked lists, trees and recursion drawn as the program runs, one line at a time.", slug: "code-visualizer" },
+  { title: "Test cases", text: "Save inputs with their expected outputs and check your program against all of them in one click.", slug: "online-compiler-with-test-cases" },
+  { title: "Code together", text: "Share a link and edit the same files live, with cursors, shared runs and coding interviews with hidden tests.", slug: "code-together" },
+];
+
+export const HOME_FAQS: Faq[] = [
+  {
+    q: "What is WriteCode?",
+    a: "WriteCode (writecode.in) is a free online compiler and IDE that runs in the browser. You can write, run, debug and visualize Java, Python, C, C++, JavaScript and TypeScript programs, test them, and share them.",
+  },
+  { q: "Do I need to install anything or sign up?", a: "No. Open writecode.in, choose a language and start typing. There is no download and no account." },
+  { q: "Can my program read input?", a: "Yes. Type the input in the console while the program runs, as in a terminal, or prepare it before running. Scanner, input(), scanf, cin and readline all work." },
+  { q: "Can I use it on a phone?", a: "Yes. The editor, Run, the console and the tests work on phones and tablets." },
+  ...COMMON_FAQS,
+];
+
 export const pageBySlug = (slug: string) => LANDING_PAGES.find((p) => p.slug === slug);

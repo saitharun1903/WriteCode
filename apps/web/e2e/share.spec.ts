@@ -186,6 +186,43 @@ test("a share link shows the code to anyone, who can open a copy of their own", 
   await expect(visitor.getByRole("heading", { name: "This code is not available" })).toBeVisible();
 });
 
+test("a project of several files asks which of them the link shows", async ({ browser }) => {
+  const page = await fresh(browser);
+  await projectWithCode(page);
+  await page.getByRole("button", { name: "New File" }).first().click();
+  await page.getByRole("textbox", { name: "Name" }).fill("notes.py");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name: /notes\.py/ })).toHaveAttribute("aria-selected", "true");
+  await page.evaluate(() => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue("# only notes\nLIMIT = 3\n");
+  });
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
+
+  await page.getByRole("button", { name: "Download and share" }).click();
+  await page.getByRole("menuitem", { name: /Share a link/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Share this code" });
+  const files = dialog.getByRole("list", { name: "Files to include" });
+  // No link is made until the files are chosen.
+  await expect(files.getByRole("checkbox", { checked: true })).toHaveCount(2);
+  await expect(dialog.locator("span[title^='http']")).toHaveCount(0);
+  await files.getByRole("checkbox").first().uncheck();
+  await files.getByRole("checkbox").last().uncheck();
+  await expect(dialog.getByRole("button", { name: "Create link" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Only the open file" }).click();
+  await expect(dialog.getByText("The link will show 1 file, 2 lines.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Create link" }).click();
+  const link = (await dialog.locator("span[title^='http']").getAttribute("title", { timeout: 20_000 }))!;
+
+  // The visitor gets the chosen file and nothing else.
+  const visitor = await fresh(browser);
+  await visitor.goto(link);
+  await expect(visitor.getByRole("heading", { name: "Python project" })).toBeVisible({ timeout: 20_000 });
+  await expect(visitor.getByLabel("Code of notes.py")).toContainText("LIMIT = 3");
+  await expect(visitor.getByText("main.py")).toHaveCount(0);
+  await expect(visitor.getByText("greet")).toHaveCount(0);
+});
+
 test("projects move to another browser by scanning a code", async ({ browser }) => {
   const page = await fresh(browser);
   await projectWithCode(page);

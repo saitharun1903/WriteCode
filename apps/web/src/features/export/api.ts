@@ -19,8 +19,11 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 /** Shares a read-only copy of the project's files; resolves with the link. */
-export async function createShare(project: Pick<Project, "name" | "language" | "entryFile" | "files">): Promise<string> {
-  const { id } = await post<{ id: string }>("shares", { name: project.name, language: project.language, entryFile: project.entryFile, files: project.files.map((f) => ({ path: f.path, content: f.content })) });
+export async function createShare(project: Pick<Project, "name" | "language" | "entryFile" | "files">, only?: ReadonlySet<string>): Promise<string> {
+  const files = project.files.filter((f) => !only || only.has(f.path));
+  // The file that opens first on the shared page: the entry file when it is shared, else the first one.
+  const entryFile = files.some((f) => f.path === project.entryFile) ? project.entryFile : (files[0]?.path ?? project.entryFile);
+  const { id } = await post<{ id: string }>("shares", { name: project.name, language: project.language, entryFile, files: files.map((f) => ({ path: f.path, content: f.content })) });
   return `${location.origin}/share#${id}`;
 }
 
@@ -63,8 +66,13 @@ export interface Transfer {
 
 interface ExportState {
   dialog: "share" | "transfer" | "download" | null;
-  /** The link being made for the open dialog. Started when the dialog opens, once. */
+  /**
+   * The link being made for the open dialog. Started once: when the dialog
+   * opens for a project of one file, or when the files have been chosen.
+   */
   share: Promise<string> | null;
+  /** Makes the link for the chosen files of the open project. */
+  shareFiles: (paths: ReadonlySet<string>) => void;
   transfer: Promise<Transfer> | null;
   open: (dialog: "share" | "transfer" | "download") => void;
   /** A fresh code after the last one expired. */
@@ -96,8 +104,12 @@ export const useExport = create<ExportState>((set) => ({
   open: (dialog) => {
     const project = useWorkspace.getState().project;
     if (dialog === "download") set({ dialog });
-    else if (dialog === "share") set({ dialog, share: project ? quiet(createShare(project)) : null });
+    else if (dialog === "share") set({ dialog, share: project && project.files.length === 1 ? quiet(createShare(project)) : null });
     else set({ dialog, transfer: quiet(startTransfer()) });
+  },
+  shareFiles: (paths) => {
+    const project = useWorkspace.getState().project;
+    if (project && paths.size) set({ share: quiet(createShare(project, paths)) });
   },
   renewTransfer: () => set({ transfer: quiet(startTransfer()) }),
   close: () => set({ dialog: null, share: null, transfer: null }),

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/primitives";
 import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
-import { LANDING_PAGES } from "@/features/seo/pages";
+import { HOME_FAQS, HOME_FEATURES, LANDING_PAGES } from "@/features/seo/pages";
 import { useInterviewUI } from "@/features/interview/ui";
 import { TransferButton } from "@/features/export/ExportUI";
 import { useWorkspace } from "./store";
@@ -164,7 +164,34 @@ export function StartScreen() {
           </section>
         )}
 
-        <nav aria-label="Compilers and tools" className="mt-14 border-t border-line-strong/60 pt-6 text-[13px] text-fg-subtle">
+        <section aria-labelledby="about-heading" className="mt-14 border-t border-line-strong/60 pt-8">
+          <h2 id="about-heading" className="text-lg font-semibold tracking-tight text-fg">
+            What you can do in {PRODUCT.name}
+          </h2>
+          <ul className="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+            {HOME_FEATURES.map((f) => (
+              <li key={f.slug}>
+                <h3 className="text-sm font-semibold text-fg">
+                  <a href={`/${f.slug}`} className="hover:text-accent hover:underline">
+                    {f.title}
+                  </a>
+                </h3>
+                <p className="mt-1 text-[13px] leading-relaxed text-fg-muted">{f.text}</p>
+              </li>
+            ))}
+          </ul>
+          <h2 className="mt-10 text-lg font-semibold tracking-tight text-fg">Questions and answers</h2>
+          <div className="mt-3 divide-y divide-line-strong/60 rounded-xl border border-line-strong/60 bg-surface">
+            {HOME_FAQS.map((f) => (
+              <details key={f.q} className="px-4 py-3">
+                <summary className="cursor-pointer text-sm font-medium text-fg">{f.q}</summary>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <nav aria-label="Compilers and tools" className="mt-10 border-t border-line-strong/60 pt-6 text-[13px] text-fg-subtle">
           <ul className="flex flex-wrap gap-x-4 gap-y-2">
             {LANDING_PAGES.map((p) => (
               <li key={p.slug}>
