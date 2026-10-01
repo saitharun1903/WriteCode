@@ -607,7 +607,7 @@ test("debugging a program that reads input: Java stops at a breakpoint after the
   await expect(page.getByText("Success", { exact: true })).toBeVisible();
 });
 
-test("visualizer: steps through a recorded Python run with frames, objects and output", async ({ page }) => {
+test("visualizer: starts where the logic starts, and steps through a recorded Python run with its calls, variables and output", async ({ page }) => {
   await freshProject(page, "Python");
   await setCode(
     page,
@@ -615,41 +615,40 @@ test("visualizer: steps through a recorded Python run with frames, objects and o
   );
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
+  // The first lines only prepare things (a function, a list, a second name for it): the steps start at the call.
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
-  await viz.getByRole("button", { name: "memory" }).click();
-  const frames = viz.getByRole("region", { name: "Frames" });
-  const objects = viz.getByRole("region", { name: "Objects" });
-  await expect(frames.getByRole("group", { name: "Frame <module>" })).toBeVisible();
+  await expect(viz.getByText("main.py:7")).toBeVisible();
   await expect(page.getByRole("button", { name: "Go to line" })).not.toHaveText("");
-
-  // Step forward to line 7 (after nums and alias exist): both names point at one list.
-  const next = viz.getByRole("button", { name: "Next step" });
-  while (!(await viz.getByText("main.py:7").isVisible())) await next.click();
-  await expect(objects.getByRole("group", { name: "list object" })).toHaveCount(1);
-  await expect(frames.getByRole("row", { name: "nums = reference" })).toBeVisible();
-  await expect(frames.getByRole("row", { name: "alias = reference" })).toBeVisible();
-  // Functions are shown inline; nums and alias both have an arrow to the one list.
-  await expect(frames.getByRole("row", { name: "square = function square(x)" })).toBeVisible();
-  await expect(viz.locator("svg path[marker-end]")).toHaveCount(2);
+  // One view, with nothing to choose: the structures.
+  await expect(viz.getByRole("group", { name: "View" })).toHaveCount(0);
+  const stack = viz.getByRole("navigation", { name: "Call stack" });
+  await expect(stack).toHaveText("<module>");
+  await expect(viz.getByRole("region", { name: /nums$/ })).toContainText("2");
   await expect(page.locator(".monaco-editor .cw-debug-line")).toHaveCount(1);
   // The line that just ran is marked too.
   await expect(page.locator(".monaco-editor .cw-viz-ran-line")).toHaveCount(1);
   const happened = viz.getByLabel("What happened");
   await expect(happened).toContainText("alias = [1, 2]");
-  // Optionally as objects with their own arrows.
-  await viz.getByRole("button", { name: "Show functions and classes as objects" }).click();
-  await expect(objects.getByRole("group", { name: "function object" })).toContainText("square(x)");
-  await expect(viz.locator("svg path[marker-end]")).toHaveCount(3);
-  await viz.getByRole("button", { name: "Show functions and classes as objects" }).click();
+  await expect(viz.getByRole("button", { name: "Previous step" })).toBeDisabled();
 
-  // Into square(3): a second frame, then its return value.
+  // The steps that prepare the data are one click away, and one click from hidden again.
+  const setup = viz.getByRole("button", { name: "Setup steps" });
+  await setup.click();
+  await expect(setup).toHaveAttribute("aria-pressed", "true");
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible();
+  await expect(viz.getByText(/main\.py:1$/)).toBeVisible();
+  await setup.click();
+  await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible();
+  await expect(viz.getByText("main.py:7")).toBeVisible();
+
+  // Into square(3): a second call, then its return value.
+  const next = viz.getByRole("button", { name: "Next step" });
   await next.click();
   await expect(happened).toContainText("Called square(x=3)");
-  await expect(frames.getByRole("group", { name: "Frame square" })).toBeVisible();
-  await expect(frames.getByRole("row", { name: "x = 3" })).toBeVisible();
+  await expect(stack).toContainText("square");
+  await expect(viz.getByLabel("Variables")).toContainText("3");
   await next.click();
   await expect(happened).toContainText("square returns 9");
-  await expect(frames.getByRole("row", { name: "return value = 9" })).toBeVisible();
   await next.click();
   await expect(happened).toContainText("result = 9");
 
@@ -657,12 +656,13 @@ test("visualizer: steps through a recorded Python run with frames, objects and o
   await expect(viz.getByLabel("Output so far")).toHaveText("Nothing printed yet");
   await viz.getByRole("button", { name: "Last step" }).click();
   await expect(viz.getByLabel("Output so far")).toHaveText("result 9");
-  await expect(objects.getByRole("group", { name: "list object" })).toContainText("9");
+  await expect(viz.getByRole("region", { name: /nums$/ })).toContainText("9");
 
-  // Keyboard stepping backwards from the end.
+  // Keyboard stepping backwards from the end: to where the logic starts.
   await viz.getByRole("button", { name: "Previous step" }).focus();
   await page.keyboard.press("Home");
   await expect(viz.getByText(/^Step 1 of/)).toBeVisible();
+  await expect(viz.getByText("main.py:7")).toBeVisible();
 
   // Play runs through the steps by itself and stops at the end.
   await viz.getByRole("button", { name: "4×" }).click();
@@ -671,6 +671,53 @@ test("visualizer: steps through a recorded Python run with frames, objects and o
   await expect(viz.getByRole("button", { name: "Next step" })).toBeDisabled({ timeout: 30_000 });
   await expect(viz.getByRole("button", { name: "Play" })).toBeVisible();
   await expect(happened).toContainText("Program finished");
+});
+
+test("visualizer: a linked list built by hand is already there; the steps start at the loop that walks it, in every language", async ({ page }) => {
+  // [language, code, the line of the loop, the file]
+  const programs: [Parameters<typeof freshProject>[1], string, number, string][] = [
+    [
+      "Java",
+      "public class Main {\n    static class Node {\n        int val;\n        Node next;\n        Node(int val) { this.val = val; }\n    }\n\n    public static void main(String[] args) {\n        Node head = new Node(1);\n        Node second = new Node(2);\n        Node third = new Node(3);\n        head.next = second;\n        second.next = third;\n        Node cur = head;\n        int total = 0;\n        while (cur != null) {\n            total += cur.val;\n            cur = cur.next;\n        }\n        System.out.println(total);\n    }\n}\n",
+      16,
+      "Main.java",
+    ],
+    [
+      "Python",
+      "class Node:\n    def __init__(self, val):\n        self.val = val\n        self.next = None\n\n\nhead = Node(1)\nsecond = Node(2)\nthird = Node(3)\nhead.next = second\nsecond.next = third\ncur = head\ntotal = 0\nwhile cur:\n    total += cur.val\n    cur = cur.next\nprint(total)\n",
+      14,
+      "main.py",
+    ],
+    [
+      "C++",
+      "#include <iostream>\n\nstruct Node {\n    int val;\n    Node* next;\n    Node(int v) : val(v), next(nullptr) {}\n};\n\nint main() {\n    Node* head = new Node(1);\n    Node* second = new Node(2);\n    Node* third = new Node(3);\n    head->next = second;\n    second->next = third;\n    Node* cur = head;\n    int total = 0;\n    while (cur != nullptr) {\n        total += cur->val;\n        cur = cur->next;\n    }\n    std::cout << total << std::endl;\n    return 0;\n}\n",
+      17,
+      "main.cpp",
+    ],
+    [
+      "JavaScript",
+      "class Node {\n  constructor(val) {\n    this.val = val;\n    this.next = null;\n  }\n}\n\nconst head = new Node(1);\nconst second = new Node(2);\nconst third = new Node(3);\nhead.next = second;\nsecond.next = third;\nlet cur = head;\nlet total = 0;\nwhile (cur) {\n  total += cur.val;\n  cur = cur.next;\n}\nconsole.log(total);\n",
+      15,
+      "main.js",
+    ],
+  ];
+  for (const [language, code, loop, file] of programs) {
+    await freshProject(page, language);
+    await setCode(page, code);
+    await page.getByRole("button", { name: "Visualize execution" }).click();
+    const viz = page.getByRole("region", { name: "Visualize" });
+    await expect(viz.getByText(/^Step 1 of \d+$/), language).toBeVisible({ timeout: 120_000 });
+    // The first step shown is the loop, with the whole list already drawn.
+    await expect(viz.getByText(`${file}:${loop}`), language).toBeVisible();
+    const list = viz.getByRole("region", { name: "Singly linked list head" });
+    for (const value of ["1", "2", "3"]) await expect(list, language).toContainText(value);
+    await expect(viz.getByRole("button", { name: "Previous step" }), language).toBeDisabled();
+    // The steps that made the nodes are there for whoever wants them.
+    await viz.getByRole("button", { name: "Setup steps" }).click();
+    await expect(viz.getByText(`${file}:${loop}`), language).toHaveCount(0);
+    await viz.getByRole("button", { name: "Last step" }).click();
+    await expect(viz.getByLabel("Output so far"), language).toHaveText("6");
+  }
 });
 
 test("visualizer: animates a swap, index pointers and a linked list", async ({ page }) => {
@@ -682,29 +729,23 @@ test("visualizer: animates a swap, index pointers and a linked list", async ({ p
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
-  await viz.getByRole("button", { name: "memory" }).click();
+  // Nothing here but a straight line of statements: every step is shown.
+  await expect(viz.getByRole("button", { name: "Setup steps" })).toHaveCount(0);
   const happened = viz.getByLabel("What happened");
   const next = viz.getByRole("button", { name: "Next step" });
   while (!((await happened.textContent()) ?? "").includes("Swapped")) await next.click();
   await expect(happened).toContainText("Swapped arr[0] and arr[1]");
-  const list = viz.getByRole("group", { name: "list object" });
-  await expect(list.locator("[data-cell]")).toHaveText(["1", "3"]);
+  const arr = viz.getByRole("region", { name: /arr$/ });
+  await expect(arr).toContainText("1");
+  await expect(arr).toContainText("3");
   // `i` points at element 0 of arr.
-  await expect(list.getByText("i", { exact: true })).toBeVisible();
-  // The changed cells flash.
-  await expect(list.locator(".cw-viz-changed")).toHaveCount(2);
+  await expect(arr.getByText("i", { exact: true })).toBeVisible();
 
   await viz.getByRole("button", { name: "Last step" }).click();
-  const nodes = viz.getByRole("group", { name: "Node object" });
-  await expect(nodes).toHaveCount(2);
-  // A linked list reads left to right: the second node sits beside the first.
-  // Cards glide into place: measure once they have settled.
-  await expect
-    .poll(async () => {
-      const [a, b] = [await nodes.nth(0).boundingBox(), await nodes.nth(1).boundingBox()];
-      return !!a && !!b && b.x > a.x + a.width && Math.abs(b.y - a.y) < 4;
-    })
-    .toBe(true);
+  // The two nodes are drawn as the list they make.
+  const list = viz.getByRole("region", { name: "Singly linked list head" });
+  await expect(list).toContainText("1");
+  await expect(list).toContainText("2");
   await expect(viz.getByLabel("Output so far")).toHaveText("[1, 3]");
 });
 
@@ -717,18 +758,10 @@ test("visualizer: records a Java run across classes", async ({ page }) => {
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
-  await viz.getByRole("button", { name: "memory" }).click();
   await viz.getByRole("button", { name: "Last step" }).click();
   await expect(viz.getByLabel("Output so far")).toHaveText("1");
-  const objects = viz.getByRole("region", { name: "Objects" });
-  await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("4");
-  await expect(objects.getByRole("group", { name: "Box object" })).toContainText("items");
-  // The view explains itself: which call runs, who points at each object, and no empty `args`.
-  const frames = viz.getByRole("region", { name: "Frames" });
-  await expect(frames.getByRole("group", { name: "Frame Main.main" })).toContainText(/Running|Returning/);
-  await expect(frames.getByRole("row", { name: /^args/ })).toHaveCount(0);
-  await expect(objects.getByRole("group", { name: "ArrayList object" })).toContainText("xs");
-  await expect(viz.getByRole("note", { name: "How to read this view" })).toBeVisible();
+  await expect(viz.getByRole("region", { name: /xs$/ })).toContainText("4");
+  await expect(viz.getByRole("navigation", { name: "Call stack" })).toContainText("Main.main");
 });
 
 test("console shows only the program's output, not the sandbox's command line", async ({ page }) => {
@@ -844,7 +877,6 @@ test("visualizer: draws each data structure as its concept", async ({ page }) =>
   await page.getByRole("button", { name: "Visualize execution" }).click();
   const viz = page.getByRole("region", { name: "Visualize" });
   await expect(viz.getByText(/^Step 1 of \d+$/)).toBeVisible({ timeout: 120_000 });
-  await expect(viz.getByRole("button", { name: "structures" })).toHaveAttribute("aria-pressed", "true");
   await viz.getByRole("button", { name: "Last step" }).click();
   await expect(viz.getByRole("region", { name: "Binary search tree root" })).toContainText("10");
   await expect(viz.getByRole("region", { name: "Stack stack" })).toContainText("Top");
@@ -852,9 +884,6 @@ test("visualizer: draws each data structure as its concept", async ({ page }) =>
   await expect(viz.getByRole("region", { name: "Queue queue" })).not.toContainText("4");
   await expect(viz.getByRole("region", { name: "Graph graph" })).toContainText("visited (1)");
   await expect(viz.getByRole("region", { name: "Hash map freq" })).toContainText("'a'");
-  // The memory view is one click away.
-  await viz.getByRole("button", { name: "memory" }).click();
-  await expect(viz.getByRole("region", { name: "Objects" })).toBeVisible();
 });
 
 test("visualizer: JavaScript and TypeScript are drawn as their structures too", async ({ page }) => {
@@ -969,8 +998,6 @@ test("visualizer: C and C++ are drawn as their structures too", async ({ page })
   await viz.getByRole("button", { name: "Last step" }).click();
   await expect(viz.getByRole("region", { name: "Stack stack" })).toContainText("20");
   await expect(viz.getByLabel("Output so far")).toHaveText("24");
-  await viz.getByRole("button", { name: "memory" }).click();
-  await expect(viz.getByRole("region", { name: "Frames" }).getByRole("group", { name: "Frame <module>" })).toContainText("Global");
 });
 
 test("visualizer: a program that asks for input can be answered right in the Visualize panel, in every language", async ({ page }) => {

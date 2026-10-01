@@ -26,7 +26,7 @@ const GLIDE = { type: "spring", stiffness: 560, damping: 44, mass: 0.8 } as cons
 /**
  * Phone and tablet navigation, where a thumb expects it: a tab bar along the
  * bottom of a phone, a rail down the left of a tablet. Icons only (each tab's
- * name is its accessible label); the open tab sits on a soft amber mark.
+ * name is its accessible label); the open tab sits on a soft mark in the accent colour.
  */
 export function PanelTabs({ items, rail = false }: { items: DockItem[]; rail?: boolean }) {
   const reduce = useReducedMotion();

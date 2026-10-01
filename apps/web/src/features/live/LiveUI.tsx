@@ -119,6 +119,8 @@ function Invite({ roomId }: { roomId: string }) {
   const [sending, setSending] = useState(false);
   const [fallback, setFallback] = useState(false);
   const [asking, setAsking] = useState(false);
+  /** The invitations that went out, until the next ones are typed. */
+  const [sentTo, setSentTo] = useState<{ list: string[]; at: number } | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const me = useLive((s) => s.me);
   const owner = useLive((s) => s.role === "owner");
@@ -160,6 +162,7 @@ function Invite({ roomId }: { roomId: string }) {
     setSending(true);
     try {
       const { sent, failed } = await useLive.getState().emailInvites(list);
+      setSentTo({ list: list.filter((e) => !failed.includes(e.toLowerCase())), at: Date.now() });
       toast.success(`Invitation sent to ${sent} ${sent === 1 ? "person" : "people"}`, failed.length ? `Not sent to: ${failed.join(", ")}` : "They will get an email with the link.");
       setEmails(failed.join(", "));
     } catch (e) {
@@ -192,6 +195,7 @@ function Invite({ roomId }: { roomId: string }) {
             setEmails(e.target.value);
             setProblem(null);
             setAsking(false);
+            if (e.target.value.trim()) setSentTo(null);
           }}
           placeholder={asking ? "Who should get the link? Type their email" : "Invite by email: friend@gmail.com, …"}
           className={cn("min-w-0 flex-1", asking && "border-accent ring-2 ring-accent/40")}
@@ -201,6 +205,14 @@ function Invite({ roomId }: { roomId: string }) {
         </Button>
       </form>
       {asking && !problem && <p className="text-xs text-fg-muted">Type the email address of the person to invite (several, separated by commas), then press Send. The invitation is sent for you.</p>}
+      {sentTo && sentTo.list.length > 0 && !problem && (
+        <p role="status" className="flex items-start gap-1.5 rounded-md border border-success/40 bg-success-soft px-2.5 py-1.5 text-xs leading-relaxed text-fg">
+          <Check className="mt-0.5 size-3.5 shrink-0 text-success" />
+          <span>
+            Sent to <b className="font-semibold">{sentTo.list.join(", ")}</b> at {new Date(sentTo.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. It arrives within a minute; if it is not in the inbox, it is in Spam or Promotions.
+          </span>
+        </p>
+      )}
       {problem && (
         <p className="text-xs text-danger">
           {problem}

@@ -43,7 +43,7 @@ import { plainMath } from "./plain-math";
 import { editTarget, useAssistant, type ChatMessage } from "./store";
 
 const LANG_ALIASES: Record<string, string> = { py: "python", js: "javascript", ts: "typescript", "c++": "cpp", cc: "cpp", h: "c", sh: "shell", bash: "shell" };
-/** The assistant's own tiles and its send button: the logo's amber, with its ink on it. */
+/** The assistant's own tiles and its send button: the interface's accent. */
 const AI_GRADIENT = "bg-accent";
 
 /** Highlights code with the editor's own colours; one HTML string per line. */

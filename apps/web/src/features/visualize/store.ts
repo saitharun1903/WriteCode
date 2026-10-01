@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { Trace } from "@cw/shared";
-import { ranLine, withSourceTypeNames } from "./model";
+import { logicStart, ranLine, withSourceTypeNames } from "./model";
 
 export const SPEEDS = [0.5, 1, 2, 4] as const;
 export type Speed = (typeof SPEEDS)[number];
@@ -17,10 +17,13 @@ interface VisualizeState {
   step: number;
   playing: boolean;
   speed: Speed;
-  /** Draw functions and classes as their own boxes instead of inline. */
-  showCallables: boolean;
-  /** Structures: each data structure drawn as its concept. Memory: frames, objects and references. Null: chosen per trace. */
-  view: "structures" | "memory" | null;
+  /**
+   * The step where the program's own logic starts (see `logicStart`). The steps
+   * before it only prepare the data: they are left out unless `showSetup` is on.
+   */
+  start: number;
+  showSetup: boolean;
+  setShowSetup: (show: boolean) => void;
   setTrace: (executionId: string, trace: Trace) => void;
   clear: () => void;
   go: (step: number) => void;
@@ -30,8 +33,6 @@ interface VisualizeState {
   togglePlay: () => void;
   pause: () => void;
   setSpeed: (speed: Speed) => void;
-  setShowCallables: (show: boolean) => void;
-  setView: (view: "structures" | "memory") => void;
 }
 
 export const useVisualize = create<VisualizeState>((set, get) => ({
@@ -40,27 +41,37 @@ export const useVisualize = create<VisualizeState>((set, get) => ({
   step: 0,
   playing: false,
   speed: 1,
-  showCallables: false,
-  view: null,
-  setTrace: (executionId, trace) => set({ executionId, trace: withSourceTypeNames(trace), step: 0, playing: false }),
-  clear: () => set({ executionId: null, trace: null, step: 0, playing: false }),
+  start: 0,
+  showSetup: false,
+  setTrace: (executionId, trace) => {
+    const named = withSourceTypeNames(trace);
+    let start = 0;
+    try {
+      start = logicStart(named);
+    } catch {}
+    set({ executionId, trace: named, start, showSetup: false, step: start, playing: false });
+  },
+  clear: () => set({ executionId: null, trace: null, step: 0, start: 0, showSetup: false, playing: false }),
   go: (step) => {
     const n = get().trace?.steps.length ?? 0;
-    if (n > 0) set({ step: Math.max(0, Math.min(n - 1, step)) });
+    if (n > 0) set({ step: Math.max(firstStep(get()), Math.min(n - 1, step)) });
   },
+  // Shown: from the very first step. Hidden again: back to where the logic starts.
+  setShowSetup: (showSetup) => set((s) => ({ showSetup, playing: false, step: showSetup ? 0 : Math.max(s.step, s.start) })),
   next: () => get().go(get().step + 1),
   prev: () => get().go(get().step - 1),
   togglePlay: () => {
     const { playing, trace, step } = get();
     if (playing) return set({ playing: false });
     const last = (trace?.steps.length ?? 1) - 1;
-    set({ playing: true, step: step >= last ? 0 : step });
+    set({ playing: true, step: step >= last ? firstStep(get()) : step });
   },
   pause: () => set({ playing: false }),
   setSpeed: (speed) => set({ speed }),
-  setShowCallables: (showCallables) => set({ showCallables }),
-  setView: (view) => set({ view }),
 }));
+
+/** The first step that is shown. */
+export const firstStep = (s: Pick<VisualizeState, "start" | "showSetup">) => (s.showSetup ? 0 : s.start);
 
 /** Where the current step is: its innermost frame. */
 export function stepLocation(s: Pick<VisualizeState, "trace" | "step">): { file: string; line: number } | null {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HeapObject, Trace, TraceFrame, TraceStep, TraceValue } from "@cw/shared";
-import { diffSteps, frameIds, indexPointers, layoutHeap, nameOf, preview, sourceTypeName, timeline } from "./model";
+import { diffSteps, frameIds, indexPointers, layoutHeap, logicStart, nameOf, preview, sourceTypeName, timeline } from "./model";
 
 const int = (n: number): TraceValue => ({ kind: "value", text: String(n), type: "int" });
 const ref = (id: string): TraceValue => ({ kind: "ref", id });
@@ -150,5 +150,48 @@ describe("source type names", () => {
     expect(sourceTypeName("Outer$Inner$Leaf")).toBe("Leaf");
     expect(sourceTypeName("Main$1")).toBe("Main$1");
     expect(sourceTypeName("ArrayList")).toBe("ArrayList");
+  });
+});
+
+describe("logicStart", () => {
+  const node = (v: number): HeapObject => ({ kind: "object", type: "Node", fields: [["value", int(v)]] });
+  /** Steps of the outermost function, one per line. */
+  const main = (...lines: number[]) => lines.map((l) => step([frame("<module>", l, [])]));
+  const inside = (name: string, line: number) => step([frame("<module>", line, []), frame(name, 2, [])]);
+
+  it("is the loop that works on a list linked by hand", () => {
+    // 1-5: nodes made and linked; 6-8: a loop over them, run three times.
+    const t = trace([...main(1), inside("Node.__init__", 1), ...main(2), inside("Node.__init__", 2), ...main(3, 4, 5), ...main(6, 7, 8, 6, 7, 8, 6, 9)]);
+    expect(logicStart(t)).toBe(7);
+    expect(t.steps[7]!.frames[0]!.line).toBe(6);
+  });
+
+  it("is the line that calls one of the program's own functions; making objects is not a call to them", () => {
+    for (const ctor of ["Node.__init__", "Node.<init>", "Node::Node", "Node"]) {
+      const made = { a: node(1) };
+      const t = trace([...main(1, 2), step([frame("<module>", 3, []), frame(ctor, 2, [])], made), step([frame("<module>", 4, [])], made), step([frame("<module>", 5, [])], made), step([frame("<module>", 5, []), frame("reverse", 9, [])], made), step([frame("<module>", 6, [])], made)]);
+      expect(logicStart(t), ctor).toBe(4);
+    }
+  });
+
+  it("coming back to a line after its constructor returns is not a loop", () => {
+    // Java: `Node a = new Node(1);` is stepped before the constructor and again after it.
+    const t = trace([...main(1), inside("Main.Node.<init>", 1), ...main(1, 2), inside("Main.Node.<init>", 2), ...main(2, 3, 4), ...main(5, 6, 5, 6, 5, 7)]);
+    expect(t.steps[logicStart(t)]!.frames[0]!.line).toBe(5);
+  });
+
+  it("leaves out a loop that only makes objects, and starts at the loop after it", () => {
+    const heap = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`n${i}`, node(i)]));
+    const build = [0, 1, 2, 3].flatMap((n) => [step([frame("<module>", 2, [])], heap(n)), step([frame("<module>", 3, [])], heap(n))]);
+    const t = trace([step([frame("<module>", 1, [])]), ...build, step([frame("<module>", 5, [])], heap(3)), ...[6, 7, 6, 7, 6, 8].map((l) => step([frame("<module>", l, [])], heap(3)))]);
+    expect(t.steps[logicStart(t)]!.frames[0]!.line).toBe(6);
+  });
+
+  it("is the first step when there is nothing to skip to, or hardly anything skipped", () => {
+    // No loop, no call.
+    expect(logicStart(trace(main(1, 2, 3, 4, 5, 6)))).toBe(0);
+    // A loop on the second line.
+    expect(logicStart(trace(main(1, 2, 3, 2, 3, 2, 4)))).toBe(0);
+    expect(logicStart(trace([]))).toBe(0);
   });
 });

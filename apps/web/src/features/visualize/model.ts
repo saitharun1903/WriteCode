@@ -394,3 +394,90 @@ export function withSourceTypeNames(trace: Trace): Trace {
   };
 }
 
+
+// -- Where the logic starts
+
+const CONSTRUCTOR = new Set(["__init__", "__new__", "__post_init__", "<init>", "<clinit>", "constructor"]);
+
+/** A call that only makes an object: a constructor, an initializer, or a class being defined. */
+function makesAnObject(name: string, types: ReadonlySet<string>): boolean {
+  const parts = name.split(/[.:\s]+/).filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  // `Node::Node`, `Node.__init__`, `Node.<init>`; JavaScript names a constructor after its class.
+  return CONSTRUCTOR.has(last) || (parts.length > 1 && last === parts[parts.length - 2]) || types.has(name) || types.has(last);
+}
+
+const objectCount = (step: TraceStep) => Object.values(step.heap).filter((o) => o.kind === "object").length;
+
+/**
+ * The step at which the program stops preparing its data and starts working
+ * on it. Before it the program only declares things, in a straight line:
+ * variables, arrays, nodes linked by hand, objects made in a loop. The first
+ * call to one of the program's own functions, or the first loop that does
+ * anything else, is where its logic begins. 0 when there is no such start
+ * worth skipping to (a program with no loops or calls, or hardly any setup).
+ */
+export function logicStart(trace: Trace): number {
+  const steps = trace.steps;
+  const base = steps[0]?.frames.length ?? 0;
+  if (!base) return 0;
+  const types = new Set<string>();
+  for (const s of steps) for (const o of Object.values(s.heap)) if (o.kind === "object") types.add(o.type);
+
+  /** A call from the outermost function into one of the program's own (not a constructor). */
+  const callsOwnCode = (s: TraceStep) => s.frames.length > base && !makesAnObject(s.frames[base]!.name, types);
+  /** Steps in the outermost function, by line. */
+  const lineAt = (i: number) => (steps[i]!.frames.length === base && steps[i]!.event === "line" ? steps[i]!.frames[base - 1]!.line : null);
+
+  let start = -1;
+  let lastOuter = 0;
+  const firstSeen = new Map<number, number>();
+  for (let i = 0; i < steps.length && start < 0; i++) {
+    if (callsOwnCode(steps[i]!)) {
+      // The line that makes the call.
+      start = lastOuter;
+      break;
+    }
+    const line = lineAt(i);
+    if (line === null) continue;
+    // Back on the line that made a call (a constructor's), to finish it: the same visit, not a second one.
+    const back = lastOuter !== i - 1 && lineAt(lastOuter) === line;
+    lastOuter = i;
+    const first = firstSeen.get(line);
+    if (first === undefined || back) {
+      if (first === undefined) firstSeen.set(line, i);
+      continue;
+    }
+    // A line run again: a loop, from `first`. It ends at the first later line below everything the loop has run.
+    let bottom = line;
+    for (let k = first; k <= i; k++) bottom = Math.max(bottom, lineAt(k) ?? 0);
+    let end = i + 1;
+    let own = false;
+    for (; end < steps.length; end++) {
+      if (callsOwnCode(steps[end]!)) own = true;
+      const l = lineAt(end);
+      if (l === null) continue;
+      if (l < line || l > bottom) {
+        // Still inside it when a longer body shows itself (a branch not taken before).
+        if (l > bottom && [...firstSeen.keys()].every((seen) => seen !== l) && steps.slice(end + 1).some((_, k) => lineAt(end + 1 + k) === line)) {
+          bottom = l;
+          continue;
+        }
+        break;
+      }
+    }
+    // A loop that only makes objects (the nodes of a list, the rows of a table) is still setup.
+    const made = objectCount(steps[Math.min(end, steps.length - 1)]!) - objectCount(steps[first]!);
+    if (own || made < 2) start = first;
+    else {
+      for (let k = first; k < end; k++) {
+        const l = lineAt(k);
+        if (l !== null && !firstSeen.has(l)) firstSeen.set(l, k);
+      }
+      i = end - 1;
+      lastOuter = i;
+    }
+  }
+  // Nothing to skip to, or too little skipped to be worth it.
+  return start >= 3 && start < steps.length - 1 ? start : 0;
+}

@@ -21,8 +21,8 @@
 
   /*
    * A deep night blue rather than grey: the chrome is a shade lighter than the
-   * editor it frames, lines are hairlines, and the accent is the amber of the
-   * logo's cursor, with the ink of its tile written on it.
+   * editor it frames, lines are hairlines, and the accent is a clear blue that
+   * sits in the same family as the chrome.
    */
   /* Main toolbar, stripes and status bar. */
   --canvas: #10121a;
@@ -42,12 +42,12 @@
   --fg-subtle: #8b91a7;
   --fg-faint: #555c72;
 
-  --accent: #ffb224;
-  --accent-fg: #15161a;
+  --accent: #4b7bff;
+  --accent-fg: #ffffff;
   /* The accent as text and icons. */
-  --accent-ink: #ffbe4d;
-  --accent-soft: #3a2d12;
-  --accent-line: #ffc353;
+  --accent-ink: #8fb0ff;
+  --accent-soft: #1e2c57;
+  --accent-line: #5d88ff;
 
   --success: #4fcb7c;
   --success-soft: rgb(79 203 124 / 0.14);
@@ -64,7 +64,7 @@
 
   /* Editor line highlights. */
   --breakpoint-line: #3a1c26;
-  --execution-line: #3a3015;
+  --execution-line: #1c2f5a;
 
   --shadow-float: 0 0 0 1px #2d3347, 0 18px 44px -12px rgb(0 0 0 / 0.75);
 }
@@ -86,12 +86,12 @@
   --fg-subtle: #6c707e;
   --fg-faint: #a8adbd;
 
-  --accent: #ffb224;
-  --accent-fg: #15161a;
-  /* Amber is too light to read on white: text and icons use a deeper one. */
-  --accent-ink: #a05e00;
-  --accent-soft: #ffecc0;
-  --accent-line: #c98200;
+  --accent: #3574f0;
+  --accent-fg: #ffffff;
+  /* The accent as text and icons: a shade deeper, to read on white. */
+  --accent-ink: #2a5fd0;
+  --accent-soft: #d4e2ff;
+  --accent-line: #3574f0;
 
   --success: #208a3c;
   --success-soft: rgb(32 138 60 / 0.1);
@@ -107,7 +107,7 @@
   --active: #d3d5db;
 
   --breakpoint-line: #fae3e3;
-  --execution-line: #fff1cc;
+  --execution-line: #dbe7ff;
 
   --shadow-float: 0 0 0 1px #c9ccd6, 0 10px 28px -8px rgb(0 0 0 / 0.18);
 }
@@ -294,9 +294,9 @@
   --viz-obj: #2aacb8;
   --viz-ran-line: rgb(95 184 101 / 0.1);
   /* One colour per kind of structure, as in textbook diagrams. */
-  --viz-stack: #e8a33d;
+  --viz-stack: #e879a6;
   --viz-queue: #4cc38a;
-  --viz-list: #f0883e;
+  --viz-list: #38b6d9;
   --viz-tree: #5b9cf5;
   --viz-graph: #2fbfb0;
   --viz-hash: #b083f0;
@@ -310,9 +310,9 @@
   --viz-map: #7a3ec8;
   --viz-obj: #00787a;
   --viz-ran-line: rgb(32 138 60 / 0.08);
-  --viz-stack: #c27803;
+  --viz-stack: #c2417a;
   --viz-queue: #1f9d63;
-  --viz-list: #d9630f;
+  --viz-list: #0e7fa8;
   --viz-tree: #2f6fdb;
   --viz-graph: #0e8f84;
   --viz-hash: #7a3ec8;
