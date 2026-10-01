@@ -7,6 +7,7 @@ import { useWorkspace } from "@/features/projects/store";
 import { judge } from "@/features/tests/compare";
 import { useTests } from "@/features/tests/store";
 import { codeKeyOf, useInterviewTools } from "./store";
+import { useInterviewUI } from "./ui";
 
 const OUTCOME: Partial<Record<ExecutionStatus, string>> = {
   SUCCESS: "succeeded",
@@ -58,6 +59,36 @@ function keep(now = false) {
   else keepTimer = setTimeout(save, 800);
 }
 
+/** The session whose finished interview is being kept and closed. */
+let finishing: string | null = null;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * An interview has ended: once the code handed in has been checked, everything
+ * about it is kept with the project (the typing history too, for the replay),
+ * the session is closed for everyone, and the interviewer is asked whether to
+ * save it.
+ */
+async function finish(roomId: string) {
+  const mine = () => useLive.getState().roomId === roomId && !useLive.getState().archived;
+  // The final check starts a moment after the end; wait for its result (not for ever).
+  await wait(1500);
+  for (let i = 0; i < 180 && mine() && useLive.getState().interview?.judging; i++) await wait(500);
+  if (!mine()) return;
+  const history = await Promise.race([useLive.getState().requestHistory(), wait(8000).then(() => [] as [number, string][])]);
+  if (!mine()) return;
+  // Everything as it stands now, the last check included.
+  keep(true);
+  const ws = useWorkspace.getState();
+  const record = ws.project?.interview;
+  if (record && history.length && history.reduce((n, [, u]) => n + u.length, 0) <= MAX_KEPT_HISTORY) ws.setInterviewRecord({ ...record, history, savedAt: Date.now() });
+  await useWorkspace.getState().flush();
+  if (!mine()) return;
+  useLive.getState().closeFinishedInterview();
+  useInterviewUI.getState().setSavePrompt(true);
+}
+
 if (typeof window !== "undefined") {
   const reported = new Set<string>();
 
@@ -66,14 +97,10 @@ if (typeof window !== "undefined") {
     // (Opening a kept interview changes nothing in it, so it is not saved again.)
     const opened = s.archived && !prev.interview;
     if (!opened && (s.interview !== prev.interview || s.interviewPrivate !== prev.interviewPrivate)) keep(!!s.interview.endedAt && !prev.interview?.endedAt);
-    // The interview has just ended: fetch the typing history once, so the replay works after the session is gone.
-    if (s.interview.endedAt && !prev.interview?.endedAt && !s.archived) {
-      void s.requestHistory().then((history) => {
-        const ws = useWorkspace.getState();
-        const record = ws.project?.interview;
-        if (!record || !history.length || history.reduce((n, [, u]) => n + u.length, 0) > MAX_KEPT_HISTORY) return;
-        ws.setInterviewRecord({ ...record, history, savedAt: Date.now() });
-      });
+    // The interview is over (now, or while the interviewer was away): keep it, then close its session.
+    if (s.interview.endedAt && !s.archived && s.status === "connected" && s.roomId && finishing !== s.roomId) {
+      finishing = s.roomId;
+      void finish(s.roomId);
     }
   });
   // The analysis is part of what is kept.

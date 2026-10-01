@@ -61,12 +61,22 @@ interface WorkspaceState {
   openShared: (project: Project) => void;
   /** Applies changes that came from other people in a live session. */
   applyShared: (patch: Pick<Project, "files" | "folders" | "entryFile" | "stdin" | "name" | "tests">) => void;
-  /** Saves the open (shared) project as a project of your own. */
-  saveCopy: () => Promise<Project | null>;
+  /**
+   * Saves the open (shared) project as a project of your own; or `source`,
+   * a project that is no longer open, under `name`.
+   */
+  saveCopy: (source?: Project, name?: string) => Promise<Project | null>;
   setReadOnly: (readOnly: boolean) => void;
 }
 
 const LAST_PROJECT_KEY = "cw:last-project";
+/** When this browser last had the site open (ms), written while it is open and as it closes. */
+const LAST_SEEN_KEY = "cw:last-seen";
+/**
+ * Coming back within this long (a reload, a tab closed by mistake) reopens the
+ * project that was open; after it, the site starts from the start screen.
+ */
+export const RESUME_WITHIN_MS = 10 * 60_000;
 const tabsKey = (id: string) => `cw:tabs:${id}`;
 const SAVE_DEBOUNCE_MS = 400;
 
@@ -74,6 +84,18 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let initPromise: Promise<void> | null = null;
 /** Incremented on every project switch so late async loads cannot clobber a newer choice. */
 let openToken = 0;
+
+let seenTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Notes that the site is open now, and keeps noting it until the page goes. */
+function keepSeen() {
+  const mark = () => writeJSON(LAST_SEEN_KEY, Date.now());
+  mark();
+  if (seenTimer || typeof window === "undefined") return;
+  seenTimer = setInterval(mark, 20_000);
+  window.addEventListener("pagehide", mark);
+  document.addEventListener("visibilitychange", mark);
+}
 
 function readJSON<T>(key: string): T | null {
   try {
@@ -198,7 +220,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
             const stored = await projectRepo.get(summary.id);
             if (stored) await projectRepo.put({ ...stored, lastRunAt: ranAt });
           }
-          const last = readJSON<string>(LAST_PROJECT_KEY);
+          let last = readJSON<string>(LAST_PROJECT_KEY);
+          // Away for a while: start from the start screen, not from where it was left.
+          const seen = readJSON<number>(LAST_SEEN_KEY);
+          if (last && !(typeof seen === "number" && Date.now() - seen <= RESUME_WITHIN_MS)) {
+            last = null;
+            try {
+              localStorage.removeItem(LAST_PROJECT_KEY);
+            } catch {}
+          }
+          keepSeen();
           // Projects that were only opened and then left are not kept.
           let projects = await projectRepo.list();
           for (const p of projects) if (p.untouched && p.id !== last) await projectRepo.delete(p.id);
@@ -518,11 +549,16 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       }
     },
 
-    async saveCopy() {
-      const project = get().project;
+    async saveCopy(source, name) {
+      const project = source ?? get().project;
       if (!project) return null;
+      const names = get().projects.map((p) => p.name);
       // Saved on purpose, so it counts as recent work.
-      const copy = { ...ops.duplicateProject(project, createId(), get().projects.map((p) => p.name)), lastRunAt: Date.now() };
+      const copy = { ...ops.duplicateProject(project, createId(), names), lastRunAt: Date.now() };
+      if (name) {
+        copy.name = name;
+        for (let i = 2; names.includes(copy.name); i++) copy.name = `${name} ${i}`;
+      }
       try {
         await projectRepo.put(copy);
       } catch (e) {

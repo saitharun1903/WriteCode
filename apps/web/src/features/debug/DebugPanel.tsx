@@ -531,7 +531,7 @@ export function DebugToolWindow() {
             aria-label="Continue"
             title={`Continue (${primaryShortcut("debug.startOrContinue") ?? "F5"})`}
             onClick={() => runCommand("debug.startOrContinue")}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-success px-3 text-[12.5px] font-medium text-white shadow-[0_4px_14px_-6px_var(--success)] transition-transform hover:brightness-110 active:scale-95"
+            className="flex h-7 items-center gap-1.5 rounded-full bg-success px-3 text-[12.5px] font-medium text-white transition-transform hover:brightness-110 active:scale-95"
           >
             <Play className="size-3.5 fill-current" /> Continue
           </button>

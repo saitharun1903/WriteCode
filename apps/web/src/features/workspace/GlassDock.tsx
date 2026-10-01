@@ -17,9 +17,9 @@ export interface DockItem {
 }
 
 const DOT: Record<NonNullable<DockItem["dot"]>, string> = {
-  run: "bg-success shadow-[0_0_8px_var(--success)]",
-  pause: "bg-warning shadow-[0_0_8px_var(--warning)]",
-  record: "bg-accent shadow-[0_0_8px_var(--accent)]",
+  run: "bg-success",
+  pause: "bg-warning",
+  record: "bg-accent",
 };
 
 /** Springy, but settles quickly: the capsule glides to the tab that was tapped. */

@@ -162,7 +162,7 @@ function useTick(active: boolean): number {
 }
 
 /** Builds the report from what the panel has now; null before there is anything to report. */
-function useReport() {
+export function useReport() {
   const project = useWorkspace((s) => s.project);
   const iv = useLive((s) => s.interview)!;
   const priv = useLive((s) => s.interviewPrivate);
@@ -183,7 +183,13 @@ function useReport() {
   const file = `${iv.candidate ?? "candidate"}-${iv.title}`;
   return {
     ready,
-    pdf: () => ready && downloadPdf(buildReportPdf(input()), file),
+    pdf: async () => {
+      if (!ready) return;
+      const report = input();
+      // The logo for the page's mark; the report is made without it when it cannot be read.
+      const { loadLogoPixels } = await import("@/features/export/code-pdf");
+      downloadPdf(buildReportPdf({ ...report, logo: await loadLogoPixels() }), file);
+    },
     word: () => ready && downloadWord(buildReport(input()), file),
     print: () => ready && printReport(buildReport(input())),
   };

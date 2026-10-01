@@ -411,7 +411,7 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   const done = !message.pending && !!message.text && text.length >= message.text.length;
   return (
     <div className="group flex gap-3" aria-busy={message.pending}>
-      <div className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white shadow-[0_4px_12px_-4px_#8a7cf5]", AI_GRADIENT)}>
+      <div className={cn("mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-white", AI_GRADIENT)}>
         <Sparkles className={cn("size-3.5", message.pending && !message.text && "animate-pulse")} />
       </div>
       <div className="min-w-0 flex-1 text-[13.5px] leading-[1.65] text-fg">
@@ -499,7 +499,7 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
         className="pointer-events-none absolute -left-16 bottom-40 size-80 rounded-full opacity-60 blur-3xl [background:radial-gradient(circle,color-mix(in_srgb,#8a7cf5_28%,transparent),transparent_65%)]"
       />
       <motion.div {...rise(0)} className="relative">
-        <div className={cn("relative mb-4 flex size-12 items-center justify-center rounded-[15px] text-white shadow-[0_12px_32px_-12px_#8a7cf5]", AI_GRADIENT)}>
+        <div className={cn("relative mb-4 flex size-12 items-center justify-center rounded-[15px] text-white", AI_GRADIENT)}>
           <span aria-hidden className="absolute inset-0 rounded-[15px] ring-1 ring-inset ring-white/25" />
           <span aria-hidden className="absolute inset-x-2 top-1 h-1/3 rounded-full bg-white/20 blur-[6px]" />
           <Sparkles className="relative size-[22px]" />
@@ -516,7 +516,7 @@ function Welcome({ onPick }: { onPick: (prompt: string) => void }) {
             key={s.label}
             type="button"
             onClick={() => onPick(s.prompt)}
-            className="group relative rounded-2xl bg-gradient-to-r from-[#6d8cff]/70 via-[#8a7cf5]/70 to-[#c26cea]/70 p-px text-left shadow-[0_10px_30px_-18px_#8a7cf5]"
+            className="group relative rounded-2xl bg-gradient-to-r from-[#6d8cff]/70 via-[#8a7cf5]/70 to-[#c26cea]/70 p-px text-left"
           >
             <span className="flex items-center gap-3 rounded-[15px] bg-surface-2 px-3.5 py-3 transition-colors group-hover:bg-[color-mix(in_srgb,var(--surface-2)_90%,#8a7cf5)]">
               <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-[10px] text-white [&_svg]:size-4", AI_GRADIENT)}>{s.icon}</span>
@@ -817,7 +817,7 @@ export function AssistantPanel({ onClose }: { onClose: () => void }) {
                     disabled={!draft.trim()}
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-full transition-all active:scale-95",
-                      draft.trim() ? cn("text-white shadow-[0_6px_16px_-6px_#8a7cf5] hover:brightness-110", AI_GRADIENT) : "bg-hover text-fg-faint",
+                      draft.trim() ? cn("text-white hover:brightness-110", AI_GRADIENT) : "bg-hover text-fg-faint",
                     )}
                   >
                     <ArrowUp className="size-4" />

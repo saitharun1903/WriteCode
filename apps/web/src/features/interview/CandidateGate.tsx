@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Expand, ShieldAlert, ShieldCheck, Video } from "lucide-react";
+import { CheckCircle2, Expand, Save, ShieldAlert, ShieldCheck, Video } from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useLive } from "@/features/live/store";
 import { useWorkspace } from "@/features/projects/store";
@@ -41,6 +42,7 @@ export function CandidateGate() {
   const cameraError = useCamera((s) => s.localError);
   const [asking, setAsking] = useState(false);
   const finished = useLive((s) => s.finished);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!active) return;
@@ -82,12 +84,43 @@ export function CandidateGate() {
               <span className="block text-xs text-fg-muted">{verdictDetail(v)}</span>
             </p>
           )}
-          <p className="text-fg-muted">Thank you. You can close this tab.</p>
-          <div className="flex justify-end">
-            <Button variant="primary" onClick={() => useLive.getState().clearFinished()}>
-              Close
-            </Button>
-          </div>
+          {finished.code ? (
+            <>
+              <div className="rounded-lg border border-line-strong/60 bg-surface-2 p-3">
+                <p className="font-medium">Save your code?</p>
+                <p className="mt-0.5 text-xs text-fg-muted">A copy of what you wrote is added to your projects in this browser. If you do not save it, it is not kept here.</p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button disabled={saving} onClick={() => useLive.getState().clearFinished()}>
+                  Don&rsquo;t save
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={saving}
+                  icon={<Save className="size-4" />}
+                  onClick={async () => {
+                    setSaving(true);
+                    const copy = await useWorkspace.getState().saveCopy(finished.code, finished.title);
+                    setSaving(false);
+                    if (!copy) return;
+                    toast.success(`Saved "${copy.name}"`, "It is in your projects on the start screen.");
+                    useLive.getState().clearFinished();
+                  }}
+                >
+                  Save my code
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-fg-muted">Thank you. You can close this tab.</p>
+              <div className="flex justify-end">
+                <Button variant="primary" onClick={() => useLive.getState().clearFinished()}>
+                  Close
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Dialog>
     );

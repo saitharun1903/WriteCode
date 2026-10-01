@@ -103,7 +103,7 @@ export function StartScreen() {
                 onClick={() => setNaming(lang.id)}
                 className={cn(
                   "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
-                  "hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_6px_20px_-10px_rgb(53_116_240/0.5)] disabled:opacity-60",
+                  "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
                 )}
               >
                 <LanguageMark id={lang.id} size={44} />

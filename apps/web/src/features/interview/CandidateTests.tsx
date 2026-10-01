@@ -279,7 +279,7 @@ export function RunSubmit({ className }: { className?: string }) {
         title="Check on every test, including hidden ones"
         disabled={busy || closed}
         onClick={() => useCandidate.getState().submit()}
-        className="flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-3 text-[13px] font-medium text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_2px_6px_-2px_rgb(31_143_78/0.6)] transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-45"
+        className="flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-3 text-[13px] font-medium text-white transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-45"
       >
         {judging || awaiting ? <Spinner className="size-3.5" /> : <CloudUpload className="size-3.5" />}
         Submit

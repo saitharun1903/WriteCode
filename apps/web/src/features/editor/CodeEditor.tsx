@@ -2,7 +2,7 @@
 
 import Editor, { type Monaco, type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { findEntryPoints, getLanguage, monacoLanguageForPath } from "@cw/shared";
 import { Spinner } from "@/components/ui/primitives";
 import { currentLocation, frameKey, useDebug } from "@/features/debug/store";
@@ -11,6 +11,7 @@ import { previousLocation, stepLocation, useVisualize } from "@/features/visuali
 import { useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useResolvedTheme, useSettings } from "@/features/settings/store";
+import { applyCodeFont, codeFontFamily } from "@/features/settings/fonts";
 import { runCommand } from "@/features/commands/registry";
 import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
@@ -29,18 +30,27 @@ export function CodeEditor() {
   const activeFile = useWorkspace((s) => s.activeFile);
   const diagnostics = useExecution((s) => s.diagnostics);
   const resolvedTheme = useResolvedTheme();
-  const { fontSize, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
+  const { fontSize, codeFont: codeFontId, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
   const readOnly = useWorkspace((s) => s.readOnly);
   // An interview candidate writes the code alone: nothing is suggested, completed or looked up.
   const restricted = useRestriction((s) => s.restricted);
   const restrictedKey = useRef<{ set(value: boolean): void } | null>(null);
 
-  // Monaco measures glyphs itself, so give it the concrete family name next/font generated.
-  const [codeFont] = useState(() => {
-    const v = typeof window === "undefined" ? "" : getComputedStyle(document.documentElement).getPropertyValue("--font-code").trim();
-    return `${v ? `${v}, ` : ""}"JetBrains Mono", Consolas, monospace`;
-  });
+  // Monaco measures glyphs itself, so it gets the concrete family names of the chosen font,
+  // and measures again once the font's file has arrived.
+  const codeFont = useMemo(() => codeFontFamily(codeFontId), [codeFontId]);
+  useEffect(() => {
+    applyCodeFont(codeFontId);
+    let live = true;
+    void document.fonts
+      ?.load(`14px ${codeFont}`)
+      .catch(() => [])
+      .then(() => live && editorBridge.monaco?.editor.remeasureFonts());
+    return () => {
+      live = false;
+    };
+  }, [codeFontId, codeFont]);
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [mounted, setMounted] = useState(false);

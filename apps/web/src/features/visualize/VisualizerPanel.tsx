@@ -220,7 +220,7 @@ function FrameCard({
       aria-label={`Frame ${frame.name}`}
       className={cn(
         "rounded-lg border bg-surface-2 transition-[border-color,box-shadow,opacity] duration-300",
-        current ? "border-accent shadow-[0_0_0_1px_var(--accent),0_10px_30px_-14px_var(--accent)]" : "border-line-strong opacity-75",
+        current ? "border-accent shadow-[0_0_0_1px_var(--accent)]" : "border-line-strong opacity-75",
       )}
     >
       <div className="flex items-center justify-between gap-3 border-b border-line-strong px-3 py-1.5">
@@ -505,7 +505,7 @@ function ObjectCard({
       style={{ borderTopColor: KIND_COLOR[object.kind] }}
       className={cn(
         "w-fit max-w-full rounded-lg border border-t-2 border-line-strong bg-surface-2 shadow-sm transition-shadow duration-200",
-        emphasized && "shadow-[0_0_0_2px_var(--accent),0_10px_30px_-12px_var(--accent)]",
+        emphasized && "shadow-[0_0_0_2px_var(--accent)]",
       )}
     >
       <div className="flex max-w-[44rem] items-center gap-2 px-3 pt-1.5">
@@ -1006,7 +1006,7 @@ function Timeline({ trace, stepIndex, onSeek }: { trace: Trace; stepIndex: numbe
       </div>
       <motion.span
         aria-hidden
-        className="pointer-events-none absolute top-0 h-8 w-0.5 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_8px_var(--accent)]"
+        className="pointer-events-none absolute top-0 h-8 w-0.5 -translate-x-1/2 rounded-full bg-accent"
         animate={{ left: `${at(stepIndex)}%` }}
         transition={{ type: "spring", stiffness: 500, damping: 40 }}
       />
@@ -1191,7 +1191,7 @@ export function VisualizerPanel() {
             aria-label={playing ? "Pause" : "Play"}
             title={playing ? "Pause (Space)" : "Play (Space)"}
             onClick={togglePlay}
-            className="mx-1 flex size-8 items-center justify-center rounded-full bg-accent text-accent-fg shadow-[0_4px_14px_-4px_var(--accent)] transition-transform hover:scale-105 active:scale-95 [&_svg]:size-4"
+            className="mx-1 flex size-8 items-center justify-center rounded-full bg-accent text-accent-fg transition-transform hover:scale-105 active:scale-95 [&_svg]:size-4"
           >
             {playing ? <Pause /> : <Play className="translate-x-px" />}
           </button>

@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { create } from "zustand";
+import { DEFAULT_CODE_FONT, isCodeFont } from "./fonts";
 
 export type ThemePreference = "dark" | "light" | "system";
 /** Bottom tool windows. */
@@ -12,6 +13,8 @@ export type SideView = "explorer" | "search" | "history";
 export interface Settings {
   theme: ThemePreference;
   fontSize: number;
+  /** The font of the editor, the console and all other code (an id from settings/fonts.ts). */
+  codeFont: string;
   tabSize: number;
   wordWrap: boolean;
   minimap: boolean;
@@ -37,6 +40,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   fontSize: 14,
+  codeFont: DEFAULT_CODE_FONT,
   tabSize: 4,
   wordWrap: false,
   minimap: false,
@@ -66,6 +70,7 @@ function load(): Settings {
     if (!BOTTOM_TABS.includes(layout.bottomTab)) layout.bottomTab = "run";
     // 13.5 was the previous default size; move it to the new default.
     if (parsed.fontSize === 13.5) parsed.fontSize = DEFAULT_SETTINGS.fontSize;
+    if (!isCodeFont(parsed.codeFont)) parsed.codeFont = DEFAULT_SETTINGS.codeFont;
     return { ...DEFAULT_SETTINGS, ...parsed, layout };
   } catch {
     return DEFAULT_SETTINGS;
@@ -81,7 +86,7 @@ interface SettingsState extends Settings {
 }
 
 /** Every setting except the layout, which has its own reset. */
-export const PREFERENCE_KEYS = ["theme", "fontSize", "tabSize", "wordWrap", "minimap", "recordHistory", "autoImport", "autoClose", "suggestions", "bracketColors"] as const;
+export const PREFERENCE_KEYS = ["theme", "fontSize", "codeFont", "tabSize", "wordWrap", "minimap", "recordHistory", "autoImport", "autoClose", "suggestions", "bracketColors"] as const;
 
 function persist(s: Settings) {
   const saved = Object.fromEntries([...PREFERENCE_KEYS, "layout" as const].map((k) => [k, s[k]]));

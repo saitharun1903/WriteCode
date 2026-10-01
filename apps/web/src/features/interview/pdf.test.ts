@@ -64,7 +64,7 @@ describe("the interview report as PDF and Word", () => {
 
   it("the PDF has the result, the integrity signals, the analysis, the notes, the code and the timeline", () => {
     const file = latin1(buildReportPdf(input));
-    for (const text of ["Double it", "Accepted", "3 of 3 tests passed", "Asha finished", "Left the window", "1 time\\(s\\) \\(the interview ends at 3\\)", "Paste attempts \\(blocked\\)", "Arithmetic", "What if n does not fit in 64 bits?", "Clear thinking.", "print\\(int\\(input\\(\\)\\) * 2\\)", "Asha submitted. Accepted: 3 / 3 tests passed", "12.0 MB", "4 out of 5"]) {
+    for (const text of ["Double it", "Accepted", "3 of 3 tests passed", "Asha finished", "Left the window", "1 time\\(s\\) \\(the interview ends at 3\\)", "Paste attempts \\(blocked\\)", "Arithmetic", "What if n does not fit in 64 bits?", "Clear thinking.", "(print)", "(main.py)", "Tests passed", "INTERVIEW REPORT", "(WriteCode)", "writecode.in", "Page 1 of", "Asha submitted. Accepted: 3 / 3 tests passed", "12.0 MB", "4 out of 5"]) {
       expect(file).toContain(text);
     }
   });

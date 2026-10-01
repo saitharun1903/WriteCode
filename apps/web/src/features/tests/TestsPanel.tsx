@@ -13,6 +13,7 @@ import { diffRows, firstCharDiff, judge, type Verdict } from "./compare";
 import { toast } from "@/components/ui/toast";
 import { writeFile } from "@/features/editor/write-file";
 import { askAssistant } from "@/features/commands/registry";
+import { addInputReading } from "./add-input";
 import { describeReads, readInputFor } from "./read-input";
 import { entryOf, useLastRunAsTest, useTests, type TestOutcome } from "./store";
 
@@ -100,7 +101,7 @@ function RunAllButton({ compact }: { compact?: boolean }) {
       type="button"
       onClick={() => void run()}
       title={shortcut ? undefined : "Run all tests"}
-      className="group flex h-7 items-center gap-1.5 rounded-full bg-success px-3 text-[12.5px] font-medium text-white shadow-[0_4px_14px_-6px_var(--success)] transition-transform hover:brightness-110 active:scale-95"
+      className="group flex h-7 items-center gap-1.5 rounded-full bg-success px-3 text-[12.5px] font-medium text-white transition-transform hover:brightness-110 active:scale-95"
     >
       <Play className="size-3.5 fill-current" /> Run all
       {!compact && shortcut && <Kbd shortcut={shortcut} className="ml-0.5 border-white/30 bg-white/15 text-white/90" />}
@@ -251,8 +252,25 @@ function IgnoresInputNotice() {
   const entry = project ? entryOf(project, activeFile) : "";
   const source = project?.files.find((f) => f.path === entry)?.content ?? "";
   const rewrite = useMemo(() => (project && ignores ? readInputFor(project.language, source) : null), [project, ignores, source]);
+  // With no fixed values to turn into input, the reading lines themselves can be added to the program.
+  const added = useMemo(() => (project && ignores && !rewrite ? addInputReading(project.language, source, entry) : null), [project, ignores, rewrite, source, entry]);
   if (!project || !ignores) return null;
   const example = READ_INPUT_EXAMPLE[project.language];
+
+  /** Puts the changed program in the editor (Ctrl+Z undoes it) and gives the tests something to read. */
+  const put = async (change: { code: string; input: string }) => {
+    await writeFile(entry, change.code);
+    const ws = useWorkspace.getState();
+    if (!ws.project?.stdin.trim()) ws.setStdin(change.input);
+    // A test with no input would stop the program where it now reads.
+    const tests = ws.project?.tests ?? [];
+    if (tests.some((t) => !t.input.trim())) ws.setTests(tests.map((t) => (t.input.trim() ? t : { ...t, input: change.input })));
+  };
+  const add = async () => {
+    if (!added) return;
+    await put(added);
+    toast.success(`${basename(entry)} now reads its input`, `A count ${added.names[0]}, then ${added.names[0]} numbers into ${added.names[1]}: use them in your code. Tests without input got "3 / 1 2 3". Ctrl+Z undoes it.`);
+  };
 
   const apply = async () => {
     if (!rewrite) return;
@@ -277,7 +295,7 @@ function IgnoresInputNotice() {
     <div role="note" aria-label="Program ignores input" className="mx-3 mt-3 rounded-lg border border-warning/40 bg-warning-soft px-3 py-2">
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 text-[13px] text-fg">
-          <span className="font-medium">{basename(project.entryFile)} never reads its input</span>
+          <span className="font-medium">{basename(entry)} never reads its input</span>
           <span className="text-fg-muted">, so every test prints the same output.</span>
         </p>
         {rewrite && (
@@ -288,6 +306,11 @@ function IgnoresInputNotice() {
             className="shrink-0 rounded-md bg-fg px-2.5 py-1 text-xs font-medium text-canvas transition-opacity hover:opacity-90"
           >
             Read from input
+          </button>
+        )}
+        {added && (
+          <button type="button" onClick={() => void add()} title="Put these lines where the program starts, with the import they need" className="shrink-0 rounded-md bg-fg px-2.5 py-1 text-xs font-medium text-canvas transition-opacity hover:opacity-90">
+            Add to code
           </button>
         )}
         {example && !rewrite && (

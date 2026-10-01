@@ -52,12 +52,16 @@ function javaToken(type: JavaScalar, literal: string): string | null {
 }
 
 /** Blanks comments and string/char literals (same length) so braces inside them do not count. */
+export function blankCode(code: string): string {
+  return blankJava(code);
+}
+
 function blankJava(code: string): string {
   return code.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, (m) => m.replace(/[^\n]/g, " "));
 }
 
 /** Start and end offsets of main's body (just inside its braces). */
-function javaMainBody(code: string): { start: number; end: number } | null {
+export function javaMainBody(code: string): { start: number; end: number } | null {
   const clean = blankJava(code);
   const head = /\bstatic\s+void\s+main\s*\([^)]*\)\s*(?:throws\s+[\w.,\s]+)?\{/.exec(clean) ?? /\bvoid\s+main\s*\(\s*\)\s*\{/.exec(clean);
   if (!head) return null;
@@ -77,7 +81,7 @@ function changesLater(code: string, name: string): boolean {
   return new RegExp(`(^|[^\\w$.])${n}\\s*([-+*/%&|^]|<<|>>)?=(?!=)|(\\+\\+|--)\\s*${n}\\b|\\b${n}\\s*(\\+\\+|--)`).test(clean.replace(new RegExp(`^.*\\b${n}\\b[^\\n]*=`, "m"), ""));
 }
 
-function freeName(taken: string, wanted: string[]): string {
+export function freeName(taken: string, wanted: string[]): string {
   return wanted.find((n) => !new RegExp(`\\b${n}\\b`).test(taken)) ?? `${wanted[0]}${Date.now() % 1000}`;
 }
 
@@ -228,7 +232,7 @@ function cToken(type: string, literal: string): string | null {
 }
 
 /** Start and end offsets of `int main(...)`'s body (just inside its braces). */
-function cMainBody(code: string): { start: number; end: number } | null {
+export function cMainBody(code: string): { start: number; end: number } | null {
   const clean = blankJava(code);
   const head = /\bint\s+main\s*\([^)]*\)\s*\{/.exec(clean);
   if (!head) return null;

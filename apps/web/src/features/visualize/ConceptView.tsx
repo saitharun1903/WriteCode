@@ -288,7 +288,7 @@ function StackView({ s, step, trace, stepIndex }: { s: Extract<Structure, { kind
                   transition={SPRING}
                   className={cn(
                     "relative flex h-10 items-center justify-center rounded-md border text-[14px] font-semibold",
-                    top ? "border-[var(--viz-stack)] bg-[color-mix(in_srgb,var(--viz-stack)_22%,transparent)] shadow-[0_6px_16px_-8px_var(--viz-stack)]" : "border-line-strong bg-surface",
+                    top ? "border-[var(--viz-stack)] bg-[color-mix(in_srgb,var(--viz-stack)_22%,transparent)]" : "border-line-strong bg-surface",
                   )}
                 >
                   <Text step={step} value={v} className="max-w-[8rem]" />
@@ -505,7 +505,7 @@ function ListNodeBox({ n, s, step, diff, doubly, arrow, index, ref }: { n: { id:
         <div
           data-node
           data-node-index={index}
-          className={cn("flex overflow-hidden rounded-md border-2 border-[var(--viz-list)] bg-surface shadow-[0_6px_16px_-10px_var(--viz-list)]", changed && "cw-viz-changed")}
+          className={cn("flex overflow-hidden rounded-md border-2 border-[var(--viz-list)] bg-surface", changed && "cw-viz-changed")}
         >
           {doubly && <span className={cn(cell, "w-5 justify-center border-r-2 text-[var(--viz-list)]")}>•</span>}
           <span className={cn(cell, "min-w-11 justify-center px-2 text-[14px] font-semibold")}>

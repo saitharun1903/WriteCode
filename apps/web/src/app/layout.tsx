@@ -1,12 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import { PRODUCT } from "@cw/shared";
 import "./globals.css";
+import { FONT_VARIABLES } from "./fonts";
 import { SITE } from "@/features/seo/pages";
 import { SITE_VERIFICATION } from "@/features/seo/verification";
 
-const ui = Inter({ variable: "--font-ui", subsets: ["latin"] });
-const code = JetBrains_Mono({ variable: "--font-code", subsets: ["latin"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -54,12 +52,12 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-/** Applies the persisted theme before first paint so there is no light/dark flash. */
-const themeScript = `try{var t=JSON.parse(localStorage.getItem("cw:settings")||"{}").theme;if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light"}catch(e){}`;
+/** Applies the persisted theme and code font before first paint, so nothing flashes or changes shape. */
+const themeScript = `try{var s=JSON.parse(localStorage.getItem("cw:settings")||"{}"),t=s.theme,f=s.codeFont;if(typeof f==="string"&&/^[a-z]+$/.test(f))document.documentElement.style.setProperty("--font-code","var(--font-code-"+f+")");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;else if(t==="system"&&matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light"}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" data-theme="dark" className={`${ui.variable} ${code.variable}`} suppressHydrationWarning>
+    <html lang="en" data-theme="dark" className={FONT_VARIABLES} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

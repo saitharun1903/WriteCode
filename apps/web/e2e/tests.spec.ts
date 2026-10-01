@@ -14,7 +14,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshJava(page: Page) {
+async function freshJava(page: Page, language = "Java") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -25,7 +25,7 @@ async function freshJava(page: Page) {
   });
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "New Java project" }).click();
+  await page.getByRole("button", { name: `New ${language} project` }).click();
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText("Hello World");
 }
@@ -142,21 +142,42 @@ public class Main {
   await expect(panel(page).getByText("Compiler output")).toBeVisible();
 });
 
-test("a successful run can be saved as a test in one click", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await freshJava(page);
-  await setCode(page, MAX.replace("int max = 0;", "int max = Integer.MIN_VALUE;"));
-  await page.getByRole("button", { name: "Program Input" }).click();
-  await page.getByRole("textbox", { name: "Program input (stdin)" }).fill("4\n3 8 -1 6");
-  await waitSaved(page);
-  await page.getByRole("button", { name: "Run program" }).click();
-  await expect(page.getByRole("log", { name: "Program output" })).toContainText("Process finished with exit code 0", { timeout: 60_000 });
-  await page.getByRole("button", { name: "Save as test" }).click();
-  await expect(page.getByRole("button", { name: "Saved as a test" })).toBeVisible();
-  await page.getByRole("button", { name: "Saved as a test" }).click();
-  await expect(panel(page).getByRole("textbox", { name: /^Input/ })).toHaveValue("4\n3 8 -1 6");
-  await expect(panel(page).getByRole("textbox", { name: /^Expected output/ })).toHaveValue("8\n");
-});
+for (const [language, file, reads] of [
+  ["Java", "Main.java", "int n = in.nextInt();"],
+  ["Python", "main.py", "n = int(input())"],
+  ["C++", "main.cpp", "std::cin >> n;"],
+  ["C", "main.c", 'scanf("%d", &n);'],
+  ["JavaScript", "main.js", "const n = data[0];"],
+  ["TypeScript", "main.ts", "const n = data[0];"],
+] as const) {
+  test(`${language}: "Add to code" puts the lines that read input into the program, and it still runs`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await freshJava(page, language);
+    await page.getByRole("button", { name: "Tests", exact: true }).click();
+    await panel(page).getByRole("button", { name: /Add a test/ }).click();
+    await fillTest(page, "", "Hello World");
+    const note = panel(page).getByRole("note", { name: "Program ignores input" });
+    await expect(note).toContainText(`${file} never reads its input`);
+
+    // One click: the lines are in the editor where the program starts, and the test has something to read.
+    await note.getByRole("button", { name: "Add to code" }).click();
+    const code = () => page.evaluate(() => (window as unknown as { monaco: { editor: { getModels(): { getValue(): string }[] } } }).monaco.editor.getModels()[0]!.getValue());
+    await expect.poll(code).toContain(reads);
+    expect(await code()).toContain("Hello World");
+    await expect(note).toHaveCount(0);
+    await expect(panel(page).getByRole("textbox", { name: /^Input/ })).toHaveValue("3\n1 2 3\n");
+    await waitSaved(page);
+
+    // The program compiles and prints what it printed before.
+    await panel(page).getByRole("button", { name: "Run all" }).click();
+    await expect(panel(page).getByText("1 / 1 passed")).toBeVisible({ timeout: 120_000 });
+    await page.getByRole("button", { name: "Run program" }).click();
+    await expect(page.getByRole("log", { name: "Program output" })).toContainText("Process finished with exit code 0", { timeout: 60_000 });
+    await expect(page.getByRole("log", { name: "Program output" })).toContainText("Hello World");
+    // The console is only the program's output: nothing to save from it.
+    await expect(page.getByRole("button", { name: "Save as test" })).toHaveCount(0);
+  });
+}
 
 // The user's binary search: the value to find is fixed in the code, so every test prints -1.
 const SEARCH = (body: string, imports = "") => `${imports}public class Main {

@@ -77,7 +77,7 @@ function AssistantButton() {
         className={cn(
           "group rounded-full p-px transition-shadow",
           open
-            ? "bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea] shadow-[0_6px_18px_-8px_#8a7cf5]"
+            ? "bg-gradient-to-r from-[#6d8cff] via-[#8a7cf5] to-[#c26cea]"
             : "bg-gradient-to-r from-[#6d8cff]/55 via-[#8a7cf5]/55 to-[#c26cea]/55 hover:from-[#6d8cff] hover:via-[#8a7cf5] hover:to-[#c26cea]",
         )}
       >
@@ -156,7 +156,7 @@ function RunControls() {
           aria-label="Run program"
           disabled={running}
           onClick={() => runCommand("run.execute")}
-          className="flex h-full items-center gap-1.5 rounded-[7px] bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-3 text-[13px] font-medium text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_2px_6px_-2px_rgb(31_143_78/0.6)] transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-45"
+          className="flex h-full items-center gap-1.5 rounded-[7px] bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-3 text-[13px] font-medium text-white transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-45"
         >
           <Play className="size-3.5 fill-current" />
           Run

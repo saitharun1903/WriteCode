@@ -84,8 +84,16 @@ interface LiveState {
   requestHistory: () => Promise<[number, string][]>;
   /** Interview: a camera set-up message for one participant (see interview/camera.ts). */
   sendRtc: (to: string, data: LiveRtcSignal) => boolean;
-  /** Candidate: the interview that has just finished, shown once the session has closed for them. */
-  finished: { title: string; reason?: string; verdict?: InterviewVerdict } | null;
+  /**
+   * Candidate: the interview that has just finished, shown once the session has
+   * closed for them. `code` is what they wrote, so they can keep a copy.
+   */
+  finished: { title: string; reason?: string; verdict?: InterviewVerdict; code?: Project } | null;
+  /**
+   * Interviewer: the interview is over and kept, so its session closes for
+   * everyone. What is on screen from then on is the kept interview.
+   */
+  closeFinishedInterview: () => void;
   /**
    * The interview on screen is a kept one: its session has closed, and what is shown
    * (overview, tests, notes, report, replay) comes from the record saved with the project.
@@ -159,6 +167,8 @@ interface Session {
   stopPresence: (() => void) | null;
   synced: boolean;
   announced: Set<string>;
+  /** The owner is closing the session of a finished interview: it goes without a word. */
+  quiet?: boolean;
 }
 
 let session: Session | null = null;
@@ -376,12 +386,20 @@ export const useLive = create<LiveState>((set, get) => {
             const ended = code === 4000 || get().status === "ended";
             const removed = code === 4001 || get().status === "removed";
             if (s.owner && (ended || code === 4004)) forgetOwned(s.projectId);
+            if (s.owner && s.quiet) {
+              teardownKeepProject();
+              set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null, panelOpen: false });
+              return;
+            }
             // A candidate whose interview is over: nothing of it stays open, only a word of thanks.
             const iv = get().interview;
             if (!s.owner && iv?.endedAt) {
               const shared = useWorkspace.getState().sharedId;
+              const open = useWorkspace.getState().project;
+              // What they wrote, in case they want to keep it.
+              const code = shared && open?.id === shared ? structuredClone(open) : undefined;
               teardown();
-              set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null, finished: { title: iv.title, reason: iv.endReason, verdict: iv.verdicts?.at(-1) } });
+              set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null, finished: { title: iv.title, reason: iv.endReason, verdict: iv.verdicts?.at(-1), code } });
               if (shared && useWorkspace.getState().project?.id === shared) useWorkspace.getState().closeProject();
               history.replaceState(null, "", "/");
               return;
@@ -477,6 +495,20 @@ export const useLive = create<LiveState>((set, get) => {
     sendRtc: (to, data) => session?.client.send({ type: "rtc", to, data }) ?? false,
     finished: null,
     clearFinished: () => set({ finished: null }),
+
+    closeFinishedInterview() {
+      const s = session;
+      if (!s?.owner || !get().interview?.endedAt) return;
+      s.quiet = true;
+      forgetOwned(s.projectId);
+      s.client.send({ type: "end" });
+      // The server closes every connection, ours included; if it does not answer, close ours anyway.
+      setTimeout(() => {
+        if (session !== s) return;
+        teardownKeepProject();
+        set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null, panelOpen: false });
+      }, 1500);
+    },
     archived: false,
 
     announceTests(executionId, testIds) {

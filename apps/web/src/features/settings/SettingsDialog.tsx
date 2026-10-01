@@ -1,5 +1,6 @@
 "use client";
 
+import { CODE_FONTS, applyCodeFont, codeFontVar } from "./fonts";
 import { useMemo, useState, type ReactNode } from "react";
 import { Code2, Keyboard, Minus, Palette, Play, Plus, Search, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -140,6 +141,35 @@ function Appearance({ s }: { s: Settings & { update: (p: Partial<Settings>) => v
         <pre aria-hidden className="cw-console mb-1 overflow-hidden rounded-lg bg-surface-3/60 px-3 py-2 font-mono text-fg" style={{ fontSize: s.fontSize, lineHeight: `${Math.round(s.fontSize * 1.45)}px` }}>
           {PREVIEW}
         </pre>
+      </Group>
+      <Group title="Code font">
+        <p className="pb-2 pt-1 text-xs leading-relaxed text-fg-subtle">Used in the editor, the console and everywhere else code is shown.</p>
+        <div role="radiogroup" aria-label="Code font" className="grid max-h-64 gap-1.5 overflow-y-auto pb-1 pr-1 sm:grid-cols-2">
+          {CODE_FONTS.map((f) => {
+            const active = s.codeFont === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => {
+                  applyCodeFont(f.id);
+                  s.update({ codeFont: f.id });
+                }}
+                className={cn("rounded-lg border px-3 py-2 text-left transition-colors", active ? "border-accent bg-accent-soft" : "border-line-strong/60 hover:bg-hover")}
+              >
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-sm font-medium text-fg">{f.label}</span>
+                  <span className="shrink-0 truncate text-[11px] text-fg-subtle">{f.note}</span>
+                </span>
+                <span aria-hidden className="mt-1 block truncate text-[13px] text-fg-muted" style={{ fontFamily: `${codeFontVar(f.id)}, monospace`, fontVariantLigatures: "none" }}>
+                  {"int sum = 0; // 0O 1lI {}"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </Group>
     </>
   );

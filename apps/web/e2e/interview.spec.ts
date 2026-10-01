@@ -227,7 +227,7 @@ ${"Long notes stay connected. ".repeat(250)}`);
   expect(pdf.suggestedFilename()).toBe("interview-Asha-Double-it.pdf");
   const pdfText = await readFile((await pdf.path())!, "latin1");
   expect(pdfText.startsWith("%PDF-1.4")).toBe(true);
-  for (const text of ["Double it", "Accepted", "3 of 3 tests passed", "Solved it quickly", "print\\(n * 2\\)", "4 out of 5"]) expect(pdfText).toContain(text);
+  for (const text of ["Double it", "Accepted", "3 of 3 tests passed", "Solved it quickly", "(print)", "INTERVIEW REPORT", "Tests passed", "(WriteCode)", "/Subtype /Image", "4 out of 5"]) expect(pdfText).toContain(text);
   const [download] = await Promise.all([hr.waitForEvent("download"), panel(hr).getByRole("button", { name: "Download Word" }).click()]);
   expect(download.suggestedFilename()).toBe("interview-Asha-Double-it.doc");
   const html = await readFile((await download.path())!, "utf8");
@@ -242,30 +242,40 @@ ${"Long notes stay connected. ".repeat(250)}`);
   // ---- The candidate finishes: the code is locked.
   await tests(cand).getByRole("button", { name: "Finish interview" }).click();
   await tests(cand).getByRole("button", { name: "Yes, finish" }).click();
-  await expect(cand.getByText(/The interview has ended \(asha finished\)\. Your code has been handed in\./)).toBeVisible();
-  await expect(cand.getByRole("button", { name: "Submit code" })).toBeDisabled();
-  await expect(hr.getByRole("timer").first()).toContainText("Ended");
-  await setCode(cand, "print('changed after the end')\n").catch(() => {});
-  await hr.waitForTimeout(800);
-  await expect(editor(hr)).not.toContainText("changed after the end");
-  // Shortly after, the session closes for the candidate: no code, no camera, and the link no longer lets them in.
+  // The session closes by itself, for both: no code, no camera, and the link no longer lets anyone in.
   const over = cand.getByRole("dialog", { name: "The interview has ended" });
-  await expect(over).toBeVisible({ timeout: 40_000 });
+  await expect(over).toBeVisible({ timeout: 60_000 });
+  await expect(over).toContainText("asha finished");
   await expect(over).toContainText("Accepted");
-  await over.getByRole("button", { name: "Close" }).first().click();
+  // The candidate is asked whether to keep the code, and keeps it.
+  await expect(over).toContainText("Save your code?");
+  await over.getByRole("button", { name: "Save my code" }).click();
   await expect(cand.getByRole("heading", { name: "New project" })).toBeVisible();
-  await expect(hr.getByRole("button", { name: "Live session: 1 person" })).toBeVisible();
+  const mine = cand.getByRole("list", { name: "Recent projects" }).getByRole("listitem");
+  await expect(mine).toHaveCount(1);
+  await expect(mine).toContainText("Double it");
+  await mine.getByRole("button", { name: /Double it/ }).first().click();
+  await expect(editor(cand)).toContainText("print(n * 2)");
   await cand.goto(link);
   await cand.getByRole("dialog", { name: "Join live session" }).getByPlaceholder("e.g. Priya").fill("Asha");
   await cand.getByRole("button", { name: "Join" }).click();
-  await expect(cand.getByText("This interview has ended.")).toBeVisible();
+  await expect(cand.getByText(/has ended/).first()).toBeVisible();
+
+  // ---- The interviewer: sharing has stopped without a click, and they are asked whether to save the interview.
+  const done = hr.getByRole("dialog", { name: "The interview is finished" });
+  await expect(done).toBeVisible({ timeout: 60_000 });
+  await expect(done).toContainText("Sharing has stopped");
+  await expect(done).toContainText("Accepted");
+  const [reportPdf] = await Promise.all([hr.waitForEvent("download"), done.getByRole("button", { name: "Report (PDF)" }).click()]);
+  expect(reportPdf.suggestedFilename()).toMatch(/^interview-Asha-Double-it\.pdf$/);
+  await done.getByRole("button", { name: "Save interview" }).click();
+  await expect(done).toHaveCount(0);
+  await expect(hr.getByRole("button", { name: /Live session: / })).toHaveCount(0);
 
   // ---- The interview is kept: listed apart from projects, and it opens again after its session is gone.
   await panel(hr).getByRole("tab", { name: "Overview" }).click();
   await expect(panel(hr)).toContainText("Interview finished");
   await expect(panel(hr)).toContainText("Asha finished · used");
-  await hr.getByRole("button", { name: /Live session/ }).click();
-  await hr.getByRole("button", { name: "End session for everyone" }).click();
   await expect(panel(hr)).toContainText("This interview's session has closed.");
   await hr.getByRole("button", { name: "Home" }).click();
   const kept = hr.getByRole("list", { name: "Interviews" }).getByRole("listitem");
@@ -300,14 +310,30 @@ test("leaving the window too often ends the interview and checks the code that w
   await setCode(cand, "print(int(input()) * 2)\n");
   await expect(editor(hr)).toContainText("print(int(input()) * 2)");
   await cand.evaluate(() => window.dispatchEvent(new Event("blur")));
-  await expect(cand.getByText(/The interview has ended \(asha left the interview window 1 time\)/)).toBeVisible();
-  await panel(hr).getByRole("tab", { name: /Activity/ }).click();
-  await expect(panel(hr).getByRole("list", { name: "Activity" })).toContainText("The interview ended: Asha left the interview window 1 time");
-  // What was handed in is checked without anyone pressing Submit.
-  await expect(panel(hr).getByRole("list", { name: "Activity" })).toContainText("The code handed in was checked. Accepted: 3 / 3 tests passed", { timeout: 120_000 });
+  // What was handed in is checked without anyone pressing Submit, and the session closes for both.
   const over = cand.getByRole("dialog", { name: "The interview has ended" });
-  await expect(over).toBeVisible({ timeout: 40_000 });
+  await expect(over).toBeVisible({ timeout: 120_000 });
+  await expect(over).toContainText("asha left the interview window 1 time");
   await expect(over).toContainText("Accepted");
+  // The candidate does not keep the code: nothing of it stays in their browser.
+  await over.getByRole("button", { name: "Don’t save" }).click();
+  await expect(cand.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(cand.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+
+  const done = hr.getByRole("dialog", { name: "The interview is finished" });
+  await expect(done).toBeVisible({ timeout: 60_000 });
+  await expect(done).toContainText("Asha left the interview window 1 time");
+  await expect(done).toContainText("Accepted");
+  await expect(done).toContainText("3 / 3");
+  // The interviewer does not save it either: asked twice, then it is gone.
+  await done.getByRole("button", { name: "Don’t save" }).click();
+  await expect(done).toContainText("Delete this interview for good?");
+  await done.getByRole("button", { name: "Delete it" }).click();
+  await expect(hr.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(hr.getByRole("list", { name: "Interviews" })).toHaveCount(0);
+  await hr.reload();
+  await expect(hr.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(hr.getByRole("list", { name: "Interviews" })).toHaveCount(0);
 });
 
 test("the problem and its tests are written from a topic, with answers computed by running them", async ({ browser }) => {

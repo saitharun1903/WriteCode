@@ -70,7 +70,7 @@ function OpenButton({ page, large }: { page: Page; large?: boolean }) {
       href={`/?new=${page.language}`}
       className={
         large
-          ? "inline-flex h-11 items-center gap-2 rounded-lg bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-5 text-[15px] font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.18),0_8px_20px_-8px_rgb(31_143_78/0.8)] transition-[filter,transform] hover:brightness-110 active:scale-[0.98]"
+          ? "inline-flex h-11 items-center gap-2 rounded-lg bg-gradient-to-b from-[#29a35d] to-[#1f8f4e] px-5 text-[15px] font-semibold text-white transition-[filter,transform] hover:brightness-110 active:scale-[0.98]"
           : "inline-flex h-9 items-center gap-1.5 rounded-lg bg-accent px-3.5 text-sm font-semibold text-accent-fg hover:brightness-110"
       }
     >

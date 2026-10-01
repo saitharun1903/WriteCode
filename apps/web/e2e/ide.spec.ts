@@ -48,6 +48,34 @@ test("edits persist across reload and the project reopens", async ({ page }) => 
   await expect(editorText(page)).toContainText("# persisted-marker");
 });
 
+test("coming back after ten minutes starts from the start screen; the project is still there", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /New Python project/ }).click();
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
+  await page.locator(".monaco-editor").first().click();
+  await page.keyboard.type("# kept");
+  await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
+
+  // Closed and opened again eleven minutes later (the time of the last visit is set back, then the page loads anew).
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("cw:test:aged")) return;
+    sessionStorage.setItem("cw:test:aged", "1");
+    localStorage.setItem("cw:last-seen", JSON.stringify(Date.now() - 11 * 60_000));
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.locator(".monaco-editor")).toHaveCount(0);
+  const recent = page.getByRole("list", { name: "Recent projects" }).getByRole("listitem");
+  await expect(recent).toHaveCount(1);
+
+  // Opened from there, a quick reload goes back to it.
+  await recent.getByRole("button", { name: /Python project/ }).first().click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("# kept");
+  await page.reload();
+  await expect(page.locator(".monaco-editor").first()).toContainText("# kept");
+});
+
 test("creates, renames and deletes files in the explorer", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New C\+\+ project/ }).click();
