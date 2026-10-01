@@ -36,6 +36,7 @@ export function CodeEditor() {
   // An interview candidate writes the code alone: nothing is suggested, completed or looked up.
   const restricted = useRestriction((s) => s.restricted);
   const restrictedKey = useRef<{ set(value: boolean): void } | null>(null);
+  const phone = useMediaQuery("(max-width: 639px)");
 
   // Monaco measures glyphs itself, so it gets the concrete family names of the chosen font,
   // and measures again once the font's file has arrived.
@@ -239,7 +240,8 @@ export function CodeEditor() {
         tabSize,
         insertSpaces: true,
         detectIndentation: false,
-        wordWrap: wordWrap ? "on" : "off",
+        // A phone shows some twenty characters across: long lines wrap there, so no code is off the screen.
+        wordWrap: wordWrap || phone ? "on" : "off",
         minimap: { enabled: minimap && !compact, renderCharacters: false, scale: 1, maxColumn: 100 },
         automaticLayout: true,
         scrollBeyondLastLine: false,

@@ -3,7 +3,7 @@
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
 import * as DropdownPrimitive from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight } from "lucide-react";
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Kbd } from "./kbd";
 
@@ -32,7 +32,40 @@ const itemClass = cn(
   "data-[highlighted]:bg-accent-soft data-[state=open]:bg-accent-soft data-[disabled]:opacity-40 [&_svg]:size-4 [&_svg]:text-fg-subtle",
 );
 
+/** Touch screens: rows tall enough for a finger. */
+const touchItemClass = "h-10 gap-3 rounded-md px-2.5 text-[15px] [&_svg]:size-[18px]";
+
 type Primitives = typeof DropdownPrimitive | typeof ContextMenuPrimitive;
+
+interface Look {
+  /** Finger-sized rows. */
+  touch?: boolean;
+  /** Submenus open in place, under their row, instead of beside the menu (where a phone has no room). */
+  inline?: boolean;
+}
+
+/** A submenu that opens in place: its row stays, its items appear under it. */
+function InlineSub({ P, entry, markSelected, look }: { P: Primitives; entry: Extract<MenuEntry, { kind: "submenu" }>; markSelected: () => void; look: Look }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <P.Item
+        aria-expanded={open}
+        // Opening a section keeps the menu open.
+        onSelect={(e) => {
+          e.preventDefault();
+          setOpen((o) => !o);
+        }}
+        className={cn(itemClass, look.touch && touchItemClass)}
+      >
+        <span className="flex w-4 justify-center">{entry.icon}</span>
+        <span className="flex-1 truncate">{entry.label}</span>
+        <ChevronRight className={cn("-mr-0.5 transition-transform", open && "rotate-90")} />
+      </P.Item>
+      {open && <div className="mb-1 ml-4 border-l border-line-strong/70 pl-1">{renderEntries(P, entry.entries, markSelected, look)}</div>}
+    </>
+  );
+}
 
 /**
  * Radix returns focus to the trigger when a menu closes. That is right for
@@ -52,7 +85,7 @@ function useSelectionFocusGuard() {
   };
 }
 
-function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => void): ReactNode[] {
+function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => void, look: Look = {}): ReactNode[] {
   return entries.map((entry, i) => {
     if (entry.kind === "separator") return <P.Separator key={i} className="-mx-1 my-1 h-px bg-line-strong" />;
     if (entry.kind === "label")
@@ -62,16 +95,17 @@ function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => 
         </P.Label>
       );
     if (entry.kind === "submenu") {
+      if (look.inline) return <InlineSub key={i} P={P} entry={entry} markSelected={markSelected} look={look} />;
       return (
         <P.Sub key={i}>
-          <P.SubTrigger className={itemClass}>
+          <P.SubTrigger className={cn(itemClass, look.touch && touchItemClass)}>
             <span className="flex w-4 justify-center">{entry.icon}</span>
             <span className="flex-1 truncate">{entry.label}</span>
             <ChevronRight className="-mr-0.5" />
           </P.SubTrigger>
           <P.Portal>
-            <P.SubContent sideOffset={6} alignOffset={-4} className={contentClass}>
-              {renderEntries(P, entry.entries, markSelected)}
+            <P.SubContent sideOffset={6} alignOffset={-4} collisionPadding={8} className={cn(contentClass, "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto")}>
+              {renderEntries(P, entry.entries, markSelected, look)}
             </P.SubContent>
           </P.Portal>
         </P.Sub>
@@ -85,7 +119,7 @@ function renderEntries(P: Primitives, entries: MenuEntry[], markSelected: () => 
           markSelected();
           entry.onSelect();
         }}
-        className={cn(itemClass, entry.danger && "text-danger [&_svg]:text-danger")}
+        className={cn(itemClass, look.touch && touchItemClass, entry.danger && "text-danger [&_svg]:text-danger")}
       >
         <span className="flex w-4 justify-center">{entry.checked ? <Check className="!text-fg" /> : entry.icon}</span>
         <span className="flex-1 truncate">{entry.label}</span>
@@ -100,16 +134,28 @@ interface DropdownMenuProps {
   entries: MenuEntry[];
   align?: "start" | "center" | "end";
   side?: "top" | "bottom" | "left" | "right";
+  /** Touch screens: finger-sized rows. */
+  touch?: boolean;
+  /** Phones: submenus open in place. */
+  inline?: boolean;
 }
 
-export function DropdownMenu({ trigger, entries, align = "start", side = "bottom" }: DropdownMenuProps) {
+export function DropdownMenu({ trigger, entries, align = "start", side = "bottom", touch, inline }: DropdownMenuProps) {
   const guard = useSelectionFocusGuard();
   return (
     <DropdownPrimitive.Root modal={false}>
       <DropdownPrimitive.Trigger asChild>{trigger}</DropdownPrimitive.Trigger>
       <DropdownPrimitive.Portal>
-        <DropdownPrimitive.Content align={align} side={side} sideOffset={4} className={contentClass} onCloseAutoFocus={guard.onCloseAutoFocus}>
-          {renderEntries(DropdownPrimitive, entries, guard.markSelected)}
+        <DropdownPrimitive.Content
+          align={align}
+          side={side}
+          sideOffset={4}
+          collisionPadding={8}
+          // Never taller than the screen: a long menu scrolls.
+          className={cn(contentClass, "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto", touch && "min-w-60 p-1.5")}
+          onCloseAutoFocus={guard.onCloseAutoFocus}
+        >
+          {renderEntries(DropdownPrimitive, entries, guard.markSelected, { touch, inline })}
         </DropdownPrimitive.Content>
       </DropdownPrimitive.Portal>
     </DropdownPrimitive.Root>

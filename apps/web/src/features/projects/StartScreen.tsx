@@ -80,8 +80,8 @@ export function StartScreen() {
     <div className="h-full overflow-y-auto bg-surface-2">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
         <header className="mb-9">
-          <h1 className="text-[28px] font-bold tracking-tight text-fg">{PRODUCT.name}</h1>
-          <p className="mt-1.5 text-[15px] text-fg-muted">
+          <h1 className="text-[28px] font-bold tracking-tight text-fg max-lg:leading-tight">{PRODUCT.name}</h1>
+          <p className="mt-1.5 text-[15px] text-fg-muted max-lg:mt-2.5 max-lg:leading-snug">
             Free online compiler, debugger and visualizer for {LANGUAGES.slice(0, -1).map((l) => l.name).join(", ")} and {LANGUAGES[LANGUAGES.length - 1]!.name}.
           </p>
         </header>

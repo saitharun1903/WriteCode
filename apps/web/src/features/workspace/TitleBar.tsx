@@ -11,6 +11,7 @@ import { FileIcon, ProjectBadge } from "@/features/explorer/file-icon";
 import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useResolvedTheme, useSettings } from "@/features/settings/store";
+import { useMediaQuery } from "@/lib/use-media";
 import { cn } from "@/lib/cn";
 import { Brand } from "./Logo";
 import { LiveButton } from "@/features/live/LiveUI";
@@ -181,25 +182,33 @@ function RunControls() {
   );
 }
 
-/** Phones: what does not fit in the title bar, in one menu. */
+/** Phones and tablets: what does not fit in the title bar, in one menu. */
 function PhoneMenu({ interview }: { interview: boolean }) {
   const theme = useResolvedTheme();
+  // A tablet's title bar already has the buttons a phone's has no room for.
+  const phone = useMediaQuery("(max-width: 639px)");
   const entries: MenuEntry[] = [
-    { label: "Share live session", icon: <Users />, onSelect: () => useLive.getState().setPanelOpen(true) },
+    ...(phone ? [{ label: "Share live session", icon: <Users />, onSelect: () => useLive.getState().setPanelOpen(true) }] : []),
     { label: "Download code…", icon: <FileDown />, onSelect: () => runCommand("file.downloadPdf") },
     { label: "Share a link to this code", icon: <Link2 />, onSelect: () => runCommand("file.shareLink") },
     { label: "Move projects to another device", icon: <Smartphone />, onSelect: () => runCommand("project.transfer") },
-    ...(interview ? [{ label: "Interview mode", icon: <ClipboardList />, onSelect: () => runCommand("interview.start") }] : []),
-    { label: "Search files and actions", icon: <Search />, onSelect: () => runCommand("workbench.quickOpen") },
-    { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: () => runCommand("prefs.toggleTheme") },
-    { label: "Open settings", icon: <Settings />, onSelect: () => runCommand("prefs.open") },
+    ...(phone
+      ? [
+          ...(interview ? [{ label: "Interview mode", icon: <ClipboardList />, onSelect: () => runCommand("interview.start") }] : []),
+          { label: "Search files and actions", icon: <Search />, onSelect: () => runCommand("workbench.quickOpen") },
+          { label: theme === "dark" ? "Light theme" : "Dark theme", icon: theme === "dark" ? <Sun /> : <Moon />, onSelect: () => runCommand("prefs.toggleTheme") },
+          { label: "Open settings", icon: <Settings />, onSelect: () => runCommand("prefs.open") },
+        ]
+      : []),
     { kind: "separator" },
     ...MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) })),
   ];
   return (
-    <span className="sm:hidden">
+    <span>
       <DropdownMenu
         align="end"
+        touch
+        inline
         entries={entries}
         trigger={
           <button aria-label="More" className="flex size-9 items-center justify-center rounded-full text-fg-muted hover:bg-hover data-[state=open]:bg-active">
@@ -233,6 +242,8 @@ export function TitleBar({ compact }: { compact: boolean }) {
 
       {(!compact || !project) && !restricted && (
         <DropdownMenu
+          touch={compact}
+          inline={compact}
           entries={MENUS.map((m) => ({ kind: "submenu" as const, label: m.label, entries: fromCommands(m.items) }))}
           trigger={
             <button aria-label="Main menu" className="flex size-8 items-center justify-center rounded-[6px] text-fg-muted hover:bg-hover data-[state=open]:bg-active">

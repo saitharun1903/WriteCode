@@ -27,6 +27,7 @@ import { ConsoleView } from "@/features/execution/OutputPanel";
 import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { sourceTypeName } from "@/features/visualize/model";
+import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { cn } from "@/lib/cn";
 import { previewOf, shortValue } from "./inline-values";
 import { frameKey, useDebug, type StopInfo } from "./store";
@@ -412,6 +413,7 @@ function StartingView({ status, running }: { status: string; running: boolean })
 
 function BreakpointsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const project = useWorkspace((s) => s.project);
+  const touch = useMediaQuery(COMPACT_QUERY);
   const unverified = useDebug((s) => s.unverified);
   const entries = Object.entries(project?.breakpoints ?? {}).flatMap(([file, lines]) => lines.map((line) => ({ file, line })));
   return (
@@ -433,7 +435,7 @@ function BreakpointsDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     >
       {entries.length === 0 ? (
         <p className="text-sm text-fg-subtle">
-          No breakpoints. Click the gutter next to a line number or press <Kbd shortcut="F9" />.
+          No breakpoints. {touch ? "Tap the gutter next to a line number to add one." : <>Click the gutter next to a line number or press <Kbd shortcut="F9" />.</>}
         </p>
       ) : (
         <ul aria-label="Breakpoints" className="max-h-72 overflow-auto rounded-lg border border-line-strong bg-surface-2 py-1">

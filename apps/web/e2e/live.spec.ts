@@ -240,6 +240,10 @@ test("inviting by email checks the addresses; WhatsApp gets the link", async ({ 
   const link = await startSession(teacher);
   await teacher.getByRole("button", { name: /Live session: 1 person/ }).click();
   const panel = teacher.getByRole("dialog", { name: "Live session" });
+  // Send with nobody named asks who it is for, in the field itself.
+  await panel.getByRole("button", { name: "Send" }).click();
+  await expect(panel.getByText(/Type the email address of the person to invite/)).toBeVisible();
+  await expect(panel.getByRole("textbox", { name: "Invite by email" })).toBeFocused();
   await panel.getByRole("textbox", { name: "Invite by email" }).fill("friend@gmail.com, not-an-email");
   await panel.getByRole("button", { name: "Send" }).click();
   await expect(panel.getByText("Check this address: not-an-email")).toBeVisible();

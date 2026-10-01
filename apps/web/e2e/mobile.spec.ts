@@ -90,12 +90,48 @@ test.describe("phone", () => {
     await expect(sheet).toHaveCount(0);
   });
 
-  test("the More menu holds what the title bar has no room for", async ({ page }) => {
+  test("the More menu holds what the title bar has no room for; its sections open in place, with no keyboard shortcuts", async ({ page }) => {
     await freshPython(page);
     await page.getByRole("button", { name: "More" }).click();
+    const menu = page.getByRole("menu");
     for (const item of ["Share live session", "Search files and actions", "Open settings"]) await expect(page.getByRole("menuitem", { name: item })).toBeVisible();
+    // A section opens under its own row, inside the menu and inside the screen.
+    await page.getByRole("menuitem", { name: "Debug", exact: true }).click();
+    const start = page.getByRole("menuitem", { name: "Start Debugging / Continue" });
+    await expect(start).toBeVisible();
+    await expect(page.getByRole("menu")).toHaveCount(1);
+    const box = (await start.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    // A phone has no F5 to press.
+    await expect(menu.locator("kbd")).toHaveCount(0);
+    await expect(menu).not.toContainText("F5");
+
     await page.getByRole("menuitem", { name: "Open settings" }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    // Settings fill the phone's screen, and list no keyboard shortcuts.
+    const size = (await settings.boundingBox())!;
+    expect(size.width).toBe(390);
+    expect(size.height).toBeGreaterThan(800);
+    await expect(settings.getByRole("button", { name: "Shortcuts" })).toHaveCount(0);
+    await settings.getByRole("button", { name: "Editor", exact: true }).click();
+    await expect(settings.getByText("Word wrap", { exact: true }).first()).toBeVisible();
+    await settings.getByRole("button", { name: "Done" }).click();
+    await expect(settings).toHaveCount(0);
+  });
+
+  test("long lines wrap on a phone, so no code is off the screen", async ({ page }) => {
+    await freshPython(page);
+    await page.evaluate(() => {
+      const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+      m.editor.getEditors()[0]!.getModel().setValue(`print("${"a long line of text ".repeat(8)}")\n`);
+    });
+    const wide = await page.evaluate(() => {
+      const ed = (window as unknown as { monaco: { editor: { getEditors(): { getScrollWidth(): number; getLayoutInfo(): { width: number } }[] } } }).monaco.editor.getEditors()[0]!;
+      return ed.getScrollWidth() > ed.getLayoutInfo().width + 1;
+    });
+    expect(wide).toBe(false);
   });
 
   test("runs a program and shows its output in the Run sheet", async ({ page }) => {
@@ -110,12 +146,22 @@ test.describe("phone", () => {
 test.describe("tablet", () => {
   test.use(TABLET);
 
-  test("a touch tablet gets the dock with every tab named", async ({ page }) => {
+  test("a touch tablet gets the dock, icons only, and a More menu without keyboard shortcuts", async ({ page }) => {
     await freshPython(page);
     await fitsWidth(page);
+    // Every tab is there by its accessible name; none prints it.
     for (const name of ["Files", "Run", "Debug", "Visualize", "Tests", "History", "AI"]) {
-      await expect(dock(page).getByRole("button", { name })).toContainText(name);
+      await expect(dock(page).getByRole("button", { name })).toHaveText("");
     }
+    await page.getByRole("button", { name: "More" }).click();
+    for (const item of ["Download code…", "Share a link to this code", "Move projects to another device"]) await expect(page.getByRole("menuitem", { name: item })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Open Settings" })).toBeVisible();
+    await expect(page.getByRole("menu").locator("kbd")).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "Open Settings" }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings.getByRole("radiogroup", { name: "Code font" })).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Shortcuts" })).toHaveCount(0);
   });
 });
 
@@ -124,5 +170,11 @@ test.describe("desktop", () => {
     await freshPython(page);
     await expect(dock(page)).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Tool windows" })).toBeVisible();
+    // The desktop is as it was: no More menu, shortcuts shown, Settings in a window with its Shortcuts section.
+    await expect(page.getByRole("button", { name: "More" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings.getByRole("button", { name: "Shortcuts" })).toBeVisible();
+    expect((await settings.boundingBox())!.width).toBeLessThan(800);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Copy, Eye, LogOut, Mail, Pencil, Radio, Share2, UserMinus, Users } from "lucide-react";
 import { LIVE_COLORS, LIVE_ROLE_LABEL, PRODUCT, type LiveJoinRole, type LiveParticipant } from "@cw/shared";
 import { Button } from "@/components/ui/button";
@@ -118,6 +118,8 @@ function Invite({ roomId }: { roomId: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [fallback, setFallback] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
   const me = useLive((s) => s.me);
   const owner = useLive((s) => s.role === "owner");
   const interview = useLive((s) => s.interview);
@@ -140,7 +142,13 @@ function Invite({ roomId }: { roomId: string }) {
   const sendEmail = async () => {
     const list = emails.split(/[\s,;]+/).filter(Boolean);
     const bad = list.filter((e) => !EMAIL.test(e));
-    if (!list.length) return setProblem("Type at least one email address.");
+    if (!list.length) {
+      // Send with nobody named: ask who it is for, right where it is typed.
+      setAsking(true);
+      field.current?.focus();
+      return;
+    }
+    setAsking(false);
     if (bad.length) return setProblem(`Check ${bad.length === 1 ? "this address" : "these addresses"}: ${bad.join(", ")}`);
     setProblem(null);
     setFallback(false);
@@ -165,6 +173,7 @@ function Invite({ roomId }: { roomId: string }) {
   return (
     <div className="space-y-1.5">
       <form
+        noValidate
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
@@ -172,19 +181,26 @@ function Invite({ roomId }: { roomId: string }) {
         }}
       >
         <Input
+          ref={field}
+          type="email"
+          multiple
+          inputMode="email"
+          autoComplete="email"
           aria-label="Invite by email"
           value={emails}
           onChange={(e) => {
             setEmails(e.target.value);
             setProblem(null);
+            setAsking(false);
           }}
-          placeholder="Invite by email: friend@gmail.com, …"
-          className="min-w-0 flex-1"
+          placeholder={asking ? "Who should get the link? Type their email" : "Invite by email: friend@gmail.com, …"}
+          className={cn("min-w-0 flex-1", asking && "border-accent ring-2 ring-accent/40")}
         />
         <Button type="submit" variant="secondary" disabled={sending} icon={sending ? <Spinner /> : <Mail className="size-3.5" />}>
           {sending ? "Sending" : "Send"}
         </Button>
       </form>
+      {asking && !problem && <p className="text-xs text-fg-muted">Type the email address of the person to invite (several, separated by commas), then press Send. The invitation is sent for you.</p>}
       {problem && (
         <p className="text-xs text-danger">
           {problem}

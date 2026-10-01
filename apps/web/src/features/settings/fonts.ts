@@ -14,7 +14,7 @@ export const CODE_FONTS: readonly CodeFont[] = [
   { id: "jetbrains", label: "JetBrains Mono", note: "IntelliJ IDEA" },
   { id: "cascadia", label: "Cascadia Code", note: "Windows Terminal" },
   { id: "fira", label: "Fira Code", note: "Popular with VS Code" },
-  { id: "system", label: "Consolas / Menlo", note: "VS Code default, already on your device" },
+  { id: "system", label: "Consolas / Menlo", note: "VS Code default" },
   { id: "source", label: "Source Code Pro", note: "Adobe" },
   { id: "plex", label: "IBM Plex Mono", note: "IBM" },
   { id: "roboto", label: "Roboto Mono", note: "Android Studio" },

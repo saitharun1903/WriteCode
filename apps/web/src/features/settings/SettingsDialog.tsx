@@ -1,5 +1,6 @@
 "use client";
 
+import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { CODE_FONTS, applyCodeFont, codeFontVar } from "./fonts";
 import { useMemo, useState, type ReactNode } from "react";
 import { Code2, Keyboard, Minus, Palette, Play, Plus, Search, Wand2 } from "lucide-react";
@@ -240,6 +241,10 @@ export function SettingsDialog() {
   const setOpen = useUI((s) => s.setSettingsOpen);
   const s = useSettings();
   const [section, setSection] = useState<Section>("appearance");
+  // Phones and touch tablets: the dialog fills the screen (phones) or most of it, and has no keyboard shortcuts to list.
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const phone = useMediaQuery("(max-width: 639px)");
+  const sections = compact ? SECTIONS.filter((sec) => sec.id !== "shortcuts") : SECTIONS;
 
   const restore = () => s.update(Object.fromEntries(PREFERENCE_KEYS.map((k) => [k, DEFAULT_SETTINGS[k]])) as Partial<Settings>);
 
@@ -248,7 +253,7 @@ export function SettingsDialog() {
       open={open}
       onOpenChange={setOpen}
       title="Settings"
-      className="top-[10vh] max-w-3xl"
+      className={cn("top-[10vh] max-w-3xl", compact && "top-[5vh]", phone && "left-0 top-0 flex h-dvh w-screen max-w-none translate-x-0 flex-col rounded-none [&>div:nth-child(2)]:min-h-0 [&>div:nth-child(2)]:flex-1")}
       footer={
         <>
           <Button variant="ghost" className="mr-auto" onClick={restore}>
@@ -260,15 +265,17 @@ export function SettingsDialog() {
         </>
       }
     >
-      <div className="flex h-[min(480px,64vh)] flex-col gap-4 sm:flex-row">
-        <nav aria-label="Settings sections" className="flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-visible">
-          {SECTIONS.map((sec) => (
+      <div className={cn("flex h-[min(480px,64vh)] flex-col gap-4 sm:flex-row", compact && "h-[min(680px,74vh)]", phone && "h-full gap-3")}>
+        <nav aria-label="Settings sections" className={cn("flex shrink-0 gap-1 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-visible", phone && "flex-wrap gap-1.5 overflow-visible")}>
+          {sections.map((sec) => (
             <button
               key={sec.id}
               aria-current={section === sec.id ? "page" : undefined}
               onClick={() => setSection(sec.id)}
               className={cn(
                 "flex h-8 shrink-0 items-center gap-2 rounded-lg px-2.5 text-sm transition-colors [&_svg]:size-4",
+                compact && "h-10 px-3 text-[15px]",
+                phone && "border border-line-strong/60",
                 section === sec.id ? "bg-accent-soft/70 text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
               )}
             >
