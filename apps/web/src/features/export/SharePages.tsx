@@ -69,7 +69,7 @@ function Watermark() {
   return (
     <footer className="mx-auto flex max-w-5xl flex-col items-center gap-2 px-4 pb-10 text-center">
       <Link href="/" className="flex items-center gap-2 rounded-full border border-line-strong/60 bg-surface px-4 py-2 transition-colors hover:border-accent/60">
-        <Brand className="[&_.cw-brand-mark_img]:size-[18px] [&_.cw-brand-name]:text-[14px]" />
+        <Brand className="gap-2 [&>span]:text-[14px] [&>svg]:size-[18px]" />
         <span className="text-[13px] text-fg-subtle">· {SITE}</span>
       </Link>
       <p className="max-w-md text-xs text-fg-subtle">Write, run, debug and visualize Java, Python, C, C++, JavaScript and TypeScript in your browser. Free, nothing to install.</p>

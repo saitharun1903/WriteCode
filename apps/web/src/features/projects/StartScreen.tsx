@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ClipboardList, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
@@ -69,12 +69,16 @@ export function StartScreen() {
   const [naming, setNaming] = useState<string | null>(null);
   const filtered = projects.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
 
+  const temporary = useWorkspace((s) => s.temporaryMode);
+
   const create = async (id: string, name: string) => {
     setBusy(id);
-    await createProject(id, name);
+    await createProject(id, name, { temporary });
     setBusy(null);
     setNaming(null);
   };
+  /** A temporary project needs no name: it is gone when it is closed. */
+  const pick = (id: string) => (temporary ? void create(id, `${getLanguage(id)?.name ?? "Temporary"} project`) : setNaming(id));
 
   return (
     <div className="h-full overflow-y-auto bg-surface-2">
@@ -90,17 +94,39 @@ export function StartScreen() {
             <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
               New project
             </h2>
-            <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
-              Custom…
-            </Button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={temporary}
+                aria-label="Temporary project"
+                title="A temporary project is not saved: it is erased when you close it"
+                onClick={() => useWorkspace.getState().setTemporaryMode(!temporary)}
+                className={cn(
+                  "flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors",
+                  temporary ? "border-accent bg-accent-soft text-fg" : "border-line-strong/80 text-fg-muted hover:bg-hover hover:text-fg",
+                )}
+              >
+                <Hourglass className="size-3.5" />
+                Temporary
+              </button>
+              <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+                Custom…
+              </Button>
+            </div>
           </div>
+          {temporary && (
+            <p role="status" className="mt-3 rounded-lg border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[13px] text-fg-muted">
+              <b className="font-medium text-fg">Temporary is on.</b> The project you start now is not saved, keeps no history, and is erased when you close it or leave the page.
+            </p>
+          )}
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {LANGUAGES.map((lang) => (
               <button
                 key={lang.id}
                 aria-label={`New ${lang.name} project`}
                 disabled={!!busy}
-                onClick={() => setNaming(lang.id)}
+                onClick={() => pick(lang.id)}
                 className={cn(
                   "group flex items-center gap-4 rounded-xl border border-line-strong bg-surface p-4 text-left transition-all duration-150",
                   "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",

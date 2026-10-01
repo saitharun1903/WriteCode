@@ -663,17 +663,34 @@ class Adapter:
             self.executable[file] = lines
         return self.executable[file]
 
+    def place(self, file, lines):
+        """Where each breakpoint stops: its own line when it has code, else the next line that has.
+
+        Returns what to report, and the lines to stop on."""
+        code = sorted(self.executable_lines(file)) if file in self.files else []
+        has = set(code)
+        report = []
+        stops = set()
+        for n in lines:
+            at = n if n in has else next((line for line in code if line > n), None)
+            if at is None:
+                report.append({"line": n, "verified": False})
+            else:
+                stops.add(at)
+                report.append({"line": n, "verified": True, "actual": at})
+        return report, stops
+
     def set_breakpoints(self, file, lines):
         lines = sorted({int(n) for n in lines})
+        report, stops = self.place(file, lines)
         with self.state:
-            if lines:
-                self.breakpoints[file] = set(lines)
+            if stops:
+                self.breakpoints[file] = stops
             else:
                 self.breakpoints.pop(file, None)
-        if lines:
+        if stops:
             self.arm_running_frames()
-        ok = self.executable_lines(file) if file in self.files else set()
-        return [{"line": n, "verified": n in ok} for n in lines]
+        return report
 
     def arm(self, frame):
         frame.f_trace_lines = True
@@ -860,18 +877,17 @@ class Adapter:
     def launch(self, req):
         self.root = os.path.abspath(req.get("root") or os.getcwd())
         self.files = {str(f) for f in req.get("files") or []}
-        for file, lines in (req.get("breakpoints") or {}).items():
-            if lines:
-                self.breakpoints[file] = {int(n) for n in lines}
+        asked = {file: sorted({int(n) for n in lines}) for file, lines in (req.get("breakpoints") or {}).items() if lines}
         entry = os.path.join(self.root, req["entry"])
         os.chdir(self.root)
         sys.argv = [entry]
         sys.path[0] = os.path.dirname(entry)
         self.redirect_stdio(req.get("stdinPath"))
-        for file in self.breakpoints:
-            lines = sorted(self.breakpoints[file])
-            ok = self.executable_lines(file) if file in self.files else set()
-            self.event("breakpoints", file=file, breakpoints=[{"line": n, "verified": n in ok} for n in lines])
+        for file, lines in asked.items():
+            report, stops = self.place(file, lines)
+            if stops:
+                self.breakpoints[file] = stops
+            self.event("breakpoints", file=file, breakpoints=report)
         return entry
 
     def run(self, entry):

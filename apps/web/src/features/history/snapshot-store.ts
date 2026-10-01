@@ -47,6 +47,7 @@ export const useSnapshots = create<SnapshotState>((set, get) => ({
   async create(label) {
     const project = useWorkspace.getState().project;
     if (!project) return;
+    if (project.temporary) return void toast.info("Temporary projects keep no snapshots", "Keep the project first, from the Temporary button at the top.");
     await useWorkspace.getState().flush();
     const existing = get().projectId === project.id ? get().snapshots : await snapshotRepo.listByProject(project.id);
     const snapshot: Snapshot = {

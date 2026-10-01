@@ -18,6 +18,11 @@ export interface TestCase {
 export interface Project {
   id: string;
   name: string;
+  /**
+   * A temporary project lives only in the open page: it is never saved, keeps
+   * no run history, and is gone when it is closed or the page goes.
+   */
+  temporary?: boolean;
   language: string;
   entryFile: string;
   files: ProjectFile[];

@@ -76,6 +76,71 @@ test("coming back after ten minutes starts from the start screen; the project is
   await expect(page.locator(".monaco-editor").first()).toContainText("# kept");
 });
 
+test("a temporary project is not saved: closing it, or reloading, erases it; it can be kept", async ({ page }) => {
+  await page.goto("/");
+  const toggle = page.getByRole("switch", { name: "Temporary project" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("status").filter({ hasText: "Temporary is on." })).toBeVisible();
+  // No name is asked for: it opens at once.
+  await page.getByRole("button", { name: /New Python project/ }).click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
+  await expect(page.getByRole("button", { name: "Temporary project" })).toBeVisible();
+  await page.locator(".monaco-editor").first().click();
+  await page.keyboard.type("# gone soon");
+  await expect(page.locator(".monaco-editor").first()).toContainText("# gone soon");
+
+  // Nothing of it is in this browser's storage.
+  const stored = () =>
+    page.evaluate(
+      () =>
+        new Promise<number>((resolve) => {
+          const open = indexedDB.open("code-workspace");
+          open.onsuccess = () => {
+            const db = open.result;
+            const names = [...db.objectStoreNames];
+            if (!names.includes("projects")) return resolve(0);
+            const all = db.transaction("projects").objectStore("projects").getAll();
+            all.onsuccess = () => resolve((all.result as unknown[]).length);
+            all.onerror = () => resolve(-1);
+          };
+          open.onerror = () => resolve(-1);
+        }),
+    );
+  await page.waitForTimeout(900);
+  expect(await stored()).toBe(0);
+
+  // A reload erases it: the start screen, with nothing in Recent projects.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.locator(".monaco-editor")).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+
+  // Closing it erases it too; Back and Forward do not look for it.
+  await page.getByRole("switch", { name: "Temporary project" }).click();
+  await page.getByRole("button", { name: /New Java project/ }).click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
+  await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.getByText("Project not found")).toHaveCount(0);
+
+  // Kept, it is a project like any other.
+  await page.getByRole("button", { name: /New C\+\+ project/ }).click();
+  await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
+  await page.locator(".monaco-editor").first().click();
+  await page.keyboard.type("// kept ");
+  await page.getByRole("button", { name: "Temporary project" }).click();
+  await page.getByRole("menuitem", { name: "Keep this project" }).click();
+  await expect(page.getByRole("button", { name: "Temporary project" })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".monaco-editor").first()).toContainText("// kept");
+  await page.getByRole("button", { name: "Home" }).click();
+  await expect(page.getByRole("list", { name: "Recent projects" }).getByRole("listitem")).toHaveCount(1);
+});
+
 test("creates, renames and deletes files in the explorer", async ({ page }) => {
   await freshStart(page);
   await page.getByRole("button", { name: /New C\+\+ project/ }).click();

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bug, ChevronDown, ClipboardList, Ellipsis, FileDown, Link2, Menu, Smartphone, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
+import { Bug, ChevronDown, ClipboardList, Ellipsis, FileDown, Hourglass, Save, Trash2, Link2, Menu, Smartphone, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
 import { anyFileIsRunnable, findEntryPoints, getLanguage, runTarget } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -284,6 +284,23 @@ export function TitleBar({ compact }: { compact: boolean }) {
               </button>
             }
           />
+          {project.temporary && (
+            <DropdownMenu
+              touch={compact}
+              entries={[
+                { kind: "label", label: "Not saved: erased when you close it" },
+                { label: "Keep this project", icon: <Save />, onSelect: () => void useWorkspace.getState().keepTemporary() },
+                { label: "Close and erase", icon: <Trash2 />, danger: true, onSelect: () => runCommand("project.close") },
+              ]}
+              trigger={
+                <button aria-label="Temporary project" title="Temporary: not saved, erased when you close it" className="ml-1 flex h-[26px] shrink-0 items-center gap-1 rounded-full border border-accent/50 bg-accent-soft/50 px-2 text-xs font-medium text-fg hover:bg-accent-soft data-[state=open]:bg-accent-soft">
+                  <Hourglass className="size-3 text-accent" />
+                  {/* Where the search box sits in the middle of the bar, the mark alone leaves it room. */}
+                  <span className="hidden sm:inline xl:hidden 2xl:inline">Temporary</span>
+                </button>
+              }
+            />
+          )}
         </>
       )}
 

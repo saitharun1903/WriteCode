@@ -210,10 +210,31 @@ const isProjectFrame = (cf) => inProject(urlOf(cf)) && !cf.functionName.startsWi
 const breakpoints = new Map();
 /** Project file -> inspector breakpoint ids set in its script. */
 const placed = new Map();
+/** Inspector breakpoint id -> the file and line it was asked for (those set before their file was parsed). */
+const askedOf = new Map();
+/** Project file -> what was last reported for its breakpoints. */
+const reported = new Map();
+
+// A breakpoint set before its file was parsed gets its place when the file is: a line
+// without code resolves to the next statement, and the editor is told which.
+on("Debugger.breakpointResolved", (p) => {
+  const asked = askedOf.get(p.breakpointId);
+  const report = asked && reported.get(asked.file);
+  if (!report) return;
+  const actual = lineOf(p.location);
+  const entry = report.find((b) => b.line === asked.line);
+  if (!entry || actual < asked.line || entry.actual === actual) return;
+  entry.verified = true;
+  entry.actual = actual;
+  event("breakpoints", { file: asked.file, breakpoints: report });
+});
 
 async function placeBreakpoints(file) {
   const scriptId = scriptOf.get(file);
-  for (const id of placed.get(file) || []) await cdp("Debugger.removeBreakpoint", { breakpointId: id }).catch(() => {});
+  for (const id of placed.get(file) || []) {
+    askedOf.delete(id);
+    await cdp("Debugger.removeBreakpoint", { breakpointId: id }).catch(() => {});
+  }
   placed.delete(file);
   const lines = [...(breakpoints.get(file) || [])].sort((a, b) => a - b);
   const ids = [];
@@ -231,13 +252,17 @@ async function placeBreakpoints(file) {
       try {
         const r = await cdp("Debugger.setBreakpointByUrl", { url, ...at });
         ids.push(r.breakpointId);
+        if (scriptId === undefined) askedOf.set(r.breakpointId, { file, line });
         const loc = r.locations[0];
-        result.push({ line, verified: scriptId === undefined ? files.has(file) : !!loc && lineOf(loc) === line });
+        // A line without code resolves to the next statement: say which, so the editor shows it there.
+        const actual = loc ? lineOf(loc) : undefined;
+        result.push(scriptId === undefined ? { line, verified: files.has(file) } : loc ? { line, verified: true, ...(actual >= line ? { actual } : {}) } : { line, verified: false });
       } catch {
         result.push({ line, verified: false });
       }
     }
     placed.set(file, ids);
+    reported.set(file, result);
     return result;
   }
   const result = [];
@@ -250,13 +275,15 @@ async function placeBreakpoints(file) {
     try {
       const r = await cdp("Debugger.setBreakpoint", { location: { scriptId, ...at } });
       ids.push(r.breakpointId);
-      // A line without code resolves to the next statement: that line itself is not a stop.
-      result.push({ line, verified: lineOf(r.actualLocation) === line });
+      // A line without code resolves to the next statement: say which, so the editor shows it there.
+      const actual = lineOf(r.actualLocation);
+      result.push({ line, verified: true, ...(actual >= line ? { actual } : {}) });
     } catch {
       result.push({ line, verified: false });
     }
   }
   placed.set(file, ids);
+  reported.set(file, result);
   return result;
 }
 

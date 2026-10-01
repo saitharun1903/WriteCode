@@ -448,30 +448,63 @@ public final class CwDebugAdapter {
             prepareRequests.put(file, cpr);
         }
 
-        Set<Integer> verified = new TreeSet<>();
+        List<ReferenceType> types = new ArrayList<>();
         for (ReferenceType type : vm.allClasses()) {
-            if (typeBelongsTo(type, file)) verified.addAll(installOn(type, file, lines));
+            if (typeBelongsTo(type, file)) types.add(type);
         }
-        for (int line : lines) result.add(obj("line", line, "verified", verified.contains(line)));
+        for (int line : lines) {
+            // A line with no code of its own (blank, a comment, a brace, a declaration) stops at the next line that has some.
+            Integer actual = null;
+            for (ReferenceType type : types) {
+                Integer at = lineWithCode(type, line);
+                if (at != null && (actual == null || at < actual)) actual = at;
+            }
+            if (actual == null) {
+                result.add(obj("line", line, "verified", false));
+                continue;
+            }
+            for (ReferenceType type : types) installOn(type, file, actual);
+            result.add(obj("line", line, "verified", true, "actual", actual));
+        }
         return result;
     }
 
-    private Set<Integer> installOn(ReferenceType type, String file, Set<Integer> lines) {
-        Set<Integer> ok = new TreeSet<>();
-        for (int line : lines) {
-            try {
-                for (Location loc : type.locationsOfLine(line)) {
-                    BreakpointRequest br = erm.createBreakpointRequest(loc);
-                    br.setSuspendPolicy(EventRequest.SUSPEND_ALL);
-                    br.enable();
-                    installed.computeIfAbsent(file, k -> new ArrayList<>()).add(br);
-                    ok.add(line);
-                }
-            } catch (AbsentInformationException ignored) {
-                // Compiled without -g; cannot map lines.
+    /**
+     * The line a breakpoint asked for at `line` stops on in this class: the line
+     * itself when it has code, else the next line of the class that has, as long
+     * as `line` is inside the class (between its first and last lines with code).
+     */
+    private Integer lineWithCode(ReferenceType type, int line) {
+        try {
+            if (!type.locationsOfLine(line).isEmpty()) return line;
+            int first = Integer.MAX_VALUE;
+            int last = -1;
+            Integer next = null;
+            for (Location loc : type.allLineLocations()) {
+                int l = loc.lineNumber();
+                if (l <= 0) continue;
+                first = Math.min(first, l);
+                last = Math.max(last, l);
+                if (l > line && (next == null || l < next)) next = l;
             }
+            return last < 0 || line < first || line > last ? null : next;
+        } catch (AbsentInformationException e) {
+            // Compiled without -g; cannot map lines.
+            return null;
         }
-        return ok;
+    }
+
+    private void installOn(ReferenceType type, String file, int line) {
+        try {
+            for (Location loc : type.locationsOfLine(line)) {
+                BreakpointRequest br = erm.createBreakpointRequest(loc);
+                br.setSuspendPolicy(EventRequest.SUSPEND_ALL);
+                br.enable();
+                installed.computeIfAbsent(file, k -> new ArrayList<>()).add(br);
+            }
+        } catch (AbsentInformationException ignored) {
+            // Compiled without -g; cannot map lines.
+        }
     }
 
     // ------------------------------------------------------------- events
@@ -489,10 +522,8 @@ public final class CwDebugAdapter {
                         ReferenceType type = ((ClassPrepareEvent) e).referenceType();
                         for (String file : breakpoints.keySet()) {
                             if (!typeBelongsTo(type, file)) continue;
-                            Set<Integer> ok = installOn(type, file, breakpoints.get(file));
-                            List<Object> bps = new ArrayList<>();
-                            for (int line : breakpoints.get(file)) bps.add(obj("line", line, "verified", ok.contains(line)));
-                            event("breakpoints", obj("file", file, "breakpoints", bps));
+                            // With this class loaded, every breakpoint of the file is placed again on all its classes.
+                            event("breakpoints", obj("file", file, "breakpoints", installBreakpoints(file)));
                         }
                     } else if (e instanceof BreakpointEvent) {
                         resume = false;

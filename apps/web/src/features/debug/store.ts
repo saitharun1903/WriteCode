@@ -122,11 +122,17 @@ export const useDebug = create<DebugState>((set, get) => ({
         set({ phase: "running", stop: null, variables: {}, previous });
         break;
       }
-      case "breakpoints":
+      case "breakpoints": {
         set((s) => ({
           unverified: { ...s.unverified, [event.file]: event.breakpoints.filter((b) => !b.verified).map((b) => b.line) },
         }));
+        // A breakpoint on a line with no code stops on the next line that has some: its mark moves there.
+        const moved = new Map(event.breakpoints.filter((b) => b.verified && b.actual !== undefined && b.actual !== b.line).map((b) => [b.line, b.actual!]));
+        const ws = useWorkspace.getState();
+        const lines = ws.project?.breakpoints?.[event.file];
+        if (moved.size && lines?.some((l) => moved.has(l))) ws.setBreakpoints(event.file, [...new Set(lines.map((l) => moved.get(l) ?? l))].sort((a, b) => a - b));
         break;
+      }
       case "response": {
         const resolve = pending.get(event.requestId);
         if (resolve) {

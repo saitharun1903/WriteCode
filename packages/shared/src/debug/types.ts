@@ -39,7 +39,8 @@ export type StopReason = "breakpoint" | "step" | "pause" | "exception" | "entry"
 export type DebugEvent =
   | { kind: "stopped"; reason: StopReason; thread: string; frames: DebugFrame[]; description?: string }
   | { kind: "continued" }
-  | { kind: "breakpoints"; file: string; breakpoints: { line: number; verified: boolean }[] }
+  /** `actual`: the line the breakpoint really stops on, when the line it was set on has no code. */
+  | { kind: "breakpoints"; file: string; breakpoints: { line: number; verified: boolean; actual?: number }[] }
   | {
       kind: "response";
       requestId: string;

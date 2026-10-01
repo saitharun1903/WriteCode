@@ -191,7 +191,8 @@ export const useExecution = create<ExecutionState>((set, get) => {
       run: s.run && s.run.id === result.id ? { ...s.run, status: result.status, result } : s.run,
       diagnostics,
     }));
-    if (useSettings.getState().recordHistory && !watched) {
+    // A temporary project leaves nothing behind, its runs included.
+    if (useSettings.getState().recordHistory && !watched && !project.temporary) {
       try {
         await historyRepo.record({
           id: createId(),

@@ -25,7 +25,13 @@ interface WorkspaceState {
   sharedId: string | null;
 
   init: () => Promise<void>;
-  createProject: (languageId: string, name?: string) => Promise<void>;
+  /** `temporary`: kept in this page only, never saved (see `Project.temporary`). */
+  createProject: (languageId: string, name?: string, options?: { temporary?: boolean }) => Promise<void>;
+  /** The start screen's choice: new projects are temporary. */
+  temporaryMode: boolean;
+  setTemporaryMode: (on: boolean) => void;
+  /** Makes the open temporary project a saved one. */
+  keepTemporary: () => Promise<void>;
   openProject: (id: string) => Promise<void>;
   closeProject: () => void;
   renameProject: (id: string, name: string) => Promise<void>;
@@ -122,7 +128,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
   /** Applies a project mutation, updates the listing and schedules a debounced save. */
   const commit = (project: Project) => {
     // A shared project is someone else's: it lives in memory until the user saves a copy.
-    if (project.id === get().sharedId) return void set({ project, saveState: "saved" });
+    // A temporary one is never saved at all.
+    if (project.id === get().sharedId || project.temporary) return void set({ project, saveState: "saved" });
     set((s) => ({
       project,
       saveState: "pending",
@@ -157,7 +164,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
 
   /** Deletes a project the user only opened (never ran, never changed) once they leave it. */
   const discardIfUntouched = async (project: Project | null) => {
-    if (!project || project.id === get().sharedId || !ops.summarize(project).untouched || get().project?.id === project.id) return;
+    if (!project || project.temporary || project.id === get().sharedId || !ops.summarize(project).untouched || get().project?.id === project.id) return;
     try {
       await projectRepo.delete(project.id);
       localStorage.removeItem(tabsKey(project.id));
@@ -176,7 +183,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     if (openTabs.length === 0 && exists(project.entryFile)) openTabs = [project.entryFile];
     activeFile ??= openTabs[0] ?? null;
     set({ project, openTabs, activeFile, saveState: "saved", sharedId: null, readOnly: false });
-    writeJSON(LAST_PROJECT_KEY, project.id);
+    // A temporary project is not there to come back to.
+    if (project.temporary) {
+      try {
+        localStorage.removeItem(LAST_PROJECT_KEY);
+      } catch {}
+    } else writeJSON(LAST_PROJECT_KEY, project.id);
     // A project the user opens starts on its code; Run, Debug, Visualize and Tests open the bottom
     // panel when used. Restoring the last project after a reload keeps the layout as it was.
     if (opened) useSettings.getState().updateLayout({ bottomOpen: false });
@@ -246,13 +258,38 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       return initPromise;
     },
 
-    async createProject(languageId, name) {
+    async createProject(languageId, name, options) {
       const lang = getLanguage(languageId);
       if (!lang) return void toast.error(`Unknown language: ${languageId}`);
       await get().flush();
       openToken++;
       const project = ops.createProject(createId(), name ?? `${lang.name} project`, languageId);
+      if (options?.temporary) {
+        // Opened in place, in memory only: nothing is written to this browser's storage.
+        const previous = get().project;
+        loadProject({ ...project, temporary: true });
+        await discardIfUntouched(previous);
+        return;
+      }
       await startProject(project);
+    },
+
+    temporaryMode: false,
+    setTemporaryMode: (temporaryMode) => set({ temporaryMode }),
+
+    async keepTemporary() {
+      const project = get().project;
+      if (!project?.temporary) return;
+      const kept: Project = { ...project, updatedAt: Date.now(), lastRunAt: project.lastRunAt ?? Date.now() };
+      delete kept.temporary;
+      try {
+        await projectRepo.put(kept);
+      } catch (e) {
+        return void toast.error("Could not save the project", errorMessage(e));
+      }
+      set((s) => ({ project: kept, projects: [ops.summarize(kept), ...s.projects], saveState: "saved" }));
+      writeJSON(LAST_PROJECT_KEY, kept.id);
+      toast.success(`"${kept.name}" is saved`, "It is in your projects now.");
     },
 
 
@@ -511,7 +548,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         saveTimer = null;
       }
       const { project, saveState } = get();
-      if (!project || saveState === "saved" || project.id === get().sharedId) return;
+      if (!project || saveState === "saved" || project.id === get().sharedId || project.temporary) return;
       set({ saveState: "saving" });
       try {
         await projectRepo.put(project);

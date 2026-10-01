@@ -23,7 +23,8 @@ export function useProjectHistory() {
   useEffect(() => {
     if (id) {
       // The first project adds an entry; switching projects reuses it.
-      if (pushedAt === null) history.pushState(stateOf(id), "");
+      // After a reload the page is already on a project's entry: it is reused, not stacked on.
+      if (pushedAt === null && projectOf(history.state) === null) history.pushState(stateOf(id), "");
       else if (projectOf(history.state) !== id) history.replaceState(stateOf(id), "");
       pushedAt = location.href;
       return;
@@ -36,6 +37,12 @@ export function useProjectHistory() {
     if (ours) history.back();
   }, [id]);
 
+  // A page loaded on a project's entry with no project open (the site was reopened later): the entry is the start screen's.
+  const ready = useWorkspace((s) => s.status !== "loading");
+  useEffect(() => {
+    if (ready && !useWorkspace.getState().project && pushedAt === null && projectOf(history.state) !== null) history.replaceState(null, "");
+  }, [ready]);
+
   useEffect(() => {
     const onPopState = (e: PopStateEvent) => {
       const ws = useWorkspace.getState();
@@ -43,6 +50,13 @@ export function useProjectHistory() {
       if (wanted) {
         // Forward, onto the project's entry. (A live session that was left is rejoined from its link, not from here.)
         if (wanted.startsWith("live-") && ws.project?.id !== wanted) return;
+        // A project that no longer exists (deleted, temporary, or only opened and never changed): the entry is the start screen's now.
+        if (ws.project?.id !== wanted && !ws.projects.some((p) => p.id === wanted)) {
+          history.replaceState(null, "");
+          pushedAt = null;
+          if (ws.project) ws.closeProject();
+          return;
+        }
         pushedAt = location.href;
         if (ws.project?.id !== wanted) void ws.openProject(wanted);
         return;

@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   ArrowDownToDot,
   ArrowUpFromDot,
-  Check,
   ChevronRight,
   CircleDot,
   Eye,
@@ -28,6 +27,7 @@ import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { sourceTypeName } from "@/features/visualize/model";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
+import { Spinner } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { previewOf, shortValue } from "./inline-values";
 import { frameKey, useDebug, type StopInfo } from "./store";
@@ -375,38 +375,17 @@ function WhereBar({ stop }: { stop: StopInfo }) {
   );
 }
 
-const STEPS = ["Compile", "Start", "Run to a breakpoint"] as const;
-
-/** Before the first pause: what the debugger is doing right now. */
-function StartingView({ status, running }: { status: string; running: boolean }) {
-  const step = running ? 2 : status === "COMPILING" ? 0 : 1;
+/** Before the first pause: one line saying what is happening. */
+function StartingView({ running }: { running: boolean }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
-      <ol className="flex items-center gap-2" aria-label="Debugger progress">
-        {STEPS.map((label, i) => (
-          <li key={label} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
-                i < step && "border-success/40 text-success",
-                i === step && "border-accent bg-accent-soft/60 text-fg",
-                i > step && "border-line-strong text-fg-subtle",
-              )}
-            >
-              {i < step ? <Check className="size-3.5" /> : i === step ? <span className="size-2 animate-pulse rounded-full bg-accent" /> : <span className="size-2 rounded-full bg-line-strong" />}
-              {label}
-            </span>
-            {i < STEPS.length - 1 && <span className={cn("h-px w-6", i < step ? "bg-success/50" : "bg-line-strong")} />}
-          </li>
-        ))}
-      </ol>
-      <p className="max-w-md text-sm text-fg-subtle">
-        {running
-          ? "The program is running and will pause at your breakpoints. Use Pause to stop it wherever it is."
-          : status === "COMPILING"
-            ? "Compiling your program…"
-            : "Starting the debugger…"}
-      </p>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+      {running ? (
+        <p className="max-w-md text-sm text-fg-subtle">The program is running. It pauses at your breakpoints; press Pause to stop it wherever it is.</p>
+      ) : (
+        <p className="flex items-center gap-2 text-sm text-fg-subtle">
+          <Spinner /> Starting…
+        </p>
+      )}
     </div>
   );
 }
@@ -633,7 +612,7 @@ export function DebugToolWindow() {
               </Button>
             </div>
           ) : !paused ? (
-            <StartingView status={run?.status ?? ""} running={phase === "running"} />
+            <StartingView running={phase === "running"} />
           ) : (
             <div className="flex min-h-0 flex-1">
               <div className="w-[38%] min-w-52 max-w-[26rem] border-r border-line">

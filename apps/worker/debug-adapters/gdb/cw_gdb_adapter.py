@@ -369,18 +369,20 @@ class Adapter:
         for line in lines:
             bp = None
             ok = False
+            actual = line
             if file in self.files:
                 try:
                     bp = gdb.Breakpoint(f"{file}:{line}", internal=False)
                     locs = getattr(bp, "locations", None) or []
-                    # A line without code moves to the next one with code: that line itself is not a stop.
-                    ok = bool(locs) and all(loc.source is None or loc.source[1] == line for loc in locs)
-                    if not ok and not locs:
-                        ok = bp.pending is False
+                    # A line without code moves to the next one with code: say which, so the editor shows it there.
+                    at = [loc.source[1] for loc in locs if loc.source is not None and loc.source[1] >= line]
+                    if at:
+                        actual = min(at)
+                    ok = bool(locs) or bp.pending is False
                 except gdb.error:
                     bp = None
             placed[line] = bp
-            result.append({"line": line, "verified": ok})
+            result.append({"line": line, "verified": ok, "actual": actual} if ok else {"line": line, "verified": False})
         if placed:
             self.breakpoints[file] = placed
         return result

@@ -485,6 +485,38 @@ for (const [language, own, broken, program, expected] of [
   });
 }
 
+// A breakpoint set where there is no code: on a comment, with a blank line after it.
+const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = [
+  ["Java", "public class Main {\n    public static void main(String[] args) {\n        int total = 0;\n        // add them up\n\n        for (int i = 1; i <= 3; i++) total += i;\n        System.out.println(total);\n    }\n}\n", 4, 6],
+  ["Python", "total = 0\n# add them up\n\nfor i in range(1, 4):\n    total += i\nprint(total)\n", 2, 4],
+  ["C++", "#include <iostream>\n\nint main() {\n    int total = 0;\n    // add them up\n\n    for (int i = 1; i <= 3; i++) total += i;\n    std::cout << total << std::endl;\n    return 0;\n}\n", 5, 7],
+  ["C", "#include <stdio.h>\n\nint main(void) {\n    int total = 0;\n    // add them up\n\n    for (int i = 1; i <= 3; i++) total += i;\n    printf(\"%d\\n\", total);\n    return 0;\n}\n", 5, 7],
+  ["JavaScript", "let total = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
+  ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
+];
+
+for (const [language, code, set, stops] of NO_CODE) {
+  test(`${language}: a breakpoint on a line with no code stops on the next line that has some, and its mark moves there`, async ({ page }) => {
+    await freshProject(page, language);
+    await setCode(page, code);
+    await breakpointAt(page, set);
+    await page.getByRole("button", { name: "Debug program" }).click();
+    // No list of steps before it starts: it just starts, and pauses.
+    await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+    await expect(debugPanel(page).getByRole("list", { name: "Debugger progress" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(`${stops}:1`);
+    await expect(variables(page).getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+    // The red mark is on the line it stopped on, and is a real breakpoint (not a greyed one).
+    await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+    await expect(page.locator(".monaco-editor .cw-bp-unverified")).toHaveCount(0);
+    // Same row as the line the program is paused on.
+    const mark = (await page.locator(".monaco-editor .cw-bp").boundingBox())!;
+    const paused = (await page.locator(".monaco-editor .cw-debug-line").boundingBox())!;
+    expect(Math.abs(mark.y - paused.y)).toBeLessThan(3);
+    await page.keyboard.press("Shift+F5");
+  });
+}
+
 test("recent projects: running the untouched starter does not count; changing the code does", async ({ page }) => {
   await freshProject(page, "Python");
   await page.getByRole("button", { name: "Run program" }).click();

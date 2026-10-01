@@ -123,14 +123,35 @@ describe.skipIf(!PYTHON)("Python debug adapter (host Python)", () => {
     session = undefined;
   });
 
+  it("a breakpoint on a line with no code stops on the next line that has some", async () => {
+    const program = ["def double(n):", "    # twice the number", "", "    return n * 2", "", "", "print(double(4))", ""].join(String.fromCharCode(10));
+    const s = (session = new Session({ "main.py": program }));
+    const stop = s.nextStop();
+    // A comment, and the blank lines before the call.
+    expect((await s.launch(["main.py"], { "main.py": [2, 6] })).success).toBe(true);
+    const placed = await s.waitFor((m) => m.event === "breakpoints");
+    expect(placed.breakpoints).toEqual([
+      { line: 2, verified: true, actual: 4 },
+      { line: 6, verified: true, actual: 7 },
+    ]);
+    let e = await stop;
+    expect(e.reason).toBe("breakpoint");
+    expect((e.frames as Frame[]).map((f) => `${f.name}:${f.line}`)).toEqual(["<module>:7"]);
+    const next = s.nextStop();
+    await s.request("continue");
+    e = await next;
+    expect((e.frames as Frame[]).map((f) => `${f.name}:${f.line}`)).toEqual(["double:4", "<module>:7"]);
+  });
+
   it("stops at breakpoints, reads variables, evaluates watches, steps and exits", async () => {
     const s = (session = new Session({ "main.py": PROGRAM }));
     const stop = s.nextStop();
-    expect((await s.launch(["main.py"], { "main.py": [17, 5] })).success).toBe(true);
+    expect((await s.launch(["main.py"], { "main.py": [17, 30] })).success).toBe(true);
     const verified = await s.waitFor((m) => m.event === "breakpoints");
     expect(verified.breakpoints).toEqual([
-      { line: 5, verified: false },
-      { line: 17, verified: true },
+      { line: 17, verified: true, actual: 17 },
+      // Past the end of the file there is no code to stop on.
+      { line: 30, verified: false },
     ]);
 
     let e = await stop;
@@ -220,7 +241,7 @@ describe.skipIf(!PYTHON)("Python debug adapter (host Python)", () => {
     await new Promise((r) => setTimeout(r, 100));
     next = s.nextStop();
     const set = await s.request("setBreakpoints", { file: "main.py", lines: [4] });
-    expect(set.breakpoints).toEqual([{ line: 4, verified: true }]);
+    expect(set.breakpoints).toEqual([{ line: 4, verified: true, actual: 4 }]);
     e = await next;
     expect(e.reason).toBe("breakpoint");
     expect(Number((await s.watch("i")).result?.value)).toBeGreaterThan(i);
