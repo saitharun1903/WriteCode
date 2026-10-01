@@ -1,81 +1,22 @@
 "use client";
 
 import { toast } from "@/components/ui/toast";
-import { editorBridge } from "@/features/editor/bridge";
 
 type Report = (text: string) => void;
 
-/** What lands on the system clipboard instead of the copied text. */
-export const CLIPBOARD_NOTICE = "Copying is turned off during this interview.";
-
 /**
- * The candidate's clipboard during an interview. Nothing copied on the page
- * reaches the system clipboard, and nothing from outside can be pasted in.
- * Copy, cut and paste still work on the candidate's own code: the text is kept
- * here, in the page, and pasted from here.
- */
-let held: { text: string; wholeLine: boolean } | null = null;
-
-type Field = HTMLTextAreaElement | HTMLInputElement;
-const fieldOf = (el: Element | null): Field | null => (el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && /^(text|search|)$/.test(el.type)) ? el : null);
-
-/** Takes the selection of the code editor or of a text box (and removes it, for a cut). */
-function take(cut: boolean): { text: string; wholeLine: boolean } | null {
-  const ed = editorBridge.editor;
-  const model = ed?.getModel();
-  if (ed && model && ed.hasTextFocus()) {
-    const selections = ed.getSelections() ?? [];
-    const only = selections.length === 1 ? selections[0]! : null;
-    if (only?.isEmpty()) {
-      // No selection: the whole line, as in every code editor.
-      const line = only.startLineNumber;
-      const text = `${model.getLineContent(line)}\n`;
-      const last = line === model.getLineCount();
-      const range = last ? { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: model.getLineMaxColumn(line) } : { startLineNumber: line, startColumn: 1, endLineNumber: line + 1, endColumn: 1 };
-      if (cut) {
-        ed.pushUndoStop();
-        ed.executeEdits("cw.cut", [{ range, text: "" }]);
-        ed.pushUndoStop();
-      }
-      return { text, wholeLine: true };
-    }
-    const text = selections.map((s) => model.getValueInRange(s)).join(model.getEOL());
-    if (cut && text) {
-      ed.pushUndoStop();
-      ed.executeEdits("cw.cut", selections.map((range) => ({ range, text: "" })));
-      ed.pushUndoStop();
-    }
-    return text ? { text, wholeLine: false } : null;
-  }
-  const field = fieldOf(document.activeElement);
-  if (!field) return null; // The problem statement and everything else on the page is not copied at all.
-  const text = field.value.slice(field.selectionStart ?? 0, field.selectionEnd ?? 0);
-  if (cut && text && !field.readOnly) document.execCommand("delete");
-  return text ? { text, wholeLine: false } : null;
-}
-
-/** Pastes the text held here into the code editor or the focused text box. */
-function put() {
-  if (!held) return;
-  const ed = editorBridge.editor;
-  if (ed?.hasTextFocus()) return ed.trigger("keyboard", "paste", { text: held.text, pasteOnNewLine: held.wholeLine, multicursorText: null, mode: null });
-  const field = fieldOf(document.activeElement);
-  if (field && !field.readOnly) document.execCommand("insertText", false, held.text);
-}
-
-/**
- * Locks the page down for the candidate while the interview runs: no copying
- * out, no pasting or dropping in, no right-click menu and no developer tools
- * shortcuts. `onPaste` is told about text someone tried to bring in.
+ * Locks the page down for the candidate while the interview runs: nothing can
+ * be copied or cut (not the problem, not the code), nothing can be pasted or
+ * dropped in, and there is no right-click menu and no developer tools
+ * shortcuts. The code is typed. `onPaste` is told about text someone tried to
+ * bring in.
  */
 export function startLockdown(onPaste: Report): () => void {
-  held = null;
   let lastToast = 0;
-  const refused = (text: string) => {
-    onPaste(text);
+  const say = (title: string, detail: string) => {
     if (Date.now() - lastToast < 4000) return;
     lastToast = Date.now();
-    toast.error("Pasting is turned off", "Text from outside the interview cannot be pasted. The interviewer has been told.");
+    toast.error(title, detail);
   };
   const swallow = (e: Event) => {
     e.preventDefault();
@@ -83,22 +24,22 @@ export function startLockdown(onPaste: Report): () => void {
   };
 
   const onCopy = (e: ClipboardEvent) => {
-    const taken = take(e.type === "cut");
-    if (taken) held = taken;
     swallow(e);
-    e.clipboardData?.setData("text/plain", CLIPBOARD_NOTICE);
+    say("Copying is turned off", "During the interview nothing can be copied or cut.");
   };
   const onPasteEvent = (e: ClipboardEvent) => {
-    const outside = e.clipboardData?.getData("text/plain") ?? "";
+    const text = e.clipboardData?.getData("text/plain") ?? "";
     swallow(e);
-    // Our own notice is on the clipboard: the last thing copied was copied here.
-    if (outside === CLIPBOARD_NOTICE || (held && outside === held.text)) return put();
-    if (outside) refused(outside);
+    if (text) onPaste(text);
+    say("Pasting is turned off", "Type your code. The interviewer has been told about the paste.");
   };
   const onDrop = (e: DragEvent) => {
     const text = e.dataTransfer?.getData("text/plain") ?? "";
     swallow(e);
-    if (text) refused(text);
+    if (text) {
+      onPaste(text);
+      say("Pasting is turned off", "Type your code. The interviewer has been told about the paste.");
+    }
   };
   const onDragOver = (e: DragEvent) => {
     swallow(e);
@@ -117,20 +58,18 @@ export function startLockdown(onPaste: Report): () => void {
   // Closing or reloading the tab by accident would leave the interview.
   const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
 
-  // Code that reads the clipboard directly (the editor's Paste command) gets the held text too.
+  // Code that uses the clipboard directly (the editor's own Copy and Paste commands) gets nothing.
   const clipboard = navigator.clipboard as (Clipboard & Record<string, unknown>) | undefined;
   const patched = ["readText", "read", "writeText", "write"] as const;
   try {
     if (clipboard) {
-      clipboard.readText = async () => held?.text ?? "";
+      clipboard.readText = async () => "";
       clipboard.read = async () => [];
-      clipboard.writeText = async (text: string) => {
-        held = { text, wholeLine: false };
-      };
+      clipboard.writeText = async () => {};
       clipboard.write = async () => {};
     }
   } catch {
-    // A browser that does not allow this still has the paste event blocked.
+    // A browser that does not allow this still has the clipboard events blocked.
   }
 
   const capture = { capture: true } as const;
@@ -158,7 +97,6 @@ export function startLockdown(onPaste: Report): () => void {
     try {
       if (clipboard) for (const name of patched) delete clipboard[name];
     } catch {}
-    held = null;
   };
 }
 

@@ -532,6 +532,43 @@ describe("live rooms", () => {
       }
     });
 
+    it("when the interview ends, the session closes for the candidate and stays for the interviewer", async () => {
+      vi.useFakeTimers();
+      try {
+        const { rooms, id, hr, cand } = await interview(JUDGED, doubling());
+        await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });
+        await hr.conn.control({ type: "interview-end" });
+        // Long enough to see how the code that was handed in did.
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(cand.closed).toBeNull();
+        expect(cand.last("interview")!.state.verdicts!.at(-1)).toMatchObject({ final: true, status: "accepted" });
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(cand.last("ended")).toBeDefined();
+        expect(cand.closed?.code).toBe(LiveClose.ended);
+        expect(hr.closed).toBeNull();
+        expect(hr.last("participants")!.participants).toHaveLength(1);
+        await expect(new Client().join(rooms, id, "Asha", KEY_B)).rejects.toMatchObject({ code: "not-found", message: "This interview has ended." });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("camera set-up messages pass between the interviewer and the candidate only", async () => {
+      const { rooms, id, hr, cand } = await interview();
+      const other = await new Client().join(rooms, id, "Ravi", KEY_C);
+      const ids = (c: Client) => c.last("welcome")!.you.id;
+      await hr.conn.control({ type: "rtc", to: ids(cand), data: { kind: "want" } });
+      expect(cand.last("rtc")).toEqual({ type: "rtc", from: ids(hr), data: { kind: "want" } });
+      await cand.conn.control({ type: "rtc", to: ids(hr), data: { kind: "offer", call: "c1", sdp: "v=0" } });
+      expect(hr.last("rtc")).toMatchObject({ from: ids(cand), data: { kind: "offer", call: "c1", sdp: "v=0" } });
+      // One candidate cannot reach another, and oversized or unknown messages are dropped.
+      await cand.conn.control({ type: "rtc", to: ids(other), data: { kind: "offer", call: "c1", sdp: "v=0" } });
+      expect(other.last("rtc")).toBeUndefined();
+      await cand.conn.control({ type: "rtc", to: ids(hr), data: { kind: "offer", call: "c1", sdp: "x".repeat(40_000) } });
+      await cand.conn.control({ type: "rtc", to: ids(hr), data: { kind: "anything" } as never });
+      expect(hr.messages.filter((m) => m.type === "rtc")).toHaveLength(1);
+    });
+
     it("with no limit, leaving is only recorded", async () => {
       const { cand } = await interview({ ...JUDGED, maxLeaves: 0 });
       await cand.conn.control({ type: "interview-event", event: { kind: "consent" } });

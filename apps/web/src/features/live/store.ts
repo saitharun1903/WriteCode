@@ -10,6 +10,8 @@ import type {
   LiveJoinRole,
   LiveParticipant,
   LivePresence,
+  LiveRtcSignal,
+  InterviewVerdict,
   LiveRole,
   LiveRunNotice,
   LiveServerMessage,
@@ -80,6 +82,11 @@ interface LiveState {
   announceTests: (executionId: string, testIds: string[]) => void;
   /** Interviewer: the typing history for replay (document updates with their times). */
   requestHistory: () => Promise<[number, string][]>;
+  /** Interview: a camera set-up message for one participant (see interview/camera.ts). */
+  sendRtc: (to: string, data: LiveRtcSignal) => boolean;
+  /** Candidate: the interview that has just finished, shown once the session has closed for them. */
+  finished: { title: string; reason?: string; verdict?: InterviewVerdict } | null;
+  clearFinished: () => void;
   /** Owner: emails the link through the server. */
   emailInvites: (emails: string[]) => Promise<{ sent: number; failed: string[] }>;
 }
@@ -150,6 +157,9 @@ interface Session {
 }
 
 let session: Session | null = null;
+
+/** Camera set-up messages go to interview/camera.ts, which registers here (it imports this store). */
+export const rtcBridge: { onSignal: (from: string, data: LiveRtcSignal) => void } = { onSignal: () => {} };
 /** Waiting for the interview history the interviewer asked for. */
 let historyWaiters: ((updates: [number, string][]) => void)[] = [];
 
@@ -312,6 +322,9 @@ export const useLive = create<LiveState>((set, get) => {
         if (alert) toast.info(alert(msg.event), (msg.event.kind === "paste" || msg.event.kind === "submit") && msg.event.detail ? msg.event.detail.slice(0, 120) : undefined);
         return;
       }
+      case "rtc":
+        rtcBridge.onSignal(msg.from, msg.data);
+        return;
       case "interview-history": {
         const waiters = historyWaiters;
         historyWaiters = [];
@@ -356,6 +369,16 @@ export const useLive = create<LiveState>((set, get) => {
             const ended = code === 4000 || get().status === "ended";
             const removed = code === 4001 || get().status === "removed";
             if (s.owner && (ended || code === 4004)) forgetOwned(s.projectId);
+            // A candidate whose interview is over: nothing of it stays open, only a word of thanks.
+            const iv = get().interview;
+            if (!s.owner && iv?.endedAt) {
+              const shared = useWorkspace.getState().sharedId;
+              teardown();
+              set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null, finished: { title: iv.title, reason: iv.endReason, verdict: iv.verdicts?.at(-1) } });
+              if (shared && useWorkspace.getState().project?.id === shared) useWorkspace.getState().closeProject();
+              history.replaceState(null, "", "/");
+              return;
+            }
             // The owner came back to a session that closed while they were away: say so, and let them share again.
             if (s.owner && code === 4004) {
               teardownKeepProject();
@@ -444,6 +467,9 @@ export const useLive = create<LiveState>((set, get) => {
     startInterview: (name, setup) => createRoom(name, { interview: setup }),
 
     sendInterview: (message) => session?.client.send(message) ?? false,
+    sendRtc: (to, data) => session?.client.send({ type: "rtc", to, data }) ?? false,
+    finished: null,
+    clearFinished: () => set({ finished: null }),
 
     announceTests(executionId, testIds) {
       if (!session || session.announced.has(executionId)) return;

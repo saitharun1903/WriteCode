@@ -88,7 +88,7 @@ const byIndex = (r: ExecutionResult | undefined, i: number) => r?.tests?.find((t
  */
 export function withExamples(statement: string, samples: { input: string; expected: string; note?: string }[]): string {
   const examples = samples.map((s, i) =>
-    [`Example ${i + 1}`, "Input:", s.input.replace(/\n$/, ""), "Output:", s.expected.replace(/\n$/, ""), ...(s.note ? ["", s.note] : [])].join("\n"),
+    [`Example ${i + 1}`, "Input:", s.input.replace(/\n$/, ""), "Output:", s.expected.replace(/\n$/, ""), ...(s.note ? [`Explanation: ${s.note}`] : [])].join("\n"),
   );
   return [statement.trim(), ...examples].join("\n\n");
 }
@@ -143,9 +143,11 @@ async function prepareOnce(topic: string, difficulty: ProblemDifficulty, onStep:
   const small = [...samples, ...edge];
 
   onStep("checking");
-  const [solutionSmall, generated] = await Promise.all([
+  // All three at once: the reference solution and the brute force on the small inputs, and the large inputs being made.
+  const [solutionSmall, generated, brute] = await Promise.all([
     runTests(python(p.solution, p.validator), small.map((t) => t.input)),
     sizes.length ? runTests(python(p.generator), sizes.map((s) => `${s}\n`)).catch(() => undefined) : Promise.resolve(undefined),
+    p.brute.trim() ? runTests(python(p.brute), small.map((t) => t.input)).catch(() => undefined) : Promise.resolve(undefined),
   ]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   const large = sizes.flatMap((size, i) => {
@@ -154,10 +156,7 @@ async function prepareOnce(topic: string, difficulty: ProblemDifficulty, onStep:
   });
 
   onStep("large");
-  const [brute, solutionLarge] = await Promise.all([
-    p.brute.trim() ? runTests(python(p.brute), small.map((t) => t.input)).catch(() => undefined) : Promise.resolve(undefined),
-    large.length ? runTests(python(p.solution, p.validator), large.map((t) => t.input)).catch(() => undefined) : Promise.resolve(undefined),
-  ]);
+  const solutionLarge = large.length ? await runTests(python(p.solution, p.validator), large.map((t) => t.input)).catch(() => undefined) : undefined;
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
   const checked = checkSmall(small, solutionSmall, brute);

@@ -49,7 +49,7 @@ const JOIN_TIMEOUT_MS = 10_000;
 const JUDGE_TIMEOUT_MS = 5 * 60_000;
 const MAX_CONTROL_BYTES = 4096;
 /** Messages that carry the interviewer's problem, hidden tests or notes may be larger (up to the frame limit). */
-const LARGE_CONTROL = new Set<string>(["interview-setup", "interview-notes"]);
+const LARGE_CONTROL = new Set<string>(["interview-setup", "interview-notes", "rtc"]);
 
 const CLOSE_FOR: Record<LiveError["code"], number> = {
   "not-found": LiveClose.notFound,

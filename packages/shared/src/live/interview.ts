@@ -37,6 +37,10 @@ export const INTERVIEW_LIMITS = {
   maxMinutes: 240,
   /** Time the interviewer can add at once. */
   maxExtendMinutes: 60,
+  /** One camera-connection message (a session description is a few kilobytes). */
+  maxRtcBytes: 32 * 1024,
+  /** After the interview ends, the candidate stays this long (to see the final check) before the session closes for them. */
+  closeAfterEndMs: 20_000,
 } as const;
 
 export interface InterviewTest {
@@ -142,6 +146,8 @@ export type InterviewEventKind =
   | "run"
   | "run-result"
   | "blocked"
+  | "camera-on"
+  | "camera-off"
   | "submit"
   | "extended"
   | "ended";
@@ -172,7 +178,7 @@ export interface InterviewPrivate {
 }
 
 /** Events a candidate's browser may report about itself. */
-export const CANDIDATE_EVENTS = new Set<InterviewEventKind>(["consent", "tab-hidden", "tab-visible", "blur", "focus", "fullscreen-exit", "fullscreen-enter", "paste"]);
+export const CANDIDATE_EVENTS = new Set<InterviewEventKind>(["consent", "tab-hidden", "tab-visible", "blur", "focus", "fullscreen-exit", "fullscreen-enter", "paste", "camera-on", "camera-off"]);
 
 /** Checks and trims a setup sent by a browser; null when unusable. */
 export function cleanInterviewSetup(raw: unknown): InterviewSetup | null {

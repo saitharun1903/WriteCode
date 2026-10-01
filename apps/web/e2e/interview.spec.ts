@@ -84,20 +84,31 @@ test("a full interview: lockdown, Run on the examples, Submit on the hidden test
   // ---- The candidate joins and must agree to the rules first.
   const cand = await join(browser, link);
   const rules = cand.getByRole("dialog", { name: "Coding interview" });
-  await expect(rules).toContainText("Copying from this page and pasting into it are turned off");
+  await expect(rules).toContainText("Copy, cut and paste are turned off");
   await expect(rules).toContainText("The 3rd time, the interview ends");
-  await expect(hr.getByText("Asha")).toBeVisible();
+  await expect(panel(hr)).toContainText("Asha is connected");
   await expect(panel(hr)).toContainText("30:00 · not started");
+  await expect(panel(hr)).toContainText("The camera turns on when the candidate starts");
+  // The candidate turns the camera on, sees themselves, and starts.
+  await rules.getByRole("button", { name: "Turn on camera" }).click();
+  await expect(rules).toContainText("Camera and microphone are on");
   await rules.getByRole("button", { name: /I agree/ }).click();
   await expect(rules).toHaveCount(0);
   // The clock is running for both.
   await expect(panel(hr).getByRole("timer").first()).not.toContainText("not started");
   await expect(cand.getByRole("timer").first()).not.toContainText("not started");
 
+  // ---- The interviewer sees and hears the candidate.
+  const camera = panel(hr).getByLabel("Candidate camera").locator("video");
+  // (Whether a frame has been drawn yet depends on the machine; the connected, live tracks are what is checked.)
+  const live = () => camera.evaluate((v: HTMLVideoElement) => (v.srcObject as MediaStream).getTracks().map((t) => `${t.kind} ${t.readyState}`).sort().join(", ") + (v.paused ? ", paused" : ""));
+  await expect.poll(live, { timeout: 20_000 }).toBe("audio live, video live");
+  await expect(cand.getByRole("button", { name: "Camera on" })).toBeVisible();
+
   // ---- The candidate's desk: the problem, the code, Run and Submit. Nothing else.
   await expect(cand.getByRole("button", { name: "Run program" })).toBeVisible();
   await expect(cand.getByRole("button", { name: "Submit code" })).toBeVisible();
-  for (const name of ["Debug program", "Visualize execution", "AI Assistant", "Main menu", "Interview mode"]) await expect(cand.getByRole("button", { name })).toHaveCount(0);
+  for (const name of ["Debug program", "Visualize execution", "AI Assistant", "Main menu", "Interview mode", /Live session/]) await expect(cand.getByRole("button", { name })).toHaveCount(0);
   await expect(cand.getByRole("navigation", { name: "Tool windows" })).toHaveCount(0);
   await expect(panel(cand)).toContainText("Read a number n and print 2n.");
   await expect(panel(cand).getByRole("heading", { name: "Example 1:" })).toBeVisible();
@@ -125,21 +136,17 @@ test("a full interview: lockdown, Run on the examples, Submit on the hidden test
   });
   await expect(cand.getByText("Pasting is turned off")).toBeVisible();
   expect(await code(cand)).not.toContain("copied from somewhere");
-  // The candidate's own code can still be cut and pasted back, without reaching the system clipboard.
-  await cand.keyboard.press("Control+Home");
+  // Nothing can be copied or cut either, with the keys or any other way: the code stays, the clipboard stays empty.
+  await cand.keyboard.press("Control+A");
+  await cand.keyboard.press("Control+X");
   const copied = await cand.evaluate(() => {
-    const target = document.activeElement ?? document.body;
-    const cut = new DataTransfer();
-    target.dispatchEvent(new ClipboardEvent("cut", { clipboardData: cut, bubbles: true, cancelable: true }));
-    const paste = new DataTransfer();
-    paste.setData("text/plain", cut.getData("text/plain"));
-    const before = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { getValue(): string } }[] } } }).monaco.editor.getEditors()[0]!.getModel().getValue();
-    target.dispatchEvent(new ClipboardEvent("paste", { clipboardData: paste, bubbles: true, cancelable: true }));
-    return { clipboard: cut.getData("text/plain"), before };
+    const data = new DataTransfer();
+    (document.activeElement ?? document.body).dispatchEvent(new ClipboardEvent("copy", { clipboardData: data, bubbles: true, cancelable: true }));
+    return data.getData("text/plain");
   });
-  expect(copied.clipboard).toBe("Copying is turned off during this interview.");
-  expect(copied.before).toBe("print(n * 2 if n < 100 else 0)\n");
+  expect(copied).toBe("");
   expect(await code(cand)).toBe("n = int(input())\nprint(n * 2 if n < 100 else 0)\n");
+  await cand.keyboard.press("Control+End");
 
   // ---- Leaving the window covers the code until the candidate comes back.
   await cand.evaluate(() => {
@@ -173,7 +180,7 @@ test("a full interview: lockdown, Run on the examples, Submit on the hidden test
   await expect(activity).toContainText("Asha switched to another window");
   await expect(activity).toContainText("Asha's run: 1 / 1 example tests passed", { timeout: 30_000 });
   await expect(activity).toContainText("Asha submitted. Wrong answer: 2 / 3 tests passed");
-  await panel(hr).getByRole("tab", { name: /Hidden tests/ }).click();
+  await panel(hr).getByRole("tab", { name: "Tests" }).click();
   await expect(panel(hr).getByText("1 / 2 passed")).toBeVisible({ timeout: 90_000 });
 
   // ---- Fixed and submitted again.
@@ -218,10 +225,21 @@ ${"Long notes stay connected. ".repeat(250)}`);
   await tests(cand).getByRole("button", { name: "Yes, finish" }).click();
   await expect(cand.getByText(/The interview has ended \(asha finished\)\. Your code has been handed in\./)).toBeVisible();
   await expect(cand.getByRole("button", { name: "Submit code" })).toBeDisabled();
-  await expect(panel(hr).getByRole("timer").first()).toContainText("Ended");
+  await expect(hr.getByRole("timer").first()).toContainText("Ended");
   await setCode(cand, "print('changed after the end')\n").catch(() => {});
   await hr.waitForTimeout(800);
   await expect(editor(hr)).not.toContainText("changed after the end");
+  // Shortly after, the session closes for the candidate: no code, no camera, and the link no longer lets them in.
+  const over = cand.getByRole("dialog", { name: "The interview has ended" });
+  await expect(over).toBeVisible({ timeout: 40_000 });
+  await expect(over).toContainText("Accepted");
+  await over.getByRole("button", { name: "Close" }).first().click();
+  await expect(cand.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(hr.getByRole("button", { name: "Live session: 1 person" })).toBeVisible();
+  await cand.goto(link);
+  await cand.getByRole("dialog", { name: "Join live session" }).getByPlaceholder("e.g. Priya").fill("Asha");
+  await cand.getByRole("button", { name: "Join" }).click();
+  await expect(cand.getByText("This interview has ended.")).toBeVisible();
 });
 
 test("leaving the window too often ends the interview and checks the code that was handed in", async ({ browser }) => {
@@ -239,7 +257,9 @@ test("leaving the window too often ends the interview and checks the code that w
   await expect(panel(hr).getByRole("list", { name: "Activity" })).toContainText("The interview ended: Asha left the interview window 1 time");
   // What was handed in is checked without anyone pressing Submit.
   await expect(panel(hr).getByRole("list", { name: "Activity" })).toContainText("The code handed in was checked. Accepted: 3 / 3 tests passed", { timeout: 120_000 });
-  await expect(tests(cand).getByRole("heading", { name: "Accepted" })).toBeVisible();
+  const over = cand.getByRole("dialog", { name: "The interview has ended" });
+  await expect(over).toBeVisible({ timeout: 40_000 });
+  await expect(over).toContainText("Accepted");
 });
 
 test("the problem and its tests are written from a topic, with answers computed by running them", async ({ browser }) => {

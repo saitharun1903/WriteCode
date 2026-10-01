@@ -68,6 +68,10 @@ export function describeEvent(e: InterviewEvent): string {
       return e.detail ?? "Run finished";
     case "submit":
       return e.who ? `${e.who} submitted. ${e.detail ?? ""}` : `The code handed in was checked. ${e.detail ?? ""}`;
+    case "camera-on":
+      return `${who}'s camera and microphone are on`;
+    case "camera-off":
+      return `${who}'s camera is off${e.detail ? `: ${e.detail.replace(/^./, (c) => c.toLowerCase())}` : ""}`;
     case "blocked":
       return `${who} tried to use the ${e.detail ?? "a blocked tool"} (blocked)`;
     case "extended":
@@ -87,7 +91,7 @@ const VERDICT: Record<InterviewVerdict["status"], string> = {
 };
 
 /** Events that deserve the interviewer's attention. */
-export const WARN = new Set<InterviewEvent["kind"]>(["tab-hidden", "blur", "fullscreen-exit", "paste", "blocked"]);
+export const WARN = new Set<InterviewEvent["kind"]>(["tab-hidden", "blur", "fullscreen-exit", "paste", "blocked", "camera-off"]);
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 

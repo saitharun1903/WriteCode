@@ -19,6 +19,8 @@ export default defineConfig({
     // Local staging uses Caddy's internal certificate authority for https://localhost.
     ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === "1",
     trace: "retain-on-failure",
+    // Interviews use the camera and microphone: a generated picture and tone, allowed without a prompt.
+    launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] },
   },
   // Against a deployed site (E2E_BASE_URL) nothing is started locally.
   webServer: process.env.E2E_BASE_URL

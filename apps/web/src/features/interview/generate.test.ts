@@ -30,6 +30,6 @@ describe("checking generated tests", () => {
 
   it("adds the verified samples to the statement as examples", () => {
     const s = withExamples("Print n.\n\nInput\nOne line.", [{ input: "3\n", expected: "3\n", note: "The simplest case." }]);
-    expect(s).toBe("Print n.\n\nInput\nOne line.\n\nExample 1\nInput:\n3\nOutput:\n3\n\nThe simplest case.");
+    expect(s).toBe("Print n.\n\nInput\nOne line.\n\nExample 1\nInput:\n3\nOutput:\n3\nExplanation: The simplest case.");
   });
 });

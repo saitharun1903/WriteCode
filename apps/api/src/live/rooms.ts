@@ -144,6 +144,9 @@ class Room {
   private historyDirty = false;
   private clockTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
+  private closeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Removes a member whose connection the room closed. */
+  onRelease: (member: Member) => void = () => {};
   private lastSubmitAt = 0;
   /** The code the latest verdict is for. */
   private judgedCode: string | null = null;
@@ -265,7 +268,30 @@ class Room {
     this.sendAll({ type: "participants", participants: this.participants() });
     this.scheduleSave();
     // What was handed in is checked too, unless the candidate had just submitted this very code.
-    if (pub.startedAt) void this.judgeNow(undefined, true);
+    // Then the session is over for the candidates; it stays for the interviewer and the report.
+    const checked = pub.startedAt ? this.judgeNow(undefined, true) : Promise.resolve();
+    const started = Date.now();
+    void checked
+      .catch(() => {})
+      .then(() => {
+        if (this.destroyed) return;
+        // Long enough to read how the final check went.
+        const wait = Math.max(0, INTERVIEW_LIMITS.closeAfterEndMs - (Date.now() - started));
+        this.closeTimer = setTimeout(() => this.releaseCandidates(), this.judgeRun ? wait : 0);
+        this.closeTimer.unref?.();
+      });
+  }
+
+  /** The interview is over: candidates are disconnected. The interviewer keeps the session. */
+  private releaseCandidates() {
+    this.closeTimer = null;
+    if (this.destroyed) return;
+    for (const m of [...this.members.values()]) {
+      if (m.role === "owner") continue;
+      m.peer.send(JSON.stringify({ type: "ended" } satisfies LiveServerMessage));
+      m.peer.close(LiveClose.ended, "interview ended");
+      this.onRelease(m);
+    }
   }
 
   /** The candidate left the tab, the window or full screen. At the limit the interview ends. */
@@ -446,6 +472,7 @@ class Room {
     if (this.clockTimer) clearTimeout(this.clockTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     if (this.ownerTimer) clearTimeout(this.ownerTimer);
+    if (this.closeTimer) clearTimeout(this.closeTimer);
     this.awareness.destroy();
     this.doc.destroy();
   }
@@ -516,6 +543,7 @@ export class LiveRooms {
           return null;
         }
         const room = new Room(meta, this.store, this.log, this.judgeRun);
+        room.onRelease = (member) => this.leave(room, member);
         const state = await this.store.getDoc(id);
         if (state) room.load(state);
         if (meta.interview) {
@@ -546,6 +574,7 @@ export class LiveRooms {
     }
     const owner = typeof msg.ownerToken === "string" && msg.ownerToken.length <= 64 && timingSafeEqual(sha256(msg.ownerToken), Buffer.from(room.meta.ownerTokenHash, "hex"));
     if (!owner && room.meta.removed.includes(msg.clientKey)) throw new LiveError("removed", "The owner removed you from this session.");
+    if (!owner && room.meta.interview?.public.endedAt) throw new LiveError("not-found", "This interview has ended.");
     if (room.members.size >= LIVE_LIMITS.maxParticipants) throw new LiveError("full", `This session is full (${LIVE_LIMITS.maxParticipants} people).`);
 
     const used = new Map<number, number>();
@@ -899,6 +928,17 @@ export class LiveConnection {
         const chars = kind === "paste" && Number.isFinite(Number(msg.event.chars)) ? Math.max(0, Math.round(Number(msg.event.chars))) : undefined;
         room.log({ kind, who: me.name, ...(detail ? { detail } : {}), ...(chars !== undefined ? { chars } : {}), ...(awayMs !== undefined ? { awayMs } : {}) });
         if (kind === "tab-hidden" || kind === "blur" || kind === "fullscreen-exit") room.countLeave(me);
+        return;
+      }
+      case "rtc": {
+        // Camera set-up, between the interviewer and a candidate of a running interview only.
+        const pub = room.meta.interview?.public;
+        const target = room.members.get(String(msg.to));
+        const kind = msg.data?.kind;
+        if (!pub || pub.endedAt || !target || target === me || (owner ? target.role === "owner" : target.role !== "owner")) return;
+        if (typeof kind !== "string" || !["want", "offer", "answer", "ice", "none"].includes(kind)) return;
+        if (JSON.stringify(msg.data).length > INTERVIEW_LIMITS.maxRtcBytes) return;
+        target.peer.send(JSON.stringify({ type: "rtc", from: me.id, data: msg.data } satisfies LiveServerMessage));
         return;
       }
       case "interview-history": {

@@ -105,7 +105,23 @@ export type LiveClientMessage =
   /** Candidate: what happened in their browser (tab switch, paste…). Interviewer: a run's outcome. */
   | { type: "interview-event"; event: Pick<InterviewEvent, "kind" | "detail" | "chars"> }
   /** Interviewer: the typing history, for replay. */
-  | { type: "interview-history" };
+  | { type: "interview-history" }
+  /**
+   * Interview: setting up the candidate's camera and microphone for the interviewer (WebRTC
+   * signalling). Relayed between the interviewer and a candidate only; the pictures and sound
+   * go straight between their browsers, never through the server.
+   */
+  | { type: "rtc"; to: string; data: LiveRtcSignal };
+
+export type LiveRtcSignal =
+  /** Interviewer: "send me your camera". */
+  | { kind: "want" }
+  /** `call` names one attempt to connect: answers and addresses of an earlier attempt are ignored. */
+  | { kind: "offer"; call: string; sdp: string }
+  | { kind: "answer"; call: string; sdp: string }
+  | { kind: "ice"; call: string; candidate: unknown }
+  /** Candidate: the camera is not available (refused, or none). */
+  | { kind: "none"; reason?: string };
 
 export type LiveServerMessage =
   | {
@@ -129,6 +145,7 @@ export type LiveServerMessage =
   | { type: "interview-event"; event: InterviewEvent }
   /** Every document update with its time (ms), base64, from the start of the session. */
   | { type: "interview-history"; updates: [number, string][] }
+  | { type: "rtc"; from: string; data: LiveRtcSignal }
   | { type: "ended" }
   | { type: "removed" }
   | { type: "error"; code: "not-found" | "full" | "removed" | "invalid" | "too-large" | "rate"; message: string };

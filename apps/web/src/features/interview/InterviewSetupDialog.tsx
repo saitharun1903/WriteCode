@@ -22,8 +22,8 @@ const label = "text-xs font-medium text-fg-muted";
 
 const STEPS: { id: Step; text: string }[] = [
   { id: "writing", text: "Writing the problem and its edge cases" },
-  { id: "checking", text: "Running the reference solution on every input" },
-  { id: "large", text: "Cross-checking answers and timing large inputs" },
+  { id: "checking", text: "Running two solutions on every input and comparing their answers" },
+  { id: "large", text: "Timing the large inputs" },
 ];
 
 const kb = (s: string) => {

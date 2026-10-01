@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Expand, ShieldAlert, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Expand, ShieldAlert, ShieldCheck, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLive } from "@/features/live/store";
 import { useWorkspace } from "@/features/projects/store";
+import { Dialog } from "@/components/ui/dialog";
+import { shareCamera, startCamera, useCamera } from "./camera";
+import { CameraPreview } from "./CameraView";
+import { VERDICT_TEXT, verdictDetail } from "./CandidateTests";
 import { InterviewClock } from "./Clock";
 import { lockKeyboard, startLockdown, unlockKeyboard } from "./lockdown";
 import { enterFullscreen, startMonitoring } from "./monitor";
@@ -33,6 +37,10 @@ export function CandidateGate() {
   /** Phones cannot go full screen; there, not being in full screen is not leaving. */
   const [canFullscreen, setCanFullscreen] = useState(true);
   const active = restricted && !!iv && ready && agreed && !iv.endedAt;
+  const camera = useCamera((s) => !!s.local);
+  const cameraError = useCamera((s) => s.localError);
+  const [asking, setAsking] = useState(false);
+  const finished = useLive((s) => s.finished);
 
   useEffect(() => {
     if (!active) return;
@@ -57,6 +65,33 @@ export function CandidateGate() {
     unlockKeyboard();
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   }, [iv?.endedAt]);
+
+  // The session has closed for the candidate: a last word, then the start screen.
+  if (finished) {
+    const v = finished.verdict;
+    return (
+      <Dialog open onOpenChange={(open) => !open && useLive.getState().clearFinished()} title="The interview has ended" description={finished.title} className="max-w-md">
+        <div className="space-y-3 text-[13.5px] leading-relaxed">
+          <p className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
+            <span>Your code has been handed in{finished.reason ? ` (${finished.reason.replace(/^./, (c) => c.toLowerCase())})` : ""}. The camera and microphone are off, and this session is closed.</span>
+          </p>
+          {v && v.status !== "error" && (
+            <p className="rounded-lg border border-line-strong/60 p-3">
+              <b className={v.status === "accepted" ? "text-success" : "text-danger"}>{VERDICT_TEXT[v.status]}</b>
+              <span className="block text-xs text-fg-muted">{verdictDetail(v)}</span>
+            </p>
+          )}
+          <p className="text-fg-muted">Thank you. You can close this tab.</p>
+          <div className="flex justify-end">
+            <Button variant="primary" onClick={() => useLive.getState().clearFinished()}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    );
+  }
 
   if (!restricted || !iv || !ready) return null;
 
@@ -111,21 +146,48 @@ export function CandidateGate() {
                     ? `Leaving the tab, the window or full screen is counted. The ${limit === 1 ? "first" : `${ordinal(limit)}`} time, the interview ends.`
                     : "Leaving the tab, the window or full screen is reported to the interviewer."}
                 </li>
-                <li>Copying from this page and pasting into it are turned off. You can still move your own code around.</li>
+                <li>Copy, cut and paste are turned off: the code is typed.</li>
                 <li>Code suggestions, the debugger, the visualizer and AI help are turned off.</li>
-                <li>The interviewer sees your code as you type it, every run and every submission.</li>
+                <li>The interviewer sees your code as you type it, every run and every submission, and sees and hears you through your camera and microphone. Nothing is recorded.</li>
               </ul>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-line-strong/60 p-2.5">
+              <CameraPreview className="w-28 shrink-0" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <p className="font-medium">{camera ? "Camera and microphone are on" : "Camera and microphone"}</p>
+                <p className="text-xs text-fg-muted">
+                  {camera ? "This is what the interviewer will see once you start." : cameraError ? `${cameraError}. You can start without it; the interviewer will be told.` : "Turn them on so the interviewer can see and hear you. Your browser will ask for permission."}
+                </p>
+                {!camera && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={asking}
+                    icon={<Video className="size-3.5" />}
+                    onClick={async () => {
+                      setAsking(true);
+                      await startCamera();
+                      setAsking(false);
+                    }}
+                  >
+                    {cameraError ? "Try again" : "Turn on camera"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
           <Button
             variant="primary"
             className="h-10 w-full text-[15px]"
             icon={<Expand className="size-4" />}
+            // While the browser is asking about the camera, starting would hide its question.
+            disabled={asking}
             onClick={async () => {
               setCanFullscreen(await lockScreen());
               setAway(false);
               setAgreed(true);
               useLive.getState().sendInterview({ type: "interview-event", event: { kind: "consent" } });
+              shareCamera();
             }}
           >
             {resuming ? "Continue in full screen" : "I agree: start the interview in full screen"}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Bug, ChevronDown, ClipboardList, Ellipsis, Menu, Moon, Play, Search, Settings, Sparkles, Square, Sun, Users, Workflow } from "lucide-react";
-import { PRODUCT, anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
+import { anyFileIsRunnable, findEntryPoints, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, type MenuEntry } from "@/components/ui/menu";
@@ -18,6 +18,7 @@ import { useRestriction } from "@/features/interview/restrict";
 import { InterviewClock } from "@/features/interview/Clock";
 import { useLive } from "@/features/live/store";
 import { RunSubmit } from "@/features/interview/CandidateTests";
+import { CameraChip } from "@/features/interview/CameraView";
 
 /** Builds menu entries straight from the command registry so menus never drift from shortcuts. */
 function fromCommands(ids: (string | "-")[]): MenuEntry[] {
@@ -281,11 +282,12 @@ export function TitleBar({ compact }: { compact: boolean }) {
         {project && !restricted && <RunControls />}
         {project && restricted && compact && <RunSubmit />}
         {project && restricted && <InterviewClock className="mx-2 text-[13px]" />}
-        {project && (
+        {project && !restricted && (
           <span className={cn("ml-1.5", compact && "hidden sm:inline")}>
             <LiveButton />
           </span>
         )}
+        {project && restricted && <CameraChip />}
         {project && !compact && !restricted && (
           <span className="ml-1.5 mr-1">
             <AssistantButton />

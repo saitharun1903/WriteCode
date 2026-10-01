@@ -167,7 +167,7 @@ export class AssistantController {
     for (let attempt = 0; attempt < 2; attempt++) {
       let text = "";
       try {
-        await this.router.answer({ question: "write a problem with edge cases", effort: "medium", systemInstruction, contents, signal: abort.signal, onChunk: (c) => c.kind === "text" && (text += c.text) });
+        await this.router.answer({ question: "write a problem with edge cases", effort: difficulty === "easy" ? "low" : "medium", systemInstruction, contents, signal: abort.signal, onChunk: (c) => c.kind === "text" && (text += c.text) });
       } catch (e) {
         const err = e instanceof AssistantError ? e : new AssistantError("Problem writing is temporarily unavailable. Please try again.", String(e));
         throw new HttpException(err.userMessage.replace(/^The assistant/, "Problem writing"), err.status === 429 ? 429 : 502);
