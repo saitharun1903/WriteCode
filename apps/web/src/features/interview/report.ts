@@ -1,5 +1,6 @@
 import type { ComplexityEstimate, InterviewEvent, InterviewPrivate, InterviewPublic, InterviewVerdict, Project } from "@cw/shared";
 import { formatDuration } from "./monitor";
+import { AMBER, GREEN, INK, MUTED, Pdf, RED } from "./pdf";
 import type { Growth, HiddenResult } from "./store";
 
 export interface ActivitySummary {
@@ -148,7 +149,12 @@ ${row("Time used", took !== undefined ? `${esc(formatDuration(took))} of ${iv.du
 ${last ? row(last.final ? "Code handed in" : "Latest submission", `<span class="${last.status === "accepted" ? "ok" : "bad"}">${esc(VERDICT[last.status])}</span>${last.total && last.status !== "compile-error" && last.status !== "error" ? ` · ${last.passed} / ${last.total} tests passed` : ""}`) : ""}
 ${iv.endReason ? row("Ended", esc(iv.endReason)) : ""}
 ${row("Hidden tests", r.hidden ? `<span class="${passed === r.hidden.length ? "ok" : "bad"}">${passed} / ${r.hidden.length} passed</span>` : r.hiddenCompileError ? '<span class="bad">Did not compile</span>' : "Not run")}
+${last?.timeMs !== undefined ? row("Runtime (slowest test)", `${last.timeMs} ms`) : ""}
+${last?.memoryBytes ? row("Memory", esc(megabytes(last.memoryBytes))) : ""}
 ${row("Complexity (estimate)", r.complexity ? `<span class="pill">Time ${esc(r.complexity.time)}</span> <span class="pill">Space ${esc(r.complexity.space)}</span><br>${esc(r.complexity.explanation)}` : "Not analysed")}
+${r.complexity?.approach ? row("Approach", `${esc(r.complexity.approach)}${r.complexity.suggested && r.complexity.suggested !== r.complexity.approach ? ` (suggested: ${esc(r.complexity.suggested)})` : ""}`) : ""}
+${r.complexity?.keyIdea ? row("Key idea", esc(r.complexity.keyIdea)) : ""}
+${r.complexity?.consider ? row("Follow-up to ask", esc(r.complexity.consider)) : ""}
 ${r.growth?.label ? row("Measured growth (rough)", `${esc(r.growth.label)} · time ∝ size<sup>${r.growth.exponent}</sup>`) : ""}
 ${row("Rating", esc(stars))}
 </table>
@@ -172,14 +178,140 @@ ${r.hidden?.length ? `<h2>Hidden tests</h2><table><tr><th>Test</th><th>Result</t
 </body></html>`;
 }
 
-/** Saves the report as an .html file (opens anywhere, prints to PDF). */
-export function downloadReport(html: string, name: string) {
-  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+export const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 2 : 1)} MB`;
+
+/**
+ * The report as a PDF: the same contents as the page (summary, result,
+ * integrity, tests, analysis, notes, problem, final code, timeline), laid out
+ * for A4 and readable in any PDF viewer.
+ */
+export function buildReportPdf(r: ReportInput): Uint8Array {
+  const iv = r.interview;
+  const sum = summarize(r.priv.events);
+  const last = iv.verdicts?.at(-1);
+  const took = iv.startedAt ? (iv.endedAt ?? Date.now()) - iv.startedAt : undefined;
+  const pdf = new Pdf();
+  const flag = (n: number) => (n > 0 ? AMBER : INK);
+
+  pdf.text("Interview report", { size: 9, color: MUTED, after: 2 });
+  pdf.text(iv.title, { font: "bold", size: 20, leading: 1.25, after: 2 });
+  pdf.text(`${iv.candidate ?? "Candidate"}  -  interviewed by ${r.interviewer || "the interviewer"}  -  ${iv.startedAt ? new Date(iv.startedAt).toLocaleString() : "not started"}`, { size: 10, color: MUTED, after: 6 });
+
+  // The result, first and large: it is what the reader came for.
+  if (last) {
+    const good = last.status === "accepted";
+    pdf.need(46);
+    pdf.box(pdf.margin, pdf.y, pdf.inner, 40, good ? [0.91, 0.97, 0.92] : [0.99, 0.93, 0.93]);
+    pdf.y += 8;
+    pdf.line(VERDICT[last.status], pdf.margin + 12, { font: "bold", size: 14, color: good ? GREEN : last.status === "error" ? AMBER : RED });
+    pdf.y += 18;
+    const score = last.total && last.status !== "compile-error" && last.status !== "error" ? `${last.passed} of ${last.total} tests passed` : last.status === "compile-error" ? "The code did not compile, so no test ran" : (last.message ?? "");
+    pdf.line(`${score}${last.final ? "  -  the code handed in at the end" : "  -  latest submission"}`, pdf.margin + 12, { size: 9.5, color: MUTED });
+    pdf.y += 22;
+  }
+
+  pdf.heading("Summary");
+  pdf.row("Candidate", iv.candidate ?? "-");
+  pdf.row("Interviewer", r.interviewer || "-");
+  pdf.row("Language", r.project.language);
+  pdf.row("Started", iv.startedAt ? new Date(iv.startedAt).toLocaleString() : "Not started");
+  pdf.row("Time used", took !== undefined ? `${formatDuration(took)} of ${iv.durationMin} min` : "-");
+  if (iv.endReason) pdf.row("Ended", iv.endReason);
+  pdf.row("Submissions", String(sum.submissions));
+  if (r.hidden) {
+    const passed = r.hidden.filter((h) => h.comparison.verdict === "passed").length;
+    pdf.row("Hidden tests", `${passed} of ${r.hidden.length} passed`, passed === r.hidden.length ? GREEN : RED);
+  } else if (r.hiddenCompileError) pdf.row("Hidden tests", "Did not compile", RED);
+  if (last?.timeMs !== undefined) pdf.row("Runtime (slowest test)", `${last.timeMs} ms`);
+  if (last?.memoryBytes) pdf.row("Memory", megabytes(last.memoryBytes));
+  pdf.row("Rating", r.priv.rating ? `${r.priv.rating} out of 5` : "Not rated");
+
+  pdf.heading("Integrity");
+  pdf.row("Left the window", `${iv.leaves ?? 0} time(s)${iv.maxLeaves ? ` (the interview ends at ${iv.maxLeaves})` : ""}`, flag(iv.leaves ?? 0));
+  pdf.row("Tab switches", `${sum.tabSwitches}`, flag(sum.tabSwitches));
+  pdf.row("Window switches", `${sum.windowSwitches}`, flag(sum.windowSwitches));
+  pdf.row("Left full screen", `${sum.fullscreenExits}`, flag(sum.fullscreenExits));
+  pdf.row("Total time away", formatDuration(sum.awayMs), flag(sum.awayMs > 30_000 ? 1 : 0));
+  pdf.row("Paste attempts (blocked)", `${sum.pastes} (${sum.pastedChars} characters)`, flag(sum.pastes));
+  pdf.row("Blocked tool attempts", `${sum.blocked}`, flag(sum.blocked));
+  pdf.row("Runs", `${sum.runs}`);
+  pdf.text("Copy, cut and paste were turned off for the candidate. Signals come from the candidate's browser; a second device cannot be seen.", { size: 8.5, color: MUTED, after: 2 });
+
+  if (r.complexity) {
+    const c = r.complexity;
+    pdf.heading("Analysis (estimate)");
+    pdf.row("Time complexity", c.time);
+    pdf.row("Space complexity", c.space);
+    if (c.approach) pdf.row("Approach", c.approach);
+    if (c.suggested && c.suggested !== c.approach) pdf.row("Suggested approach", c.suggested);
+    if (c.keyIdea) pdf.row("Key idea", c.keyIdea);
+    if (c.consider) pdf.row("Follow-up to ask", c.consider);
+    if (r.growth?.label) pdf.row("Measured growth (rough)", `${r.growth.label} (time grows like size^${r.growth.exponent})`);
+    pdf.space(2);
+    pdf.text(c.explanation, { size: 9.5, color: MUTED });
+  }
+
+  if (r.hidden?.length) {
+    pdf.heading("Hidden tests");
+    r.hidden.forEach((h, i) => {
+      const ok = h.comparison.verdict === "passed";
+      pdf.row(`Hidden test ${i + 1}`, `${ok ? "Passed" : h.comparison.verdict === "failed" ? "Wrong answer" : h.comparison.verdict}${h.run?.executionTime !== undefined ? `  -  ${h.run.executionTime} ms` : ""}${h.test.note ? `  -  ${h.test.note}` : ""}`, ok ? GREEN : RED);
+    });
+  }
+
+  pdf.heading("Interviewer notes");
+  pdf.text(r.priv.notes.trim() || "No notes.", { color: r.priv.notes.trim() ? INK : MUTED });
+
+  pdf.heading("Problem");
+  pdf.text(iv.statement.trim() || "(no statement)", { size: 9.5 });
+
+  pdf.heading("Final code");
+  for (const f of r.project.files) {
+    pdf.need(40);
+    pdf.text(f.path, { font: "bold", size: 10, after: 3 });
+    pdf.code(f.content || "(empty)");
+  }
+
+  pdf.heading("Timeline");
+  if (!r.priv.events.length) pdf.text("No activity recorded.", { color: MUTED });
+  for (const e of r.priv.events) {
+    const when = iv.startedAt && e.t >= iv.startedAt ? `+${formatDuration(e.t - iv.startedAt)}` : new Date(e.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const what = describeEvent(e) + (e.kind === "paste" && e.detail ? `: "${e.detail.replace(/\s+/g, " ").slice(0, 160)}"` : "");
+    pdf.need(14);
+    const top = pdf.y;
+    pdf.line(when, pdf.margin, { size: 9, color: MUTED });
+    pdf.text(what, { size: 9, indent: 86, color: WARN.has(e.kind) ? AMBER : INK, leading: 1.45 });
+    if (pdf.y === top) pdf.space(13);
+  }
+
+  return pdf.build(`WriteCode interview report  -  ${iv.candidate ?? "candidate"}  -  ${iv.title}  -  ${new Date().toLocaleDateString()}`);
+}
+
+const fileName = (name: string, ext: string) => `interview-${name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report"}.${ext}`;
+
+function save(data: BlobPart, type: string, name: string) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
   const a = document.createElement("a");
   a.href = url;
-  a.download = `interview-${name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "report"}.html`;
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+/** Saves the report as a PDF. */
+export function downloadPdf(pdf: Uint8Array, name: string) {
+  save(pdf as Uint8Array<ArrayBuffer>, "application/pdf", fileName(name, "pdf"));
+}
+
+/**
+ * Saves the report as a Word document: the report page with the markers Word
+ * reads, in a .doc file that Word, Google Docs and LibreOffice open and edit.
+ */
+export function downloadWord(html: string, name: string) {
+  const doc = html
+    .replace("<html lang=\"en\">", '<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">')
+    .replace("<head>", "<head><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->");
+  save(`\ufeff${doc}`, "application/msword", fileName(name, "doc"));
 }
 
 /** Opens the report in a new tab and the browser's print dialog (Save as PDF). */

@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { getLanguage, isWithin, rebase, type Project, type ProjectSummary, type TestCase } from "@cw/shared";
+import { getLanguage, isWithin, rebase, type InterviewRecord, type Project, type ProjectSummary, type TestCase } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
@@ -50,6 +50,8 @@ interface WorkspaceState {
   clearBreakpoints: () => void;
   setStdin: (stdin: string) => void;
   setTests: (tests: TestCase[]) => void;
+  /** Keeps an interview with the project it was given in, so it can be opened again later. */
+  setInterviewRecord: (record: InterviewRecord) => void;
   /** Adds imported files, replacing same-named ones, and opens the first new source file. */
   importFiles: (files: PlannedFile[]) => void;
   /** Records that the open project was run or debugged, which makes it recent work. */
@@ -457,6 +459,13 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       if (blocked()) return;
       const project = get().project;
       if (project && project.tests !== tests) commit({ ...project, tests, updatedAt: Date.now() });
+    },
+
+    setInterviewRecord(record) {
+      const project = get().project;
+      // Only the interviewer's own project: a candidate's copy is never kept.
+      if (!project || project.id === get().sharedId) return;
+      commit({ ...project, interview: record, updatedAt: Math.max(project.updatedAt, record.savedAt) });
     },
 
     setStdin(stdin) {

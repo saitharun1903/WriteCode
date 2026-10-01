@@ -1,4 +1,5 @@
 import type { ExecutionResult } from "../execution/types.js";
+import type { InterviewRecord, InterviewVerdict } from "../live/interview.js";
 
 export interface ProjectFile {
   /** Relative path using `/` separators, e.g. `src/Main.java`. */
@@ -31,6 +32,22 @@ export interface Project {
   updatedAt: number;
   /** When the project was last run or debugged. Unset until its first run. */
   lastRunAt?: number;
+  /** The project is an interview this browser gave: what happened in it. */
+  interview?: InterviewRecord;
+}
+
+/** An interview in the start screen's list. */
+export interface InterviewSummary {
+  title: string;
+  candidate?: string;
+  durationMin: number;
+  startedAt?: number;
+  endedAt?: number;
+  endReason?: string;
+  /** The latest submission (the code handed in, once it has ended). */
+  verdict?: InterviewVerdict;
+  /** Things to look at: times the candidate left the window, and paste attempts. */
+  flags: number;
 }
 
 /** Lightweight listing entry used by the start screen without loading file contents. */
@@ -47,6 +64,8 @@ export interface ProjectSummary {
    * are discarded when the user leaves them.
    */
   untouched: boolean;
+  /** Set for interviews, which are listed apart from other projects. */
+  interview?: InterviewSummary;
 }
 
 export interface HistoryEntry {

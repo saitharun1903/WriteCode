@@ -102,8 +102,9 @@ export class AssistantController {
   @HttpCode(200)
   async complexity(@Body() body: unknown, @Req() req: Request): Promise<ComplexityEstimate> {
     if (!config.assistant.apiKey || config.assistant.models.length === 0) throw new ServiceUnavailableException("The assistant isn't available on this server.");
-    const b = (body && typeof body === "object" ? body : {}) as { language?: unknown; files?: unknown };
+    const b = (body && typeof body === "object" ? body : {}) as { language?: unknown; files?: unknown; problem?: unknown };
     const language = typeof b.language === "string" ? getLanguage(b.language) : undefined;
+    const problem = typeof b.problem === "string" ? b.problem.trim().slice(0, 6000) : "";
     const files = Array.isArray(b.files)
       ? b.files.filter((f): f is { path: string; content: string } => !!f && typeof f.path === "string" && typeof f.content === "string").slice(0, 20)
       : [];
@@ -116,16 +117,21 @@ export class AssistantController {
       parts: [
         {
           text: [
-            "You analyse the algorithmic complexity of programs for a technical interviewer.",
-            'Reply with ONLY one JSON object and nothing else: {"time": "O(...)", "space": "O(...)", "explanation": "..."}.',
-            "Use n for the size of the input (name other variables, e.g. m, when there are several).",
-            "Give the worst case. Space means extra memory beyond the input.",
-            "The explanation is 2 to 4 plain sentences naming the loops, calls or data structures that decide it, with line numbers when clear. No LaTeX, no markdown.",
+            "You analyse a candidate's solution for a technical interviewer, the way a good judge's analysis page does.",
+            'Reply with ONLY one JSON object and nothing else: {"time": "O(...)", "space": "O(...)", "explanation": "...", "approach": "...", "suggested": "...", "keyIdea": "...", "consider": "..."}.',
+            "time and space: the worst case, with n for the size of the input (name other variables, e.g. m, when there are several). Space means extra memory beyond the input.",
+            "explanation: 2 to 4 plain sentences naming the loops, calls or data structures that decide the complexity, with line numbers when clear.",
+            "approach: the technique the code uses, 1 to 4 words, like a tag (e.g. 'Hash Table', 'Brute Force', 'Two Pointers', 'Trial Division').",
+            "suggested: the technique of the best standard solution to the problem, as a tag. The same words as approach when the code already uses it.",
+            "keyIdea: one sentence with the idea that makes the suggested approach work.",
+            "consider: one follow-up question the interviewer can ask the candidate (a variation, a larger input, an edge case).",
+            "When the code is unfinished or wrong, still describe what is there, and say so in the explanation.",
+            "No LaTeX, no markdown.",
           ].join(" "),
         },
       ],
     };
-    const contents = [{ role: "user" as const, parts: [{ text: `Language: ${language.name}\n\n${code}` }] }];
+    const contents = [{ role: "user" as const, parts: [{ text: `${problem ? `Problem:\n${problem}\n\n` : ""}Language: ${language.name}\n\n${code}` }] }];
     let text = "";
     const abort = new AbortController();
     req.on("close", () => abort.abort());
@@ -139,7 +145,16 @@ export class AssistantController {
     try {
       const r = JSON.parse(json) as Partial<ComplexityEstimate>;
       if (typeof r.time !== "string" || typeof r.space !== "string") throw new Error("shape");
-      return { time: r.time.slice(0, 60), space: r.space.slice(0, 60), explanation: String(r.explanation ?? "").slice(0, 1200) };
+      const short = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+      return {
+        time: r.time.slice(0, 60),
+        space: r.space.slice(0, 60),
+        explanation: String(r.explanation ?? "").slice(0, 1200),
+        ...(short(r.approach, 60) ? { approach: short(r.approach, 60) } : {}),
+        ...(short(r.suggested, 60) ? { suggested: short(r.suggested, 60) } : {}),
+        ...(short(r.keyIdea, 300) ? { keyIdea: short(r.keyIdea, 300) } : {}),
+        ...(short(r.consider, 300) ? { consider: short(r.consider, 300) } : {}),
+      };
     } catch {
       throw new HttpException("The assistant's answer could not be read. Try again.", 502);
     }

@@ -83,6 +83,8 @@ export interface InterviewVerdict {
   message?: string;
   /** Slowest test, ms. */
   timeMs?: number;
+  /** Most memory the program used, bytes, when the sandbox reports it. */
+  memoryBytes?: number;
   /** Judged when the interview ended, not by the candidate pressing Submit. */
   final?: boolean;
 }
@@ -212,6 +214,27 @@ export interface ComplexityEstimate {
   time: string;
   space: string;
   explanation: string;
+  /** The technique the code uses, in a few words ("Hash table", "Two nested loops"). */
+  approach?: string;
+  /** The technique a strong solution uses; the same as `approach` when the code is already there. */
+  suggested?: string;
+  /** The idea that makes the suggested approach work, one sentence. */
+  keyIdea?: string;
+  /** A follow-up question the interviewer can ask. */
+  consider?: string;
+}
+
+/**
+ * An interview as the interviewer's browser keeps it with the project, so it
+ * can be opened again (overview, report, replay) after its session has closed.
+ */
+export interface InterviewRecord {
+  public: InterviewPublic;
+  private: InterviewPrivate;
+  /** The typing history for replay (document updates with their times, base64), once the interview has ended. */
+  history?: [number, string][];
+  analysis?: ComplexityEstimate;
+  savedAt: number;
 }
 
 export type ProblemDifficulty = "easy" | "medium" | "hard";

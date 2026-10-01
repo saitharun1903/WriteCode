@@ -24,7 +24,8 @@ interface InterviewToolsState {
   };
   complexity: { loading: boolean; estimate?: ComplexityEstimate; error?: string; codeKey?: string };
   runHidden: (project: Project, tests: InterviewTest[]) => Promise<void>;
-  analyze: (project: Project) => Promise<void>;
+  /** `problem`: the title and statement, so the suggested approach fits the task. */
+  analyze: (project: Project, problem?: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -85,7 +86,7 @@ export const useInterviewTools = create<InterviewToolsState>((set, get) => ({
     }
   },
 
-  async analyze(project) {
+  async analyze(project, problem) {
     if (get().complexity.loading) return;
     const codeKey = codeKeyOf(project);
     set({ complexity: { ...get().complexity, loading: true, error: undefined } });
@@ -93,7 +94,7 @@ export const useInterviewTools = create<InterviewToolsState>((set, get) => ({
       const res = await fetch(`${API_URL}/api/v1/assistant/complexity`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ language: project.language, files: project.files.map((f) => ({ path: f.path, content: f.content })) }),
+        body: JSON.stringify({ language: project.language, files: project.files.map((f) => ({ path: f.path, content: f.content })), ...(problem ? { problem } : {}) }),
       });
       const body = (await res.json().catch(() => ({}))) as ComplexityEstimate & { message?: string };
       if (!res.ok) throw new Error(body.message ?? `Request failed (${res.status})`);

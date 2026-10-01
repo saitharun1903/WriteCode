@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowRight, ClipboardList, Copy, FolderOpen, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { ProjectBadge } from "@/features/explorer/file-icon";
 import { useUI } from "@/features/workspace/ui-store";
 import { cn } from "@/lib/cn";
 import { LANDING_PAGES } from "@/features/seo/pages";
+import { useInterviewUI } from "@/features/interview/ui";
 import { useWorkspace } from "./store";
 
 function relativeTime(verb: string, ts: number): string {
@@ -56,8 +57,9 @@ export function LanguageMark({ id, size = 40, className }: { id: string; size?: 
 /** Welcome screen shown when no project is open. */
 export function StartScreen() {
   const allProjects = useWorkspace((s) => s.projects);
-  // Projects that were only opened (never run or changed) are not recent work.
-  const projects = allProjects.filter((p) => !p.untouched);
+  // Projects that were only opened (never run or changed) are not recent work. Interviews have a list of their own.
+  const projects = allProjects.filter((p) => !p.untouched && !p.interview);
+  const interviews = allProjects.filter((p) => p.interview).sort((a, b) => (b.interview!.startedAt ?? b.updatedAt) - (a.interview!.startedAt ?? a.updatedAt));
   const status = useWorkspace((s) => s.status);
   const createProject = useWorkspace((s) => s.createProject);
   const [query, setQuery] = useState("");
@@ -117,6 +119,24 @@ export function StartScreen() {
           </p>
         )}
 
+        {interviews.length > 0 && (
+          <section aria-labelledby="interviews-heading" className="mt-12">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <h2 id="interviews-heading" className="text-lg font-semibold tracking-tight text-fg">
+                Interviews <span className="ml-1 text-sm font-normal text-fg-subtle">{interviews.length}</span>
+              </h2>
+              <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => useInterviewUI.getState().openSetup("create")}>
+                New interview
+              </Button>
+            </div>
+            <ul aria-label="Interviews" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {interviews.map((p) => (
+                <InterviewCard key={p.id} project={p} />
+              ))}
+            </ul>
+          </section>
+        )}
+
         {projects.length > 0 && (
           <section aria-labelledby="recent-heading" className="mt-12">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -150,6 +170,93 @@ export function StartScreen() {
         </nav>
       </div>
     </div>
+  );
+}
+
+const VERDICT: Record<NonNullable<NonNullable<ProjectSummary["interview"]>["verdict"]>["status"], string> = {
+  accepted: "Accepted",
+  "wrong-answer": "Wrong answer",
+  "runtime-error": "Runtime error",
+  "time-limit": "Time limit exceeded",
+  "compile-error": "Did not compile",
+  error: "Not checked",
+};
+
+/** An interview given from this browser: who, when, how it went. Opening it shows its overview, report and replay. */
+function InterviewCard({ project }: { project: ProjectSummary }) {
+  const { openProject, deleteProject } = useWorkspace.getState();
+  const [confirm, setConfirm] = useState(false);
+  const iv = project.interview!;
+  const state = iv.endedAt ? "Finished" : iv.startedAt ? "In progress" : "Not started";
+  const when = iv.startedAt ?? project.updatedAt;
+  const v = iv.verdict;
+  const score = v && v.total > 0 && v.status !== "compile-error" && v.status !== "error" ? ` · ${v.passed}/${v.total} tests` : "";
+  return (
+    <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
+      <button onClick={() => void openProject(project.id)} className="flex w-full items-start gap-3 p-4 pr-12 text-left">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent/15 text-accent">
+          <ClipboardList className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-semibold text-fg">{iv.title}</span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-sm text-fg-subtle">
+            <LanguageMark id={project.language} size={14} className="rounded-[3px]" />
+            <span className="truncate">{iv.candidate ?? "No candidate yet"}</span>
+          </span>
+          <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            {v ? (
+              <span className={cn("font-medium", v.status === "accepted" ? "text-success" : v.status === "error" ? "text-warning" : "text-danger")}>
+                {VERDICT[v.status]}
+                {score}
+              </span>
+            ) : (
+              <span className={cn("font-medium", iv.endedAt ? "text-fg-muted" : "text-warning")}>{iv.endedAt ? "Nothing submitted" : state}</span>
+            )}
+            {iv.flags > 0 && (
+              <span className="flex items-center gap-1 text-warning">
+                <ShieldAlert className="size-3" />
+                {iv.flags} to look at
+              </span>
+            )}
+          </span>
+          <span className="mt-1 block text-xs text-fg-subtle">
+            {v ? `${state} · ` : ""}
+            {new Date(when).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, {new Date(when).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        </span>
+      </button>
+      <div className="absolute right-2 top-2">
+        <DropdownMenu
+          align="end"
+          trigger={
+            <IconButton label={`Actions for the interview ${iv.title}`} className="opacity-60 group-hover:opacity-100 data-[state=open]:opacity-100">
+              <MoreHorizontal />
+            </IconButton>
+          }
+          entries={[
+            { label: "Open", icon: <FolderOpen />, onSelect: () => void openProject(project.id) },
+            { kind: "separator" },
+            { label: "Delete…", icon: <Trash2 />, danger: true, onSelect: () => setConfirm(true) },
+          ]}
+        />
+      </div>
+      <Dialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={`Delete the interview “${iv.title}”?`}
+        description="The candidate's code, the activity, your notes and the recording are removed from this browser. This cannot be undone."
+        footer={
+          <>
+            <Button onClick={() => setConfirm(false)}>Cancel</Button>
+            <Button variant="danger" autoFocus onClick={() => void deleteProject(project.id).then(() => setConfirm(false))}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Dialog>
+    </li>
   );
 }
 

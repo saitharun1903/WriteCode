@@ -48,8 +48,22 @@ export function summarize(p: Project): ProjectSummary {
     fileCount: p.files.length,
     updatedAt: p.updatedAt,
     lastRunAt: p.lastRunAt,
-    // Running the untouched starter program is not work worth keeping; changing it is.
-    untouched: !p.tests?.length && !p.stdin.trim() && matchesTemplate(p),
+    // Running the untouched starter program is not work worth keeping; changing it is. An interview always is.
+    untouched: !p.interview && !p.tests?.length && !p.stdin.trim() && matchesTemplate(p),
+    ...(p.interview
+      ? {
+          interview: {
+            title: p.interview.public.title,
+            candidate: p.interview.public.candidate,
+            durationMin: p.interview.public.durationMin,
+            startedAt: p.interview.public.startedAt,
+            endedAt: p.interview.public.endedAt,
+            endReason: p.interview.public.endReason,
+            verdict: p.interview.public.verdicts?.at(-1),
+            flags: (p.interview.public.leaves ?? 0) + p.interview.private.events.filter((e) => e.kind === "paste").length,
+          },
+        }
+      : {}),
   };
 }
 

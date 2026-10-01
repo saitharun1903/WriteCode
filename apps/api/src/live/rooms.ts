@@ -364,6 +364,7 @@ class Room {
         }
       }
       const cut = (text: string) => text.slice(0, INTERVIEW_LIMITS.submissionOutputChars);
+      let memory = 0;
       for (const chunk of chunks) {
         const r = await run({ ...program, mode: "test", tests: chunk.map((t) => t.input) }, sha256(`live:${this.meta.id}`).toString("hex"));
         if (r.status === "COMPILATION_ERROR") {
@@ -372,6 +373,7 @@ class Room {
           break;
         }
         if (r.status === "SYSTEM_ERROR" || r.status === "CANCELLED") throw new Error(r.message ?? "The tests could not run.");
+        memory = Math.max(memory, r.memoryUsed ?? 0);
         for (const [i, t] of chunk.entries()) {
           const one = r.tests?.find((x) => x.index === i);
           // A test that never ran: the whole run was cut short before it.
@@ -398,6 +400,7 @@ class Room {
           status: !failed ? "accepted" : failed.verdict === "failed" ? "wrong-answer" : failed.verdict === "time-limit" ? "time-limit" : failed.verdict === "crashed" ? "runtime-error" : "error",
           ...(failed ? { firstFailed: { kind: failed.kind, number: tests[at]!.number } } : {}),
           ...(times.length ? { timeMs: Math.max(...times) } : {}),
+          ...(memory > 0 ? { memoryBytes: memory } : {}),
           ...(!tests.length ? { message: "This problem has no tests to check against. Your code has been recorded for the interviewer." } : {}),
         };
       }

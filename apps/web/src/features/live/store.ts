@@ -86,6 +86,11 @@ interface LiveState {
   sendRtc: (to: string, data: LiveRtcSignal) => boolean;
   /** Candidate: the interview that has just finished, shown once the session has closed for them. */
   finished: { title: string; reason?: string; verdict?: InterviewVerdict } | null;
+  /**
+   * The interview on screen is a kept one: its session has closed, and what is shown
+   * (overview, tests, notes, report, replay) comes from the record saved with the project.
+   */
+  archived: boolean;
   clearFinished: () => void;
   /** Owner: emails the link through the server. */
   emailInvites: (emails: string[]) => Promise<{ sent: number; failed: string[] }>;
@@ -182,7 +187,7 @@ export const useLive = create<LiveState>((set, get) => {
     s.client.destroy();
     useWorkspace.getState().setReadOnly(false);
     useRestriction.setState({ restricted: false });
-    set({ interview: null, interviewPrivate: null });
+    set({ interview: null, interviewPrivate: null, archived: false });
   };
 
   const applyRole = (role: LiveRole) => {
@@ -346,6 +351,8 @@ export const useLive = create<LiveState>((set, get) => {
 
   const connect = (roomId: string, name: string, projectId: string | null, ownerToken?: string) => {
     teardown();
+    // A kept interview on screen gives way to its live session.
+    if (get().archived) set({ interview: null, interviewPrivate: null, archived: false, role: null });
     set({ roomId, owner: !!ownerToken, status: "connecting", error: null, participants: [], presence: {}, following: null, me: null, role: null, name });
     const s: Session = {
       roomId,
@@ -383,7 +390,7 @@ export const useLive = create<LiveState>((set, get) => {
             if (s.owner && code === 4004) {
               teardownKeepProject();
               set({ status: "idle", roomId: null, participants: [], presence: {}, following: null, me: null, role: null, error: null });
-              toast.info("Your live session has closed", `It closes by itself when you are away for ${Math.round(LIVE_LIMITS.ownerAwaySeconds / 60)} minutes. Share again to start a new one.`);
+              if (!useWorkspace.getState().project?.interview) toast.info("Your live session has closed", `It closes by itself when you are away for ${Math.round(LIVE_LIMITS.ownerAwaySeconds / 60)} minutes. Share again to start a new one.`);
               return;
             }
             set({ status: ended ? "ended" : removed ? "removed" : "failed", error: get().error ?? closeMessage(code, reason) });
@@ -470,6 +477,7 @@ export const useLive = create<LiveState>((set, get) => {
     sendRtc: (to, data) => session?.client.send({ type: "rtc", to, data }) ?? false,
     finished: null,
     clearFinished: () => set({ finished: null }),
+    archived: false,
 
     announceTests(executionId, testIds) {
       if (!session || session.announced.has(executionId)) return;
@@ -478,6 +486,8 @@ export const useLive = create<LiveState>((set, get) => {
     },
 
     requestHistory() {
+      // A kept interview replays from the history saved with it.
+      if (get().archived) return Promise.resolve(useWorkspace.getState().project?.interview?.history ?? []);
       if (!session?.owner) return Promise.resolve([]);
       return new Promise((resolve) => {
         historyWaiters.push(resolve);
@@ -574,6 +584,21 @@ export function liveHistory(which: "undo" | "redo", path: string | null): boolea
   return true;
 }
 
+/**
+ * Shows the interview kept with the open project when it has no live session
+ * (it ended and closed, or the server no longer has it). An interview that
+ * never ended is shown as ended: nothing more can happen in it.
+ */
+function showKeptInterview() {
+  const ws = useWorkspace.getState();
+  const record = ws.project?.interview;
+  const live = useLive.getState();
+  if (!record || ws.sharedId || session || live.interview || (live.status !== "idle" && live.status !== "failed")) return;
+  const pub = record.public.endedAt ? record.public : { ...record.public, endedAt: record.savedAt, endReason: record.public.endReason ?? "The session closed" };
+  useLive.setState({ interview: { ...pub, judging: false }, interviewPrivate: record.private, role: "owner", archived: true, status: "idle", error: null });
+  useSettings.getState().updateLayout({ assistantOpen: true });
+}
+
 /** Asks for a name before joining the session in the page's link (`/live#<id>`). */
 export function promptJoin(roomId: string) {
   useLive.setState({ joinPrompt: roomId });
@@ -588,7 +613,17 @@ if (typeof window !== "undefined") {
       useLive.getState().leave();
       if (guest) toast.info("You left the live session", "Open the link again to rejoin.");
     }
-    if (s.project && !s.sharedId) useLive.getState().resumeOwned(s.project.id);
+    // A kept interview belongs to the project that was just left.
+    if (useLive.getState().archived) useLive.setState({ interview: null, interviewPrivate: null, archived: false, role: null });
+    if (s.project && !s.sharedId) {
+      useLive.getState().resumeOwned(s.project.id);
+      showKeptInterview();
+    }
+  });
+
+  // When a session goes (ended, closed while away), the interview stays on screen from what was kept.
+  useLive.subscribe((s, prev) => {
+    if (!s.interview && (prev.interview || s.status !== prev.status)) showKeptInterview();
   });
 
   // Runs started here are shown to everyone else in the session.

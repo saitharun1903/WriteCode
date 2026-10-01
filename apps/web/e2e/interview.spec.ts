@@ -86,12 +86,13 @@ test("a full interview: lockdown, Run on the examples, Submit on the hidden test
   const rules = cand.getByRole("dialog", { name: "Coding interview" });
   await expect(rules).toContainText("Copy, cut and paste are turned off");
   await expect(rules).toContainText("The 3rd time, the interview ends");
-  await expect(panel(hr)).toContainText("Asha is connected");
+  await expect(panel(hr)).toContainText("Asha is reading the rules");
   await expect(panel(hr)).toContainText("30:00 · not started");
   await expect(panel(hr)).toContainText("The camera turns on when the candidate starts");
   // The candidate turns the camera on, sees themselves, and starts.
   await rules.getByRole("button", { name: "Turn on camera" }).click();
-  await expect(rules).toContainText("Camera and microphone are on");
+  // (The simulated camera can take a while to start the first time.)
+  await expect(rules).toContainText("Camera and microphone are on", { timeout: 40_000 });
   await rules.getByRole("button", { name: /I agree/ }).click();
   await expect(rules).toHaveCount(0);
   // The clock is running for both.
@@ -202,15 +203,33 @@ test("a full interview: lockdown, Run on the examples, Submit on the hidden test
 ${"Long notes stay connected. ".repeat(250)}`);
   await panel(hr).getByRole("radio", { name: "4 stars" }).click();
 
-  // Replay and the report.
+  // The analysis: runtime of the submission, and the time of each hidden test.
+  await panel(hr).getByRole("tab", { name: "Analysis" }).click();
+  await expect(panel(hr)).toContainText("Runtime");
+  await expect(panel(hr).getByRole("img", { name: /Runtime of 2 hidden tests/ })).toBeVisible();
+
+  // The replay: at the start the project is empty, and the marks jump to what happened.
   await panel(hr).getByRole("tab", { name: /Report/ }).click();
   await panel(hr).getByRole("button", { name: "Replay the coding" }).click();
   const replay = hr.getByRole("dialog", { name: "Replay the coding" });
   await expect(replay.getByRole("slider", { name: "Position in the recording" })).toBeVisible({ timeout: 20_000 });
+  await expect(replay.locator(".view-lines").first()).toContainText("print(n * 2)");
   await replay.getByRole("slider", { name: "Position in the recording" }).fill("0");
   await expect(replay).toContainText("change 0 of");
+  await replay.getByRole("button", { name: /Asha submitted\. Wrong answer/ }).click();
+  await expect(replay.locator(".view-lines").first()).toContainText("if n < 100 else 0");
+  await expect(replay).toContainText("Asha submitted. Wrong answer: 2 / 3 tests passed");
+  await replay.getByRole("button", { name: "Next change" }).click();
   await hr.keyboard.press("Escape");
-  const [download] = await Promise.all([hr.waitForEvent("download"), panel(hr).getByRole("button", { name: "Download report" }).click()]);
+
+  // The report, as a PDF and as a Word document.
+  const [pdf] = await Promise.all([hr.waitForEvent("download"), panel(hr).getByRole("button", { name: "Download PDF" }).click()]);
+  expect(pdf.suggestedFilename()).toBe("interview-Asha-Double-it.pdf");
+  const pdfText = await readFile((await pdf.path())!, "latin1");
+  expect(pdfText.startsWith("%PDF-1.4")).toBe(true);
+  for (const text of ["Double it", "Accepted", "3 of 3 tests passed", "Solved it quickly", "print\\(n * 2\\)", "4 out of 5"]) expect(pdfText).toContain(text);
+  const [download] = await Promise.all([hr.waitForEvent("download"), panel(hr).getByRole("button", { name: "Download Word" }).click()]);
+  expect(download.suggestedFilename()).toBe("interview-Asha-Double-it.doc");
   const html = await readFile((await download.path())!, "utf8");
   expect(html).toContain("Double it");
   expect(html).toContain("Asha");
@@ -240,6 +259,35 @@ ${"Long notes stay connected. ".repeat(250)}`);
   await cand.getByRole("dialog", { name: "Join live session" }).getByPlaceholder("e.g. Priya").fill("Asha");
   await cand.getByRole("button", { name: "Join" }).click();
   await expect(cand.getByText("This interview has ended.")).toBeVisible();
+
+  // ---- The interview is kept: listed apart from projects, and it opens again after its session is gone.
+  await panel(hr).getByRole("tab", { name: "Overview" }).click();
+  await expect(panel(hr)).toContainText("Interview finished");
+  await expect(panel(hr)).toContainText("Asha finished · used");
+  await hr.getByRole("button", { name: /Live session/ }).click();
+  await hr.getByRole("button", { name: "End session for everyone" }).click();
+  await expect(panel(hr)).toContainText("This interview's session has closed.");
+  await hr.getByRole("button", { name: "Home" }).click();
+  const kept = hr.getByRole("list", { name: "Interviews" }).getByRole("listitem");
+  await expect(kept).toHaveCount(1);
+  await expect(kept).toContainText("Double it");
+  await expect(kept).toContainText("Asha");
+  await expect(kept).toContainText("Accepted · 3/3 tests");
+  await expect(kept).toContainText("2 to look at");
+  await expect(hr.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
+  await hr.reload();
+  await hr.getByRole("list", { name: "Interviews" }).getByRole("button", { name: /Double it/ }).first().click();
+  await expect(panel(hr)).toContainText("Interview finished");
+  await expect(panel(hr)).toContainText("2 things to look at");
+  await expect(editor(hr)).toContainText("print(n * 2)");
+  await panel(hr).getByRole("tab", { name: "Tests" }).click();
+  await expect(panel(hr).getByText("2 / 2 passed")).toBeVisible();
+  await panel(hr).getByRole("tab", { name: /Notes/ }).click();
+  await expect(panel(hr).getByRole("textbox", { name: "Interviewer notes" })).toHaveValue(/Solved it quickly/);
+  // The replay still plays, from the recording kept with the interview.
+  await panel(hr).getByRole("tab", { name: /Report/ }).click();
+  await panel(hr).getByRole("button", { name: "Replay the coding" }).click();
+  await expect(hr.getByRole("dialog", { name: "Replay the coding" }).locator(".view-lines").first()).toContainText("print(n * 2)", { timeout: 20_000 });
 });
 
 test("leaving the window too often ends the interview and checks the code that was handed in", async ({ browser }) => {

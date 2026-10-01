@@ -32,8 +32,62 @@ function autoRunHidden() {
   void tools.runHidden(project, tests);
 }
 
+/** Largest typing history kept with a project (base64 characters): about 3 MB. */
+const MAX_KEPT_HISTORY = 4_000_000;
+
+let keepTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Saves the interview with the interviewer's project (shortly after it changes). */
+function keep(now = false) {
+  if (keepTimer) clearTimeout(keepTimer);
+  const save = () => {
+    keepTimer = null;
+    const live = useLive.getState();
+    const ws = useWorkspace.getState();
+    if (!live.interview || !live.interviewPrivate || live.role !== "owner" || !ws.project || ws.sharedId) return;
+    const before = ws.project.interview;
+    ws.setInterviewRecord({
+      public: live.interview,
+      private: live.interviewPrivate,
+      ...(before?.history ? { history: before.history } : {}),
+      analysis: useInterviewTools.getState().complexity.estimate ?? before?.analysis,
+      savedAt: Date.now(),
+    });
+  };
+  if (now) save();
+  else keepTimer = setTimeout(save, 800);
+}
+
 if (typeof window !== "undefined") {
   const reported = new Set<string>();
+
+  useLive.subscribe((s, prev) => {
+    if (s.role !== "owner" || !s.interview) return;
+    // (Opening a kept interview changes nothing in it, so it is not saved again.)
+    const opened = s.archived && !prev.interview;
+    if (!opened && (s.interview !== prev.interview || s.interviewPrivate !== prev.interviewPrivate)) keep(!!s.interview.endedAt && !prev.interview?.endedAt);
+    // The interview has just ended: fetch the typing history once, so the replay works after the session is gone.
+    if (s.interview.endedAt && !prev.interview?.endedAt && !s.archived) {
+      void s.requestHistory().then((history) => {
+        const ws = useWorkspace.getState();
+        const record = ws.project?.interview;
+        if (!record || !history.length || history.reduce((n, [, u]) => n + u.length, 0) > MAX_KEPT_HISTORY) return;
+        ws.setInterviewRecord({ ...record, history, savedAt: Date.now() });
+      });
+    }
+  });
+  // The analysis is part of what is kept.
+  useInterviewTools.subscribe((s, prev) => {
+    if (s.complexity.estimate && s.complexity.estimate !== prev.complexity.estimate) keep();
+  });
+  // A kept interview brings its analysis back with it.
+  useLive.subscribe((s, prev) => {
+    if (!s.archived || prev.archived) return;
+    const record = useWorkspace.getState().project?.interview;
+    const project = useWorkspace.getState().project;
+    if (record?.analysis && project) useInterviewTools.setState({ complexity: { loading: false, estimate: record.analysis, codeKey: codeKeyOf(project) } });
+  });
+
 
   // The candidate's runs (watched here): log how they ended; after a success, check the hidden tests.
   useExecution.subscribe((s) => {

@@ -242,7 +242,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
                 .filter((p) => !p.untouched || p.id === project.id)
                 .slice(0, 10)
                 .map((p) => ({
-                label: p.name,
+                label: p.interview ? `Interview: ${p.interview.title}${p.interview.candidate ? ` (${p.interview.candidate})` : ""}` : p.name,
                 checked: p.id === project.id,
                 onSelect: () => void useWorkspace.getState().openProject(p.id),
               })),

@@ -8,9 +8,12 @@ import {
   CheckCircle2,
   ClipboardList,
   ClipboardPaste,
+  Cpu,
   Download,
   FileText,
+  Flag,
   History,
+  Hourglass,
   LogOut,
   Maximize,
   FlaskConical,
@@ -20,8 +23,12 @@ import {
   Play,
   Printer,
   Rewind,
+  RotateCw,
+  ShieldAlert,
+  ShieldCheck,
   Star,
   Timer,
+  Workflow,
   X,
   XCircle,
 } from "lucide-react";
@@ -33,7 +40,7 @@ import { InviteBox } from "@/features/live/LiveUI";
 import { cn } from "@/lib/cn";
 import { formatDuration, formatRemaining } from "./monitor";
 import { InterviewClock } from "./Clock";
-import { buildReport, describeEvent, downloadReport, printReport, summarize, WARN } from "./report";
+import { buildReport, buildReportPdf, describeEvent, downloadPdf, downloadWord, megabytes, printReport, summarize, WARN } from "./report";
 import { codeKeyOf, measuredGrowth, useInterviewTools } from "./store";
 import { useInterviewUI } from "./ui";
 import { Statement } from "./Statement";
@@ -124,7 +131,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "overview", label: "Overview", icon: <ClipboardList /> },
   { id: "activity", label: "Activity", icon: <Activity /> },
   { id: "tests", label: "Tests", icon: <FlaskConical /> },
-  { id: "complexity", label: "Complexity", icon: <Gauge /> },
+  { id: "complexity", label: "Analysis", icon: <Gauge /> },
   { id: "notes", label: "Notes", icon: <NotebookPen /> },
   { id: "report", label: "Report", icon: <FileText /> },
 ];
@@ -154,11 +161,40 @@ function useTick(active: boolean): number {
   return now;
 }
 
-function Overview() {
+/** Builds the report from what the panel has now; null before there is anything to report. */
+function useReport() {
+  const project = useWorkspace((s) => s.project);
+  const iv = useLive((s) => s.interview)!;
+  const priv = useLive((s) => s.interviewPrivate);
+  const name = useLive((s) => s.name);
+  const hidden = useInterviewTools((s) => s.hidden);
+  const complexity = useInterviewTools((s) => s.complexity);
+  const ready = !!project && !!priv;
+  const input = () => ({
+    interview: iv,
+    priv: priv!,
+    interviewer: name,
+    project: project!,
+    hidden: hidden.results,
+    hiddenCompileError: hidden.compileError,
+    complexity: complexity.estimate,
+    growth: hidden.results ? measuredGrowth(hidden.results) : undefined,
+  });
+  const file = `${iv.candidate ?? "candidate"}-${iv.title}`;
+  return {
+    ready,
+    pdf: () => ready && downloadPdf(buildReportPdf(input()), file),
+    word: () => ready && downloadWord(buildReport(input()), file),
+    print: () => ready && printReport(buildReport(input())),
+  };
+}
+
+function Overview({ go }: { go: (tab: Tab) => void }) {
   const iv = useLive((s) => s.interview)!;
   const priv = useLive((s) => s.interviewPrivate);
   const participants = useLive((s) => s.participants);
   const roomId = useLive((s) => s.roomId);
+  const archived = useLive((s) => s.archived);
   const candidate = participants.find((p) => p.role !== "owner");
   const sum = summarize(priv?.events ?? []);
   const last = iv.verdicts?.at(-1);
@@ -168,78 +204,113 @@ function Overview() {
   const now = useTick(running);
   const used = iv.startedAt && iv.endsAt ? Math.min(1, Math.max(0, ((iv.endedAt ?? now) - iv.startedAt) / (iv.endsAt - iv.startedAt))) : 0;
   const leaves = iv.leaves ?? 0;
+  const report = useReport();
+  // What deserves a look, in words, so the list below can be skimmed.
+  const concerns = [
+    leaves > 0 && `left the window ${leaves} time${leaves === 1 ? "" : "s"}`,
+    sum.pastes > 0 && `tried to paste ${sum.pastes} time${sum.pastes === 1 ? "" : "s"}`,
+    sum.blocked > 0 && `tried a blocked tool ${sum.blocked} time${sum.blocked === 1 ? "" : "s"}`,
+    sum.awayMs > 30_000 && `was away for ${formatDuration(sum.awayMs)}`,
+  ].filter(Boolean) as string[];
+  const who = iv.candidate ?? "The candidate";
   return (
     <div className="space-y-3">
-      <div>
-        <CandidateCamera id={candidate?.id} name={iv.candidate} online={!!candidate} started={!!iv.startedAt && !iv.endedAt} />
-        <p className="mt-1.5 text-xs text-fg-subtle">
-          {iv.endedAt
-            ? `The interview has ended${iv.endReason ? `: ${iv.endReason.replace(/^./, (c) => c.toLowerCase())}` : ""}.`
-            : !iv.candidate
-              ? "Send the link below to the candidate. The clock starts when they agree to the rules."
-              : candidate
-                ? `${iv.candidate} is connected. You see the code as it is typed, and hear and see the candidate here.`
-                : `${iv.candidate} is not connected`}
-        </p>
-      </div>
-
-      <div className={cn(card, "p-3")}>
-        <div className="flex items-center gap-2">
-          <InterviewClock className="text-xl font-semibold" />
-          {running && (
-            <span className="ml-auto flex gap-1">
+      {/* Where the interview stands, in one glance. */}
+      <div className={cn(card, "p-3", running && "border-success/40", iv.endedAt && "bg-surface-2")}>
+        <div className="flex items-center gap-2.5">
+          <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-full [&_svg]:size-[18px]", iv.endedAt ? "bg-surface-3 text-fg-muted" : running ? "bg-success/15 text-success" : "bg-warning-soft text-warning")}>
+            {iv.endedAt ? <Flag /> : running ? <Play className="fill-current" /> : <Hourglass />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold leading-tight">{iv.endedAt ? "Interview finished" : running ? "In progress" : iv.candidate ? `${iv.candidate} is reading the rules` : "Waiting for the candidate"}</p>
+            <p className="text-xs text-fg-muted">
+              {iv.endedAt
+                ? `${iv.endReason ?? "Ended"}${iv.startedAt ? ` · used ${formatDuration(iv.endedAt - iv.startedAt)} of ${iv.durationMin} min` : ""}`
+                : running
+                  ? `${who} ${candidate ? "is connected" : "is not connected"} · ${iv.durationMin} minutes in all`
+                  : iv.candidate
+                    ? "The clock starts when they agree and go full screen."
+                    : "Send the link below. The clock starts when they agree to the rules."}
+            </p>
+          </div>
+          {!iv.endedAt && <InterviewClock className="shrink-0 text-lg font-semibold" />}
+        </div>
+        {running && (
+          <>
+            <div aria-hidden className="mt-3 h-1 overflow-hidden rounded-full bg-surface-3">
+              <div className={cn("h-full rounded-full transition-[width] duration-1000 ease-linear", used > 0.9 ? "bg-danger" : used > 0.75 ? "bg-warning" : "bg-accent")} style={{ width: `${used * 100}%` }} />
+            </div>
+            <div className="mt-2.5 flex items-center gap-1 text-xs text-fg-subtle">
+              Add time
               {[5, 10, 15].map((m) => (
-                <button key={m} type="button" aria-label={`Add ${m} minutes`} onClick={() => send({ type: "interview-extend", minutes: m })} className="h-6 rounded-full border border-line-strong/70 px-2 text-xs text-fg-muted transition-colors hover:border-accent/60 hover:text-fg">
+                <button key={m} type="button" aria-label={`Add ${m} minutes`} onClick={() => send({ type: "interview-extend", minutes: m })} className="h-6 rounded-full border border-line-strong/70 px-2 text-fg-muted transition-colors hover:border-accent/60 hover:text-fg">
                   +{m} min
                 </button>
               ))}
-            </span>
-          )}
-        </div>
-        <div aria-hidden className="mt-2.5 h-1 overflow-hidden rounded-full bg-surface-3">
-          <div className={cn("h-full rounded-full transition-[width] duration-1000 ease-linear", used > 0.9 ? "bg-danger" : used > 0.75 ? "bg-warning" : "bg-accent")} style={{ width: `${used * 100}%` }} />
-        </div>
-        {!iv.startedAt && <p className="mt-2 text-xs text-fg-subtle">The clock starts when the candidate agrees to the rules.</p>}
-        {!iv.endedAt &&
-          (confirm ? (
-            <div className="mt-3 space-y-2 rounded-lg border border-danger/40 p-2.5 text-[13px]">
-              <p>End the interview now? The candidate&apos;s code is locked and checked, and the session closes for them.</p>
-              <div className="flex gap-2">
-                <Button variant="danger" onClick={() => send({ type: "interview-end" })}>
-                  End interview
-                </Button>
-                <Button variant="ghost" onClick={() => setConfirm(false)}>
-                  Cancel
-                </Button>
-              </div>
             </div>
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="secondary" icon={<Pencil className="size-3.5" />} onClick={() => useInterviewUI.getState().openSetup("edit")}>
-                Edit problem &amp; tests
-              </Button>
-              <Button variant="ghost" className="text-danger" onClick={() => setConfirm(true)}>
-                End interview
-              </Button>
-            </div>
-          ))}
+          </>
+        )}
+        {iv.endedAt && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="primary" icon={<Download className="size-3.5" />} disabled={!report.ready} onClick={report.pdf}>
+              Report (PDF)
+            </Button>
+            <Button variant="secondary" icon={<Rewind className="size-3.5" />} onClick={() => useInterviewUI.getState().setReplayOpen(true)}>
+              Replay
+            </Button>
+            <Button variant="ghost" icon={<Gauge className="size-3.5" />} onClick={() => go("complexity")}>
+              Analysis
+            </Button>
+          </div>
+        )}
       </div>
 
-      {last && (
-        <div className={cn(card, "p-3", last.status === "accepted" && "border-success/40 bg-success/10")}>
-          <div className={cardTitle}>{last.final ? "Handed in at the end" : "Latest submission"}</div>
-          <div className="flex items-baseline gap-2">
-            <span className={cn("text-[15px] font-semibold", last.status === "accepted" ? "text-success" : last.status === "error" ? "text-warning" : "text-danger")}>{VERDICT_TEXT[last.status]}</span>
-            <span className="ml-auto text-xs text-fg-subtle">
-              {sum.submissions} submission{sum.submissions === 1 ? "" : "s"}
-            </span>
-          </div>
-          <p className="mt-0.5 text-xs text-fg-muted">{verdictDetail(last)}</p>
-        </div>
-      )}
+      {!iv.endedAt && <CandidateCamera id={candidate?.id} name={iv.candidate} online={!!candidate} started={running} />}
 
+      {/* How the code did. */}
+      <div className={cn(card, "p-3", last?.status === "accepted" && "border-success/40 bg-success/10")}>
+        <div className={cardTitle}>{!last ? "Result" : last.final ? "Code handed in at the end" : "Latest submission"}</div>
+        {last ? (
+          <>
+            <div className="flex items-baseline gap-2">
+              <span className={cn("text-lg font-semibold", last.status === "accepted" ? "text-success" : last.status === "error" ? "text-warning" : "text-danger")}>{VERDICT_TEXT[last.status]}</span>
+              <span className="ml-auto text-xs text-fg-subtle">
+                {sum.submissions} submission{sum.submissions === 1 ? "" : "s"}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-fg-muted">{verdictDetail(last)}</p>
+            {last.total > 0 && last.status !== "compile-error" && last.status !== "error" && (
+              <div aria-hidden className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
+                <div className={cn("h-full rounded-full", last.status === "accepted" ? "bg-success" : "bg-danger")} style={{ width: `${(last.passed / last.total) * 100}%` }} />
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-[13px] text-fg-muted">
+            {running ? `${who} has not submitted yet. ` : ""}Submit checks the code on every test; the result appears here.
+          </p>
+        )}
+      </div>
+
+      {/* Whether anything needs a second look. */}
       <div>
-        <h3 className={cardTitle}>Integrity</h3>
+        <div className={cn(card, "mb-2 flex items-start gap-2.5 p-3", concerns.length ? "border-warning/50 bg-warning-soft" : iv.startedAt ? "border-success/30" : "")}>
+          {concerns.length ? <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" /> : <ShieldCheck className={cn("mt-0.5 size-4 shrink-0", iv.startedAt ? "text-success" : "text-fg-subtle")} />}
+          <div className="min-w-0 text-[13px]">
+            <p className="font-semibold">{concerns.length ? `${concerns.length} thing${concerns.length === 1 ? "" : "s"} to look at` : iv.startedAt ? "Integrity: nothing to look at" : "Integrity"}</p>
+            <p className="text-xs text-fg-muted">
+              {concerns.length ? `${who} ${concerns.join(", ")}.` : iv.startedAt ? `${who} stayed in the window and typed the code.` : "Leaving the window and paste attempts are counted here once the interview starts."}
+              {concerns.length > 0 && (
+                <>
+                  {" "}
+                  <button type="button" onClick={() => go("activity")} className="text-accent hover:underline">
+                    See when
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
         <ul aria-label="Integrity" className={cn(card, "divide-y divide-line overflow-hidden")}>
           <Signal icon={<LogOut />} label={iv.maxLeaves ? `Left the window (ends at ${iv.maxLeaves})` : "Left the window"} value={leaves} warn={leaves > 0} />
           <Signal icon={<AppWindow />} label="Tab switches" value={sum.tabSwitches} warn={sum.tabSwitches > 0} />
@@ -250,15 +321,40 @@ function Overview() {
           <Signal icon={<Play />} label="Runs" value={sum.runs} />
           <Signal icon={<CheckCircle2 />} label="Submissions" value={sum.submissions} />
         </ul>
-        {sum.blocked > 0 && <p className="mt-2 text-xs text-warning">Tried a blocked tool {sum.blocked} time(s).</p>}
       </div>
 
-      {roomId && !iv.endedAt && (
+      {!iv.endedAt &&
+        !archived &&
+        (confirm ? (
+          <div className={cn(card, "space-y-2 border-danger/40 p-3 text-[13px]")}>
+            <p>End the interview now? The candidate&apos;s code is locked and checked, and the session closes for them.</p>
+            <div className="flex gap-2">
+              <Button variant="danger" onClick={() => send({ type: "interview-end" })}>
+                End interview
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" icon={<Pencil className="size-3.5" />} onClick={() => useInterviewUI.getState().openSetup("edit")}>
+              Edit problem &amp; tests
+            </Button>
+            <Button variant="ghost" className="text-danger" onClick={() => setConfirm(true)}>
+              End interview
+            </Button>
+          </div>
+        ))}
+
+      {roomId && !iv.endedAt && !archived && (
         <div>
           <h3 className={cardTitle}>Invite the candidate</h3>
           <InviteBox roomId={roomId} />
         </div>
       )}
+      {archived && <p className="text-xs text-fg-subtle">This interview&apos;s session has closed. Everything recorded is kept here, in this browser.</p>}
     </div>
   );
 }
@@ -359,63 +455,130 @@ function HiddenTests() {
   );
 }
 
+/** A number with its unit, large, like a judge's result page. */
+function Measure({ icon, label, value, unit, note }: { icon: React.ReactNode; label: string; value: string; unit?: string; note?: string }) {
+  return (
+    <div className={cn(card, "min-w-0 flex-1 p-3")}>
+      <div className="flex items-center gap-1.5 text-xs text-fg-subtle [&_svg]:size-3.5">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 flex items-baseline gap-1">
+        <span className="text-xl font-semibold tabular-nums">{value}</span>
+        {unit && <span className="text-xs text-fg-subtle">{unit}</span>}
+      </div>
+      {note && <div className="mt-0.5 truncate text-[11px] text-fg-subtle">{note}</div>}
+    </div>
+  );
+}
+
 function Complexity() {
   const project = useWorkspace((s) => s.project);
+  const iv = useLive((s) => s.interview)!;
   const c = useInterviewTools((s) => s.complexity);
   const hidden = useInterviewTools((s) => s.hidden);
   const growth = useMemo(() => (hidden.results ? measuredGrowth(hidden.results) : null), [hidden.results]);
   const stale = !!project && !!c.codeKey && c.codeKey !== codeKeyOf(project);
+  const last = iv.verdicts?.at(-1);
+  const problem = `${iv.title}\n\n${iv.statement}`;
+  const analyse = () => project && void useInterviewTools.getState().analyze(project, problem);
+  // Opening the tab analyses the code once; after that it is the interviewer's call.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current || c.estimate || c.loading || c.error || !project || !project.files.some((f) => f.content.trim())) return;
+    asked.current = true;
+    void useInterviewTools.getState().analyze(project, problem);
+  }, [c.estimate, c.loading, c.error, project, problem]);
+
+  const times = (hidden.results ?? []).flatMap((r, i) => (r.run?.executionTime !== undefined ? [{ n: i + 1, ms: r.run.executionTime, ok: r.comparison.verdict === "passed" || r.comparison.verdict === "ran", note: r.test.note }] : []));
+  const slowest = Math.max(1, ...times.map((t) => t.ms));
+  const runtime = last?.timeMs ?? (times.length ? slowest : undefined);
+  const e = c.estimate;
+  const same = !!e?.approach && !!e.suggested && e.approach.toLowerCase() === e.suggested.toLowerCase();
   return (
-    <div className="space-y-4">
-      <p className="text-xs leading-relaxed text-fg-subtle">Estimates only: no tool can work out the exact complexity of every program. Use them as a starting point for your questions.</p>
-      <div className="space-y-2">
-        <Button variant="primary" icon={c.loading ? <Spinner /> : <Gauge className="size-3.5" />} disabled={c.loading || !project} onClick={() => project && void useInterviewTools.getState().analyze(project)}>
-          {c.estimate ? "Analyse again" : "Analyse the code"}
-        </Button>
-        {c.error && <p className="text-xs text-danger">{c.error}</p>}
-        {c.estimate && (
-          <div className="space-y-2 rounded-lg border border-line-strong/60 p-3">
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[13px] font-semibold text-accent">Time {c.estimate.time}</span>
-              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[13px] font-semibold text-accent">Space {c.estimate.space}</span>
-            </div>
-            <p className="text-[13px] leading-relaxed text-fg-muted">{c.estimate.explanation}</p>
-            {stale && <p className="text-xs text-warning">The code changed since this analysis.</p>}
-          </div>
-        )}
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <Measure icon={<Timer />} label="Runtime" value={runtime !== undefined ? String(runtime) : "–"} unit={runtime !== undefined ? "ms" : undefined} note={runtime !== undefined ? "slowest test" : "after a submission"} />
+        <Measure icon={<Cpu />} label="Memory" value={last?.memoryBytes ? megabytes(last.memoryBytes).replace(" MB", "") : "–"} unit={last?.memoryBytes ? "MB" : undefined} note={last?.memoryBytes ? "most used" : "not measured for this language"} />
       </div>
-      <div>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Measured on the hidden tests</h3>
-        {!growth || growth.points.length === 0 ? (
-          <p className="text-xs text-fg-subtle">Run the hidden tests. With inputs of growing size (for example n = 1 000, 10 000, 100 000), their times show how the program scales.</p>
-        ) : (
+
+      <div className={cn(card, "p-3")}>
+        <div className="mb-2 flex items-center gap-2">
+          <Workflow className="size-4 text-accent" />
+          <h3 className="text-[13px] font-semibold text-accent">Approach</h3>
+          <button type="button" disabled={c.loading || !project} onClick={analyse} className="ml-auto flex items-center gap-1 text-xs text-fg-subtle hover:text-fg disabled:opacity-50">
+            {c.loading ? <Spinner className="size-3" /> : <RotateCw className="size-3" />}
+            {c.loading ? "Analysing…" : e ? "Analyse again" : "Analyse the code"}
+          </button>
+        </div>
+        {c.error && <p className="text-xs text-danger">{c.error}</p>}
+        {!e && !c.error && <p className="text-[13px] text-fg-muted">{c.loading ? "Reading the code…" : "Nothing to analyse yet."}</p>}
+        {e && (
           <>
-            {growth.label ? (
-              <p className="text-sm">
-                Grows like <b>{growth.label}</b> <span className="text-fg-subtle">(time ∝ size^{growth.exponent})</span>
-              </p>
-            ) : (
-              <p className="text-xs text-fg-subtle">Not enough spread in input sizes or times to estimate growth (needs 3+ tests, sizes 8× apart, and a slowest test above 20 ms).</p>
-            )}
-            <table className="mt-2 w-full text-left text-[12px]">
-              <thead className="text-fg-subtle">
-                <tr>
-                  <th className="py-1 font-medium">Input size</th>
-                  <th className="py-1 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {growth.points.map((p, i) => (
-                  <tr key={i} className="border-t border-line-strong/40">
-                    <td className="py-1 font-mono">{p.size.toLocaleString()} bytes</td>
-                    <td className="py-1 font-mono">{p.ms} ms</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+              {e.approach && (
+                <>
+                  <dt className="text-fg-subtle">Current</dt>
+                  <dd className="font-medium">{e.approach}</dd>
+                </>
+              )}
+              {e.suggested && (
+                <>
+                  <dt className="text-fg-subtle">Suggested</dt>
+                  <dd className={cn("font-medium", same ? "text-success" : "text-warning")}>{e.suggested}</dd>
+                </>
+              )}
+              {e.keyIdea && (
+                <>
+                  <dt className="text-fg-subtle">Key idea</dt>
+                  <dd className="text-fg-muted">{e.keyIdea}</dd>
+                </>
+              )}
+              {e.consider && (
+                <>
+                  <dt className="text-fg-subtle">Ask</dt>
+                  <dd className="text-fg-muted">{e.consider}</dd>
+                </>
+              )}
+            </dl>
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
+              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent">Time {e.time}</span>
+              <span className="rounded-full bg-accent/15 px-2.5 py-1 font-mono text-[12.5px] font-semibold text-accent">Space {e.space}</span>
+            </div>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{e.explanation}</p>
+            {stale && <p className="mt-2 text-xs text-warning">The code changed since this analysis.</p>}
           </>
         )}
       </div>
+
+      <div className={cn(card, "p-3")}>
+        <h3 className={cardTitle}>Time on each hidden test</h3>
+        {times.length === 0 ? (
+          <p className="text-xs text-fg-subtle">Appears after a submission, or when you run the hidden tests.</p>
+        ) : (
+          <>
+            <div role="img" aria-label={`Runtime of ${times.length} hidden tests, slowest ${slowest} ms`} className="flex h-28 items-end gap-1.5">
+              {times.map((t) => (
+                <div key={t.n} title={`Hidden test ${t.n}${t.note ? `: ${t.note}` : ""} · ${t.ms} ms`} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                  <span className="text-[10px] tabular-nums text-fg-subtle">{t.ms}</span>
+                  <div className={cn("w-full max-w-7 rounded-t", t.ok ? "bg-accent" : "bg-danger")} style={{ height: `${Math.max(4, (t.ms / slowest) * 72)}px` }} />
+                  <span className="text-[10px] text-fg-faint">{t.n}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-fg-subtle">
+              {growth?.label ? (
+                <>
+                  Milliseconds per test. As the input grows, the time grows like <b className="text-fg">{growth.label}</b>.
+                </>
+              ) : (
+                "Milliseconds per test (red: failed). Most of a small test's time is starting the program, so equal bars are normal."
+              )}
+            </p>
+          </>
+        )}
+      </div>
+      <p className="text-[11px] leading-relaxed text-fg-subtle">The approach and complexity are an estimate from reading the code; use them as a starting point for your questions.</p>
     </div>
   );
 }
@@ -469,59 +632,37 @@ function Notes() {
 }
 
 function Report() {
-  const project = useWorkspace((s) => s.project);
   const iv = useLive((s) => s.interview)!;
-  const priv = useLive((s) => s.interviewPrivate);
-  const name = useLive((s) => s.name);
-  const hidden = useInterviewTools((s) => s.hidden);
-  const complexity = useInterviewTools((s) => s.complexity);
-  const report = () =>
-    project && priv
-      ? buildReport({
-          interview: iv,
-          priv,
-          interviewer: name,
-          project,
-          hidden: hidden.results,
-          hiddenCompileError: hidden.compileError,
-          complexity: complexity.estimate,
-          growth: hidden.results ? measuredGrowth(hidden.results) : undefined,
-        })
-      : null;
+  const report = useReport();
   return (
     <div className="space-y-3">
-      <Button variant="primary" icon={<Rewind className="size-3.5" />} onClick={() => useInterviewUI.getState().setReplayOpen(true)}>
-        Replay the coding
-      </Button>
-      <p className="text-xs text-fg-subtle">Watch how the code was written, keystroke by keystroke, with tab switches and pastes marked.</p>
-      <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-        <Button
-          variant="secondary"
-          icon={<Download className="size-3.5" />}
-          onClick={() => {
-            const html = report();
-            if (html) downloadReport(html, `${iv.candidate ?? "candidate"}-${iv.title}`);
-          }}
-        >
-          Download report
-        </Button>
-        <Button
-          variant="ghost"
-          icon={<Printer className="size-3.5" />}
-          onClick={() => {
-            const html = report();
-            if (html) printReport(html);
-          }}
-        >
-          Print / Save as PDF
+      <div className={cn(card, "p-3")}>
+        <h3 className="text-[13px] font-semibold">Download the report</h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">Result, integrity, hidden tests, analysis, your notes and rating, the final code and the full timeline.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button variant="primary" icon={<Download className="size-3.5" />} disabled={!report.ready} onClick={report.pdf}>
+            Download PDF
+          </Button>
+          <Button variant="secondary" icon={<FileText className="size-3.5" />} disabled={!report.ready} onClick={report.word}>
+            Download Word
+          </Button>
+          <Button variant="ghost" icon={<Printer className="size-3.5" />} disabled={!report.ready} onClick={report.print}>
+            Print
+          </Button>
+        </div>
+        {!iv.endedAt && (
+          <p className="mt-2.5 flex items-center gap-1.5 text-xs text-warning">
+            <AlertTriangle className="size-3.5" /> The interview is still going; the report shows the state right now.
+          </p>
+        )}
+      </div>
+      <div className={cn(card, "p-3")}>
+        <h3 className="text-[13px] font-semibold">Replay the coding</h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">Watch the code being written from the first keystroke, with every run, submission, paste attempt and time away marked on the timeline.</p>
+        <Button className="mt-3" variant="secondary" icon={<Rewind className="size-3.5" />} onClick={() => useInterviewUI.getState().setReplayOpen(true)}>
+          Replay the coding
         </Button>
       </div>
-      <p className="text-xs text-fg-subtle">The report has the summary, integrity signals, hidden test results, complexity, your notes and rating, the final code and the full timeline. Run the hidden tests and the analysis first to include them.</p>
-      {!iv.endedAt && (
-        <p className="flex items-center gap-1.5 text-xs text-warning">
-          <AlertTriangle className="size-3.5" /> The interview is still going; the report shows the state right now.
-        </p>
-      )}
     </div>
   );
 }
@@ -567,7 +708,7 @@ function InterviewerPanel({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {tab === "overview" && <Overview />}
+        {tab === "overview" && <Overview go={setTab} />}
         {tab === "activity" && <Timeline />}
         {tab === "tests" && <HiddenTests />}
         {tab === "complexity" && <Complexity />}

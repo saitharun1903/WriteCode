@@ -686,3 +686,12 @@
     transition: none;
   }
 }
+
+/* Replay: the line being typed. */
+.cw-replay-line {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.cw-replay-gutter {
+  border-left: 2px solid var(--accent);
+  margin-left: 3px;
+}
