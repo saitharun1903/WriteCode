@@ -12,7 +12,7 @@ import { isOwnRun, useExecution } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useResolvedTheme, useSettings } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
-import { LogoMark } from "./Logo";
+import { Brand } from "./Logo";
 import { LiveButton } from "@/features/live/LiveUI";
 import { useRestriction } from "@/features/interview/restrict";
 import { InterviewClock } from "@/features/interview/Clock";
@@ -213,11 +213,10 @@ export function TitleBar({ compact }: { compact: boolean }) {
         // Going home would leave the interview.
         disabled={restricted}
         onClick={() => useWorkspace.getState().closeProject()}
-        className="flex h-8 items-center gap-2 rounded-[6px] pl-1 pr-2 enabled:hover:bg-hover"
+        className="flex h-9 items-center rounded-[9px] pl-1 pr-2.5 outline-none focus-visible:ring-2 focus-visible:ring-accent"
         aria-label="Home"
       >
-        <LogoMark className="size-6" />
-        {!compact && <span className="text-[15px] font-semibold tracking-tight text-fg">{PRODUCT.name}</span>}
+        <Brand name={!compact} />
       </button>
 
       {(!compact || !project) && !restricted && (

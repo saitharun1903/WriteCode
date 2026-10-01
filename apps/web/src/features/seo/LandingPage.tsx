@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Check, ChevronDown } from "lucide-react";
-import { LogoMark } from "@/features/workspace/Logo";
+import { Brand, LogoMark } from "@/features/workspace/Logo";
 import { LANDING_PAGES, SITE, type LandingPage as Page } from "./pages";
 
 const languages = LANDING_PAGES.filter((p) => p.kind === "language");
@@ -86,9 +86,8 @@ export function LandingPage({ page }: { page: Page }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd(page)) }} />
       <header className="sticky top-0 z-10 border-b border-line bg-canvas/85 backdrop-blur">
         <nav aria-label="Main" className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4">
-          <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <LogoMark className="size-6" />
-            <span className="text-[15px]">{SITE.name}</span>
+          <Link href="/" aria-label={SITE.name} className="flex items-center">
+            <Brand />
           </Link>
           <ul className="ml-4 hidden items-center gap-1 text-[13px] text-fg-muted md:flex">
             {tools

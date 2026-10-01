@@ -41,7 +41,8 @@ export const metadata: Metadata = {
   },
   twitter: { card: "summary_large_image", title: `${PRODUCT.name}: online compiler, debugger and visualizer`, description: PRODUCT.description, images: ["/og.png"] },
   robots: { index: true, follow: true },
-  icons: { icon: [{ url: "/favicon.ico" }, { url: "/icon-192.png", type: "image/png", sizes: "192x192" }], apple: "/apple-touch-icon.png" },
+  // Versioned: browsers keep an icon for a long time by its address, so a new address makes them fetch the W again.
+  icons: { icon: [{ url: "/favicon.ico?v=4", sizes: "any" }, { url: "/icon-192.png?v=4", type: "image/png", sizes: "192x192" }], shortcut: "/favicon.ico?v=4", apple: "/apple-touch-icon.png?v=4" },
   verification: SITE_VERIFICATION,
 };
 

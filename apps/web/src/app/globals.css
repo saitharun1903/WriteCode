@@ -595,3 +595,94 @@
     display: none;
   }
 }
+
+/* The brand in a header: the W tile in a ring of light, "Code" in the brand gradient. */
+.cw-brand {
+  --brand-a: #6d8cff;
+  --brand-b: #8a7cf5;
+  --brand-c: #c26cea;
+}
+[data-theme="light"] .cw-brand {
+  --brand-a: #3f63f2;
+  --brand-b: #6a55e6;
+  --brand-c: #a63fd4;
+}
+.cw-brand-mark {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 1.5px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b) 45%, var(--brand-c));
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.05),
+    0 4px 16px -4px color-mix(in srgb, var(--brand-b) 75%, transparent);
+  transition:
+    box-shadow 200ms ease,
+    transform 200ms var(--ease-out-quint);
+}
+.cw-brand-mark img {
+  border-radius: 7.5px;
+}
+.cw-brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 60%;
+  background: linear-gradient(100deg, transparent, rgb(255 255 255 / 0.45) 50%, transparent);
+  transform: translateX(-140%) skewX(-18deg);
+  pointer-events: none;
+}
+.cw-brand-name {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.cw-brand-accent {
+  background: linear-gradient(90deg, var(--brand-a), var(--brand-b) 50%, var(--brand-c));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.cw-brand-caret {
+  width: 2px;
+  height: 1.05em;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: var(--brand-b);
+  opacity: 0;
+}
+:is(a, button):not(:disabled):hover > .cw-brand .cw-brand-mark,
+.cw-brand:hover .cw-brand-mark {
+  transform: scale(1.06) rotate(-3deg);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.08),
+    0 6px 22px -4px color-mix(in srgb, var(--brand-b) 95%, transparent);
+}
+:is(a, button):not(:disabled):hover > .cw-brand .cw-brand-mark::after,
+.cw-brand:hover .cw-brand-mark::after {
+  animation: cw-dock-sheen 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+:is(a, button):not(:disabled):hover > .cw-brand .cw-brand-caret,
+.cw-brand:hover .cw-brand-caret {
+  animation: cw-brand-caret 1s steps(1) infinite;
+}
+@keyframes cw-brand-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cw-brand-mark,
+  .cw-brand-mark::after,
+  .cw-brand-caret {
+    animation: none !important;
+    transition: none;
+  }
+}
