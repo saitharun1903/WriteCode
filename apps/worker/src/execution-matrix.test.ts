@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Redis } from "ioredis";
 import { afterAll, describe, expect, it } from "vitest";
-import { STREAM_FIELD, redisKeys, type ExecutionResult, type ExecutionStatus } from "@cw/shared";
+import { LANGUAGES, STREAM_FIELD, parseDiagnostics, redisKeys, type ExecutionResult, type ExecutionStatus } from "@cw/shared";
 import { config } from "./config.js";
 import { createDocker } from "./docker.js";
 import type { EventEmitter } from "./events.js";
@@ -1245,5 +1245,130 @@ describe.skipIf(!enabled).concurrent("Only the program being run is built", () =
     expectOk(await run("python", { "b.py": 'print("b")\n', "a.py": "def broken(:\n" }, { entry: "b.py" }), "b\n");
     expectOk(await run("javascript", { "b.js": 'console.log("b");\n', "a.js": "function (\n" }, { entry: "b.js" }), "b\n");
     expectOk(await run("typescript", { "b.ts": 'const s: string = "b";\nconsole.log(s);\n', "a.ts": "const = ;\n" }, { entry: "b.ts" }), "b\n");
+  });
+});
+
+/** Where the errors of a run point, as the editor would mark them. */
+const marks = (language: string, o: Outcome, files: Files) => parseDiagnostics(language, o.result.compileOutput + "\n" + o.result.stderr, Object.keys(files)).map((d) => `${d.file}:${d.line} ${d.source}`);
+
+describe.runIf(enabled)("Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
+  it("every language's starter program prints Hello World", { timeout: 6 * T }, async () => {
+    for (const lang of LANGUAGES.filter((l) => !l.preview)) {
+      const files = Object.fromEntries(lang.template.map((f) => [f.path, f.content]));
+      const o = await run(lang.id, files, { entry: lang.entryFile });
+      expect(o.result.status, `${lang.id}: ${o.result.compileOutput}${o.result.stderr}`).toBe("SUCCESS");
+      if (lang.id !== "sql") expect(o.result.stdout, lang.id).toContain("Hello World");
+    }
+  });
+
+  it("Go: input, several files, a compile error on its line, a panic on its line, tests", { timeout: T }, async () => {
+    const main = 'package main\n\nimport (\n\t"bufio"\n\t"fmt"\n\t"os"\n\t"sort"\n)\n\nfunc main() {\n\tin := bufio.NewReader(os.Stdin)\n\tvar n int\n\tfmt.Fscan(in, &n)\n\txs := []int{3, 1, 2}\n\tsort.Ints(xs)\n\tfmt.Println(twice(n), xs)\n}\n';
+    const files = { "main.go": main, "util.go": "package main\n\nfunc twice(x int) int { return x * 2 }\n", "other.go": "package main\n\nfunc main() {}\n", "broken.go": "package main\n\nfunc main() { return 1 }\n" };
+    expectOk(await run("go", files, { stdin: "21\n" }), "42 [1 2 3]\n");
+    const typed = await run("go", { "main.go": 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar n int\n\tfmt.Print("n? ")\n\tfmt.Scan(&n)\n\tfmt.Println(n * 2)\n}\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n? 50\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const bad = { "main.go": 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println(y)\n}\n' };
+    const o = await run("go", bad);
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(marks("go", o, bad)).toEqual(["main.go:6 compiler"]);
+    const crash = { "main.go": 'package main\n\nimport "fmt"\n\nfunc main() {\n\txs := []int{1}\n\ti := 3\n\tfmt.Println(xs[i])\n}\n' };
+    const c = await run("go", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("go", c, crash)).toEqual(["main.go:8 runtime"]);
+    const t = await run("go", { "main.go": main, "util.go": files["util.go"]! }, { tests: ["1", "50"] });
+    expect(t.result.tests!.map((x) => x.stdout)).toEqual(["2 [1 2 3]\n", "100 [1 2 3]\n"]);
+  });
+
+  it("Rust: input, a module in another file, a compile error and a panic on their lines", { timeout: T }, async () => {
+    const files = {
+      "main.rs": 'use std::io::{self, Read};\nmod util;\n\nfn main() {\n    let mut s = String::new();\n    io::stdin().read_to_string(&mut s).unwrap();\n    let n: i64 = s.trim().parse().unwrap();\n    let mut v = vec![3, 1, 2];\n    v.sort();\n    println!("{} {:?}", util::twice(n), v);\n}\n',
+      "util.rs": "pub fn twice(x: i64) -> i64 {\n    x * 2\n}\n",
+      "other.rs": 'fn main() { let x: i32 = "broken"; }\n',
+    };
+    expectOk(await run("rust", files, { stdin: "21\n" }), "42 [1, 2, 3]\n");
+    const typed = await run("rust", { "main.rs": 'use std::io;\n\nfn main() {\n    println!("n?");\n    let mut line = String::new();\n    io::stdin().read_line(&mut line).unwrap();\n    let n: i32 = line.trim().parse().unwrap();\n    println!("{}", n * 2);\n}\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n?\n50\n");
+    const bad = { "main.rs": 'fn main() {\n    let x: i32 = "a";\n}\n' };
+    const o = await run("rust", bad);
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(marks("rust", o, bad)).toContain("main.rs:2 compiler");
+    const crash = { "main.rs": 'fn main() {\n    let v = vec![1];\n    let i = v.len() + 2;\n    println!("{}", v[i]);\n}\n' };
+    const c = await run("rust", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("rust", c, crash)).toEqual(["main.rs:4 runtime"]);
+  });
+
+  it("C#: input, LINQ, several files, top-level statements, a compile error and an exception on their lines", { timeout: T }, async () => {
+    const files = {
+      "Program.cs": 'using System;\nusing System.Linq;\nusing System.Collections.Generic;\n\nclass Program\n{\n    static void Main(string[] args)\n    {\n        int n = int.Parse(Console.ReadLine());\n        var xs = new List<int> { 3, 1, 2 };\n        Console.WriteLine($"{Util.Twice(n)} {string.Join(",", xs.OrderBy(x => x))}");\n    }\n}\n',
+      "Util.cs": "static class Util\n{\n    public static int Twice(int x) => x * 2;\n}\n",
+      "Other.cs": "class Other\n{\n    static void Main()\n    {\n    }\n}\n",
+    };
+    expectOk(await run("csharp", files, { stdin: "21\n" }), "42 1,2,3\n");
+    expectOk(await run("csharp", { "Program.cs": 'var names = new List<string> { "b", "a" };\nConsole.WriteLine(string.Join(" ", names.OrderBy(x => x)));\n' }), "a b\n");
+    const typed = await run("csharp", { "Program.cs": 'using System;\n\nclass Program\n{\n    static void Main()\n    {\n        Console.Write("n? ");\n        int n = int.Parse(Console.ReadLine());\n        Console.WriteLine(n * 2);\n    }\n}\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n? 50\n");
+    const bad = { "Program.cs": 'class Program\n{\n    static void Main()\n    {\n        int x = "a";\n    }\n}\n' };
+    const o = await run("csharp", bad);
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(marks("csharp", o, bad)).toEqual(["Program.cs:5 compiler"]);
+    const crash = { "Program.cs": "using System;\n\nclass Program\n{\n    static void Main()\n    {\n        int[] a = new int[1];\n        int i = a.Length + 2;\n        Console.WriteLine(a[i]);\n    }\n}\n" };
+    const c = await run("csharp", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("csharp", c, crash)).toEqual(["Program.cs:9 runtime"]);
+  });
+
+  it("PHP: input, an included file, a parse error and an exception on their lines", { timeout: T }, async () => {
+    const files = { "main.php": '<?php\nrequire_once "util.php";\n$n = (int) trim(fgets(STDIN));\necho twice($n) . "\\n";\n', "util.php": "<?php\nfunction twice(int $x): int { return $x * 2; }\n", "broken.php": "<?php\necho 1\necho 2;\n" };
+    expectOk(await run("php", files, { stdin: "21\n" }), "42\n");
+    const typed = await run("php", { "main.php": '<?php\necho "n? ";\n$n = (int) trim(fgets(STDIN));\necho $n * 2, "\\n";\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n? 50\n");
+    const bad = { "main.php": "<?php\necho 1\necho 2;\n" };
+    const o = await run("php", bad);
+    expect(o.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("php", o, bad)).toEqual(["main.php:3 compiler"]);
+    const crash = { "main.php": '<?php\nfunction f() {\n    throw new Exception("boom");\n}\nf();\n' };
+    const c = await run("php", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("php", c, crash)).toEqual(["main.php:3 runtime"]);
+  });
+
+  it("Ruby: input, a required file, a prompt shown before its answer, a syntax error and an exception on their lines", { timeout: T }, async () => {
+    const files = { "main.rb": 'require_relative "util"\nn = gets.to_i\nputs twice(n)\nputs "direct" if __FILE__ == $0\n', "util.rb": "def twice(x)\n  x * 2\nend\n", "broken.rb": "puts (\n" };
+    expectOk(await run("ruby", files, { stdin: "21\n" }), "42\ndirect\n");
+    const typed = await run("ruby", { "main.rb": 'print "n? "\nn = gets.to_i\nputs n * 2\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n? 50\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const bad = { "main.rb": "puts 1\nputs (\n" };
+    const o = await run("ruby", bad);
+    expect(o.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("ruby", o, bad)[0]).toMatch(/^main\.rb:\d+ compiler$/);
+    const crash = { "main.rb": 'def f\n  raise "boom"\nend\nf\n' };
+    const c = await run("ruby", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("ruby", c, crash)).toEqual(["main.rb:2 runtime"]);
+  });
+
+  it("SQL: tables are printed for every query; an error names the line of its statement", { timeout: T }, async () => {
+    const ok = { "main.sql": "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score INTEGER);\nINSERT INTO t (name, score) VALUES ('Asha', 91), ('Ravi', NULL);\n-- two queries on one line; a semicolon in a string\nSELECT name, score FROM t ORDER BY id; SELECT count(*) AS n, 'a;b' AS s FROM t;\n" };
+    expectOk(await run("sql", ok), "name | score\n-----+------\nAsha | 91\nRavi | NULL\n(2 rows)\n\nn | s\n--+----\n2 | a;b\n(1 row)\n\n");
+    const bad = { "main.sql": "CREATE TABLE t (id INTEGER);\n\nSELECT *\nFROM missing;\nSELECT 1;\n" };
+    const o = await run("sql", bad);
+    expect(o.result.status).toBe("RUNTIME_ERROR");
+    expect(o.result.stderr).toContain("main.sql:3: error: no such table: missing");
+    expect(marks("sql", o, bad)).toEqual(["main.sql:3 runtime"]);
+  });
+
+  it("Bash: input, a sourced file, the usual tools, and an error on its line", { timeout: T }, async () => {
+    const files = { "main.sh": '#!/bin/bash\nsource ./util.sh\nread n\necho "$(twice "$n")"\nprintf "b\\na\\n" | sort | head -1\n', "util.sh": "twice() { echo $(( $1 * 2 )); }\n" };
+    expectOk(await run("bash", files, { stdin: "21\n" }), "42\na\n");
+    const typed = await run("bash", { "main.sh": 'read -p "n? " n\necho $(( n * 2 ))\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toContain("50\n");
+    const bad = { "main.sh": "echo hi\nnosuchcommand\nexit 3\n" };
+    const o = await run("bash", bad);
+    expect(o.result.status).toBe("RUNTIME_ERROR");
+    expect(o.result.stdout).toBe("hi\n");
+    expect(marks("bash", o, bad)).toEqual(["main.sh:2 runtime"]);
   });
 });

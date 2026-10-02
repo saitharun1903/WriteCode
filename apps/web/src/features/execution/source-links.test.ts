@@ -30,4 +30,17 @@ describe("linking output to source", () => {
     expect(resolveFile("b/Util.java", ["a/Util.java", "b/Util.java"])).toBe("b/Util.java");
     expect(links("see version 1.2:3", ["Main.java"])).toEqual([]);
   });
+
+  it("links the places the later languages name: Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
+    const at = (text: string, files: string[]) => linkSources(text, files).flatMap((seg) => ("file" in seg ? [`${seg.file}:${seg.line}${seg.column ? `:${seg.column}` : ""}`] : []));
+    expect(at("./main.go:7:14: undefined: y\n\t/workspace/main.go:8 +0x17", ["main.go"])).toEqual(["main.go:7:14", "main.go:8"]);
+    expect(at(" --> main.rs:1:26\nthread 'main' panicked at main.rs:4:20:", ["main.rs"])).toEqual(["main.rs:1:26", "main.rs:4:20"]);
+    expect(at("Program.cs(5,13): error CS0029: no\n   at Program.Main() in /workspace/Program.cs:line 9", ["Program.cs"])).toEqual(["Program.cs:5:13", "Program.cs:9"]);
+    expect(at("Parse error: unexpected in /workspace/main.php on line 3\n#0 /workspace/main.php(5): f()\nUncaught Exception: boom in /workspace/main.php:2", ["main.php"])).toEqual(["main.php:3", "main.php:5", "main.php:2"]);
+    expect(at("main.rb:2:in 'Object#f': boom (RuntimeError)", ["main.rb"])).toEqual(["main.rb:2"]);
+    expect(at("main.sql:3: error: no such table: missing", ["main.sql"])).toEqual(["main.sql:3"]);
+    expect(at("main.sh: line 2: nosuchcommand: command not found", ["main.sh"])).toEqual(["main.sh:2"]);
+    // A file that is not in the project stays plain text.
+    expect(at("/usr/lib/ruby/3.4.0/set.rb:12:in 'x'", ["main.rb"])).toEqual([]);
+  });
 });

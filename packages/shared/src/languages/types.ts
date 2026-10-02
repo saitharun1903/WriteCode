@@ -36,7 +36,26 @@ export type EntryPointStyle =
   | "main-guard";
 
 /** A format compilers and runtimes report errors in. */
-export type DiagnosticFormat = "gcc" | "javac" | "jvm-trace" | "python" | "node";
+export type DiagnosticFormat =
+  | "gcc"
+  | "javac"
+  | "jvm-trace"
+  | "python"
+  | "node"
+  /** Go: `./main.go:7:14: undefined: y`, and the frames of a panic. */
+  | "go"
+  /** rustc: `error[E0308]: mismatched types` then ` --> main.rs:1:26`, and `panicked at main.rs:1:46:`. */
+  | "rustc"
+  /** The C# compiler: `Program.cs(5,13): error CS1002: ; expected`. */
+  | "csc"
+  /** .NET stack traces: `at Program.Main() in /workspace/Program.cs:line 5`. */
+  | "dotnet-trace"
+  | "php"
+  | "ruby"
+  /** Bash: `main.sh: line 3: foo: command not found`. */
+  | "bash"
+  /** `main.sql:3: error: no such table: t`. */
+  | "plain";
 
 export interface RuntimeConfig {
   /** Pinned container image used by the sandbox. The version below must match it. */
@@ -76,6 +95,17 @@ export interface LanguageDefinition {
   entryFile: string;
   /** How a file of this language marks where a program starts; absent when there is no marker. */
   entryPoints?: EntryPointStyle;
+  /**
+   * `function-main` only: a regular expression (multi-line, on the code with its
+   * comments and strings blanked) that matches the declaration of the main
+   * function. Without it, a C `int main(` at the top level of the file.
+   */
+  entryPattern?: string;
+  /**
+   * Set for a language that runs in the visitor's browser, not in a sandbox:
+   * Run shows the page in a preview. Its `runtime` names no image or command.
+   */
+  preview?: "browser";
   /**
    * How a file loads another file of the project, for languages that run a
    * file directly: regular expressions (multi-line) whose first group is the

@@ -24,7 +24,7 @@ export interface LandingPage {
   h1: string;
   intro: string;
   /** Language the "Open" button starts a project in. */
-  language: "java" | "python" | "c" | "cpp" | "javascript" | "typescript";
+  language: "java" | "python" | "c" | "cpp" | "javascript" | "typescript" | "go" | "rust" | "csharp" | "php" | "ruby" | "sql" | "html";
   cta: string;
   sample: { file: string; code: string };
   features: { title: string; text: string }[];
@@ -111,6 +111,84 @@ const average = (s: Student) => s.marks.reduce((a, b) => a + b, 0) / s.marks.len
 
 const ravi: Student = { name: "Ravi", marks: [78, 91, 85] };
 console.log(\`\${ravi.name}: \${average(ravi).toFixed(1)}\`);`;
+
+const GO = `package main
+
+import "fmt"
+
+func main() {
+	var n int
+	fmt.Scan(&n)
+	sum := 0
+	for i := 1; i <= n; i++ {
+		sum += i
+	}
+	fmt.Println("Sum of 1..", n, "=", sum)
+}`;
+
+const RUST = `use std::io;
+
+fn main() {
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).unwrap();
+    let n: u64 = line.trim().parse().unwrap();
+    let squares: Vec<u64> = (1..=n).map(|x| x * x).collect();
+    println!("{:?}", squares);
+}`;
+
+const CSHARP = `using System;
+using System.Linq;
+
+class Program
+{
+    static void Main()
+    {
+        int[] marks = Console.ReadLine().Split(' ').Select(int.Parse).ToArray();
+        Console.WriteLine($"Average: {marks.Average():F1}");
+    }
+}`;
+
+const PHP = `<?php
+
+$words = explode(" ", trim(fgets(STDIN)));
+$counts = array_count_values($words);
+arsort($counts);
+
+foreach ($counts as $word => $count) {
+    echo "$word: $count\n";
+}`;
+
+const RUBY = `names = gets.split
+
+names.sort.each_with_index do |name, i|
+  puts "#{i + 1}. #{name.capitalize}"
+end`;
+
+const SQL = `CREATE TABLE students (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  marks INTEGER
+);
+
+INSERT INTO students (name, marks) VALUES
+  ('Asha', 91), ('Ravi', 78), ('Meera', 85);
+
+SELECT name, marks
+FROM students
+WHERE marks > 80
+ORDER BY marks DESC;`;
+
+const HTML = `<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Hello World</h1>
+    <button id="button">Click me</button>
+    <script src="script.js"></script>
+  </body>
+</html>`;
 
 const RUN_FEATURES = (lang: string, version: string) => [
   { title: `Real ${lang} ${version}`, text: `Your code is compiled and run by the real ${lang} toolchain on our servers, not a simulation, with the exact errors you would see on your own computer.` },
@@ -250,26 +328,156 @@ export const LANDING_PAGES: LandingPage[] = [
     intro: "Run TypeScript online without any setup: write .ts files and run them directly on Node.js 22, with input, several files, a debugger that stops on the exact TypeScript line, test cases and a step-by-step visualizer that draws your data structures.",
     extraFaqs: [{ q: "Do I need to compile it first?", a: "No. Press Run and the TypeScript runs directly; types are stripped automatically." }],
   }),
+  langPage({
+    slug: "go-online-compiler",
+    language: "go",
+    name: "Go",
+    version: "1.25",
+    label: "Go compiler",
+    sample: { file: "main.go", code: GO },
+    debugs: false,
+    intro: "Write and run Go 1.25 in your browser with the real Go compiler. Read input with fmt.Scan or bufio, split a program over several files, check it against test cases and share it with a link. Nothing to install.",
+    extraFaqs: [
+      { q: "Which Go version is used?", a: "Go 1.25, with the whole standard library." },
+      { q: "Can I use several files?", a: "Yes. Every .go file of the project that belongs to package main is built into the program." },
+      { q: "Can I use packages from the internet?", a: "No. Programs run with no internet access, so they use the standard library." },
+    ],
+  }),
+  langPage({
+    slug: "rust-online-compiler",
+    language: "rust",
+    name: "Rust",
+    version: "1.90",
+    label: "Rust compiler",
+    sample: { file: "main.rs", code: RUST },
+    debugs: false,
+    intro: "Compile and run Rust 1.90 online with rustc (2021 edition). The compiler's errors link to the exact line and column, a panic shows where it happened, and programs read input from the console as they run.",
+    extraFaqs: [
+      { q: "Which Rust version and edition?", a: "Rust 1.90, 2021 edition, with the standard library." },
+      { q: "Can I split code into modules?", a: "Yes. Add a file such as util.rs and declare it with `mod util;` in main.rs." },
+      { q: "Can I use crates?", a: "No. Programs run with no internet access, so only the standard library is available." },
+    ],
+  }),
+  langPage({
+    slug: "csharp-online-compiler",
+    language: "csharp",
+    name: "C#",
+    version: "(.NET 8, C# 12)",
+    label: "C# compiler",
+    sample: { file: "Program.cs", code: CSHARP },
+    debugs: false,
+    intro: "Write and run C# 12 on .NET 8 in your browser. Classes with a Main method and top-level statements both work, with LINQ, generics, async and the rest of the base class library. Console.ReadLine reads from the console as the program runs.",
+    extraFaqs: [
+      { q: "Which C# and .NET version?", a: "C# 12 on .NET 8." },
+      { q: "Do top-level statements work?", a: "Yes. A file can start with statements directly; the usual namespaces (System, System.Linq, System.Collections.Generic) are already imported." },
+      { q: "Can my project have several classes and files?", a: "Yes. Every .cs file of the project is compiled into the program." },
+    ],
+  }),
+  langPage({
+    slug: "php-online-compiler",
+    language: "php",
+    name: "PHP",
+    version: "8.4",
+    label: "PHP runner",
+    sample: { file: "main.php", code: PHP },
+    debugs: false,
+    intro: "Run PHP 8.4 scripts online from the command line: read input from STDIN, include other files of the project, and see parse errors and exceptions with the line they are on.",
+    extraFaqs: [
+      { q: "Which PHP version is used?", a: "PHP 8.4, run as a command-line script." },
+      { q: "Can I include other files?", a: "Yes. Add more .php files to the project and use require or include." },
+      { q: "Does it run a web server or a database?", a: "No. The script runs once and prints its output, like `php main.php` in a terminal." },
+    ],
+  }),
+  langPage({
+    slug: "ruby-online-compiler",
+    language: "ruby",
+    name: "Ruby",
+    version: "3.4",
+    label: "Ruby runner",
+    sample: { file: "main.rb", code: RUBY },
+    debugs: false,
+    intro: "Run Ruby 3.4 online. Read input with gets, split a program over several files with require_relative, and get errors that link to the line they happened on.",
+    extraFaqs: [
+      { q: "Which Ruby version is used?", a: "Ruby 3.4." },
+      { q: "Does gets work?", a: "Yes. The console asks for the input while the program runs, like a terminal." },
+      { q: "Can I install gems?", a: "No. Programs run with no internet access, so they use Ruby's standard library." },
+    ],
+  }),
+  {
+    slug: "sql-online-compiler",
+    kind: "language",
+    label: "SQL editor",
+    language: "sql",
+    title: "Online SQL Editor: run SQL queries in your browser",
+    description: "Free online SQL editor and compiler. Create tables, insert rows and run SELECT queries on a real SQLite database in your browser. Results are shown as tables. No sign-up, no install.",
+    h1: "Online SQL editor",
+    intro: "Write SQL and run it on a real SQLite database that starts empty for every run. Create tables, insert rows, join, group and sort; every query's result is printed as a table, and an error names the line of the statement that caused it.",
+    cta: "Open the SQL editor",
+    sample: { file: "main.sql", code: SQL },
+    features: [
+      { title: "A real database", text: "Queries run on SQLite 3, not a simulation: joins, GROUP BY, subqueries, views, indexes, foreign keys and transactions all work." },
+      { title: "Results as tables", text: "Every statement that returns rows prints them as a table with its column names and a row count." },
+      { title: "Errors on their line", text: "A mistake stops the run and names the line where its statement starts; click it to go there." },
+      { title: "Several files", text: "Keep the schema in one file and the queries in another; Run runs the file that is open." },
+      { title: "Share and work together", text: "Send a link to your queries, or edit them live with someone else." },
+    ],
+    steps: ["Open the SQL editor: a sample table and query are ready.", "Write your CREATE TABLE, INSERT and SELECT statements.", "Press Run to see each query's result as a table."],
+    faqs: [
+      { q: "Which database is it?", a: "SQLite 3. Standard SQL works; a few things specific to MySQL or PostgreSQL (such as AUTO_INCREMENT or SERIAL) are written differently in SQLite." },
+      { q: "Is my data kept between runs?", a: "No. Each run starts with an empty database and runs the file from the top, so the result is always the same for the same file." },
+      ...COMMON_FAQS,
+    ],
+  },
+  {
+    slug: "html-css-online-editor",
+    kind: "language",
+    label: "HTML and CSS editor",
+    language: "html",
+    title: "Online HTML, CSS and JavaScript Editor with live preview",
+    description: "Free online HTML, CSS and JavaScript editor. Write a page with its stylesheet and script and see it in a live preview that updates as you type, with a console for errors. No sign-up.",
+    h1: "Online HTML, CSS and JavaScript editor",
+    intro: "Write a web page in your browser and see it next to the code. The preview updates as you type, style.css and script.js are separate files as in a real site, and what the page logs or gets wrong shows in a console under it.",
+    cta: "Open the HTML editor",
+    sample: { file: "index.html", code: HTML },
+    features: [
+      { title: "Live preview", text: "The page is shown beside the code and follows it as you type. Run loads it afresh." },
+      { title: "Separate files", text: "index.html, style.css and script.js, linked the usual way with <link> and <script>. Add more pages and link between them." },
+      { title: "Console", text: "console.log output and JavaScript errors appear under the page, with errors in red." },
+      { title: "Libraries from a CDN", text: "A page can load Bootstrap, a font or any other file by its web address." },
+      { title: "Share and work together", text: "Send a link to the code, download it, or edit it live with someone else." },
+    ],
+    steps: ["Open the HTML editor: a page with a stylesheet and a script is ready.", "Change the HTML, the CSS or the JavaScript.", "Watch the preview update; press Run to load the page again."],
+    faqs: [
+      { q: "Does the page run on a server?", a: "No. It runs in your own browser, in a frame kept apart from the rest of the site." },
+      { q: "Can I use more than one page?", a: "Yes. Add more .html files; a link from one to another opens it in the preview." },
+      { q: "Does localStorage work?", a: "Yes, within a run: what the page stores is kept until the page is loaded again." },
+      ...COMMON_FAQS,
+    ],
+  },
   {
     slug: "online-compiler",
     kind: "feature",
     label: "Online compiler",
     language: "java",
-    title: "Online Compiler & IDE for Java, Python, C, C++ and JavaScript",
+    title: "Online Compiler & IDE for Java, Python, C, C++, JavaScript and more",
     description:
-      "Free online compiler and IDE: run Java, Python, C, C++, JavaScript and TypeScript in your browser, with input, a debugger, a visualizer, test cases and AI help. No sign-up.",
+      "Free online compiler and IDE: run Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash in your browser, and preview HTML and CSS live. With input, a debugger, a visualizer, test cases and AI help. No sign-up.",
     h1: "Online compiler and IDE",
     intro:
-      "WriteCode is a full coding environment in your browser: projects with many files, real compilers for six languages, a debugger, a step-by-step visualizer, test cases and live collaboration. Open it and start coding in seconds.",
+      "WriteCode is a full coding environment in your browser: projects with many files, real compilers for thirteen languages, a live preview for HTML and CSS, a debugger, a step-by-step visualizer, test cases and live collaboration. Open it and start coding in seconds.",
     cta: "Open the editor",
     sample: { file: "Main.java", code: JAVA },
     features: [
-      { title: "Six languages", text: "Java 21, Python 3.13, C and C++ (GCC 14), JavaScript and TypeScript (Node.js 22), all running on real toolchains." },
+      { title: "Fourteen languages", text: "Java 21, Python 3.13, C and C++ (GCC 14), JavaScript and TypeScript (Node.js 22), Go 1.25, Rust 1.90, C# 12, PHP 8.4, Ruby 3.4, SQL (SQLite) and Bash, all running on real toolchains, and HTML with CSS in a live preview." },
       ...DEBUG_FEATURES,
       ...RUN_FEATURES("", "").slice(1),
     ],
     steps: ["Choose a language on the start screen.", "Write your code; it saves automatically.", "Press Run, debug, or add test cases.", "Share a live link to code together."],
-    faqs: [{ q: "Which languages are supported?", a: "Java, Python, C, C++, JavaScript and TypeScript." }, ...COMMON_FAQS],
+    faqs: [
+      { q: "Which languages are supported?", a: "Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash, and HTML with CSS and JavaScript in a live preview." },
+      { q: "Which languages have the debugger and the visualizer?", a: "Java, Python, C, C++, JavaScript and TypeScript. The other languages run, read input and can be checked with test cases." },
+      ...COMMON_FAQS,
+    ],
   },
   {
     slug: "online-debugger",
@@ -294,7 +502,7 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the debugger and write or paste your program.", "Click in the margin next to a line to add a breakpoint.", "Press Debug (F5).", "Step with F10 / F11 and watch the variables change."],
     faqs: [
-      { q: "Which languages can I debug?", a: "All six: Java, Python, C, C++, JavaScript and TypeScript." },
+      { q: "Which languages can I debug?", a: "Java, Python, C, C++, JavaScript and TypeScript." },
       ...COMMON_FAQS,
     ],
   },
@@ -400,14 +608,14 @@ export const HOME_FEATURES: { title: string; head: string; text: string; more: s
   {
     title: "Online compiler",
     head: "Type it, run it",
-    text: "Pick a language and press Run. Your program is built by the real compiler (JDK 21, GCC 14, Python 3.13, Node.js 22) and the output appears under the code. When it asks for input, you type it in the console, the way you would in a terminal.",
+    text: "Pick one of fourteen languages and press Run. Your program is built by the real compiler (JDK 21, GCC 14, Python 3.13, Node.js 22, Go, Rust, .NET) and the output appears under the code. When it asks for input, you type it in the console, the way you would in a terminal.",
     more: "About the online compiler",
     slug: "online-compiler",
   },
   {
     title: "Online debugger",
     head: "Stop on any line",
-    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in all six languages.",
+    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in Java, Python, C, C++, JavaScript and TypeScript.",
     more: "About the online debugger",
     slug: "online-debugger",
   },
@@ -437,7 +645,7 @@ export const HOME_FEATURES: { title: string; head: string; text: string; more: s
 export const HOME_FAQS: Faq[] = [
   {
     q: "What is WriteCode?",
-    a: "WriteCode (writecode.in) is a free online compiler and IDE that runs in the browser. You can write, run, debug and visualize Java, Python, C, C++, JavaScript and TypeScript programs, test them, and share them.",
+    a: "WriteCode (writecode.in) is a free online compiler and IDE that runs in the browser. You can write and run Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash, preview HTML and CSS live, debug and visualize programs, test them, and share them.",
   },
   { q: "Do I need to install anything or sign up?", a: "No. Open writecode.in, choose a language and start typing. There is no download and no account." },
   { q: "Can my program read input?", a: "Yes. Type the input in the console while the program runs, as in a terminal, or prepare it before running. Scanner, input(), scanf, cin and readline all work." },

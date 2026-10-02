@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: `${SITE.name}: online compiler, debugger and visualizer`,
     short_name: SITE.name,
-    description: "Write, run, debug and share code in your browser: Java, Python, C, C++, JavaScript and TypeScript.",
+    description: "Write, run, debug and share code in your browser: Java, Python, C, C++, JavaScript, Go, Rust, C#, HTML and more.",
     start_url: "/",
     display: "standalone",
     background_color: "#f7f8fa",

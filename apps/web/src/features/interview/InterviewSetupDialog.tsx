@@ -251,7 +251,8 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
             <label className="block space-y-1">
               <span className={label}>Language</span>
               <select value={language} onChange={(e) => setLanguage(e.target.value)} className={select} aria-label="Language">
-                {LANGUAGES.map((l) => (
+                {/* A candidate's code is checked by running it on tests: a page that runs in the browser cannot be. */}
+                {LANGUAGES.filter((l) => !l.preview).map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>

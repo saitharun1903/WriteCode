@@ -1,13 +1,14 @@
 # WriteCode
 
-> WriteCode (https://writecode.in) is a free online compiler and IDE that runs in the browser. People use it to write, run, debug and visualize programs in Java, Python, C, C++, JavaScript and TypeScript, with no installation and no sign-up.
+> WriteCode (https://writecode.in) is a free online compiler and IDE that runs in the browser. People use it to write and run programs in Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash, to build web pages in HTML, CSS and JavaScript with a live preview, and to debug and visualize their code, with no installation and no sign-up.
 
 "WriteCode" (also written "Write Code" or "writecode.in") is the name of this web application. It is not a company that writes software for clients.
 
 ## What it does
 
-- Online compiler: real toolchains (Java 21, Python 3.13, GCC 14 for C and C++, Node.js 22 for JavaScript and TypeScript). Programs can read typed input while they run.
-- Online debugger: breakpoints, stepping, variables, watches and the call stack, in every language.
+- Online compiler: real toolchains (Java 21, Python 3.13, GCC 14 for C and C++, Node.js 22 for JavaScript and TypeScript, Go 1.25, Rust 1.90, C# 12 on .NET 8, PHP 8.4, Ruby 3.4, SQLite for SQL, Bash 5). Programs can read typed input while they run.
+- HTML, CSS and JavaScript editor: a web page with its stylesheet and script, shown in a live preview that updates as it is typed, with a console.
+- Online debugger: breakpoints, stepping, variables, watches and the call stack, for Java, Python, C, C++, JavaScript and TypeScript.
 - Code visualizer: arrays, linked lists, trees and recursion drawn step by step as the program runs.
 - Test cases: inputs with expected outputs, checked in one click.
 - Code together: a shared link to edit the same files live, and coding interviews with hidden tests, a timer and a report.
@@ -25,6 +26,13 @@
 - [C++ online compiler](https://writecode.in/cpp-online-compiler)
 - [JavaScript online runner](https://writecode.in/javascript-online-compiler)
 - [TypeScript online runner](https://writecode.in/typescript-online-compiler)
+- [Go online compiler](https://writecode.in/go-online-compiler)
+- [Rust online compiler](https://writecode.in/rust-online-compiler)
+- [C# online compiler](https://writecode.in/csharp-online-compiler)
+- [PHP online runner](https://writecode.in/php-online-compiler)
+- [Ruby online runner](https://writecode.in/ruby-online-compiler)
+- [Online SQL editor](https://writecode.in/sql-online-compiler)
+- [Online HTML, CSS and JavaScript editor](https://writecode.in/html-css-online-editor)
 - [Online debugger](https://writecode.in/online-debugger)
 - [Code visualizer](https://writecode.in/code-visualizer)
 - [Online compiler with test cases](https://writecode.in/online-compiler-with-test-cases)

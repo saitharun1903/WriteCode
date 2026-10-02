@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 
 import { CircleCheck, CircleX, Keyboard, Loader2, Minus, OctagonAlert, Pause } from "lucide-react";
-import { basename } from "@cw/shared";
+import { basename, getLanguage } from "@cw/shared";
 import { IconButton } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/primitives";
 import { useDebug } from "@/features/debug/store";
@@ -13,6 +13,7 @@ import { RunMetrics, RunToolWindow } from "@/features/execution/OutputPanel";
 import { ProblemsPanel } from "@/features/execution/ProblemsPanel";
 import { STATUS_META } from "@/features/execution/status";
 import { isRunning, useExecution } from "@/features/execution/store";
+import { useWorkspace } from "@/features/projects/store";
 import { useSettings, type BottomTab } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
 
@@ -27,6 +28,7 @@ function Loading() {
 // Heavier tool windows download the first time they are opened, keeping the first page load small.
 const DebugToolWindow = dynamic(() => import("@/features/debug/DebugPanel").then((m) => m.DebugToolWindow), { ssr: false, loading: Loading });
 const VisualizerPanel = dynamic(() => import("@/features/visualize/VisualizerPanel").then((m) => m.VisualizerPanel), { ssr: false, loading: Loading });
+const PreviewPanel = dynamic(() => import("@/features/preview/PreviewPanel").then((m) => m.PreviewPanel), { ssr: false, loading: Loading });
 const TestsPanel = dynamic(() => import("@/features/tests/TestsPanel").then((m) => m.TestsPanel), { ssr: false, loading: Loading });
 
 const TITLES: Record<BottomTab, string> = {
@@ -76,21 +78,24 @@ function SessionTab({ tab }: { tab: BottomTab }) {
 
 export function BottomPanel({ onClose }: { onClose: () => void }) {
   const tab = useSettings((s) => s.layout.bottomTab);
+  // A project that runs in the browser: its Run window is the page itself.
+  const preview = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview) && tab === "run";
+  const title = preview ? "Preview" : TITLES[tab];
 
   return (
-    <section aria-label={TITLES[tab]} className="flex h-full min-h-0 flex-col bg-surface">
+    <section aria-label={title} className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line pl-3 pr-1.5">
-        <h2 className="text-sm font-semibold text-fg">{TITLES[tab]}</h2>
-        {(tab === "run" || tab === "debug" || tab === "visualize") && <SessionTab tab={tab} />}
+        <h2 className="text-sm font-semibold text-fg">{title}</h2>
+        {!preview && (tab === "run" || tab === "debug" || tab === "visualize") && <SessionTab tab={tab} />}
         <div className="ml-auto flex items-center gap-2">
-          {tab === "run" && <RunMetrics />}
+          {tab === "run" && !preview && <RunMetrics />}
           <IconButton label="Hide" shortcut="Mod+J" size="sm" onClick={onClose}>
             <Minus />
           </IconButton>
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {tab === "run" && <RunToolWindow />}
+        {tab === "run" && (preview ? <PreviewPanel /> : <RunToolWindow />)}
         {tab === "debug" && <DebugToolWindow />}
         {tab === "visualize" && <VisualizerPanel />}
         {tab === "tests" && <TestsPanel />}

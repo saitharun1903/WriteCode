@@ -227,7 +227,336 @@ console.log(greeting);
   visualizer: { supportLevel: "beta" },
 };
 
-export const LANGUAGES: readonly LanguageDefinition[] = [java, python, cpp, c, javascript, typescript];
+/** golang with its standard library already compiled (sandbox-images/golang), so a build takes a second, not ten. */
+export const GO_IMAGE = "writecode/golang:1.25";
+
+const go: LanguageDefinition = {
+  id: "go",
+  name: "Go",
+  version: "1.25",
+  extensions: [".go"],
+  monacoLanguage: "go",
+  supportLevel: "beta",
+  entryFile: "main.go",
+  entryPoints: "function-main",
+  entryPattern: String.raw`^func\s+main\s*\(`,
+  diagnostics: ["go"],
+  template: [
+    {
+      path: "main.go",
+      content: `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello World")
+}
+`,
+    },
+  ],
+  compiler: {
+    command: ["go", "build", "-o", "out/main", "{sources}"],
+    sourceExtensions: [".go"],
+    builds: "program",
+  },
+  runtime: {
+    image: GO_IMAGE,
+    command: ["./out/main"],
+  },
+};
+
+const rust: LanguageDefinition = {
+  id: "rust",
+  name: "Rust",
+  version: "1.90",
+  extensions: [".rs"],
+  monacoLanguage: "rust",
+  supportLevel: "beta",
+  entryFile: "main.rs",
+  entryPoints: "function-main",
+  entryPattern: String.raw`^[ \t]*(?:pub\s+)?fn\s+main\s*\(`,
+  diagnostics: ["rustc"],
+  template: [
+    {
+      path: "main.rs",
+      content: `fn main() {
+    println!("Hello World");
+}
+`,
+    },
+  ],
+  compiler: {
+    // rustc is given the file the program starts in and finds its modules (\`mod name;\`) itself.
+    command: ["rustc", "--edition", "2021", "-C", "opt-level=1", "-C", "debuginfo=0", "-o", "out/main", "{entry}"],
+    sourceExtensions: [".rs"],
+    builds: "program",
+  },
+  runtime: {
+    image: "rust:1.90-slim",
+    command: ["./out/main"],
+  },
+};
+
+/** The .NET SDK with the C# compiler called directly (sandbox-images/dotnet): no project file, a build in about a second. */
+export const DOTNET_IMAGE = "writecode/dotnet:8.0";
+
+const csharp: LanguageDefinition = {
+  id: "csharp",
+  name: "C#",
+  version: ".NET 8 (C# 12)",
+  extensions: [".cs"],
+  monacoLanguage: "csharp",
+  supportLevel: "beta",
+  entryFile: "Program.cs",
+  entryPoints: "function-main",
+  entryPattern: String.raw`\bstatic\s+(?:async\s+)?[\w<>.\[\]]+\s+Main\s*\(`,
+  diagnostics: ["csc", "dotnet-trace"],
+  template: [
+    {
+      path: "Program.cs",
+      content: `using System;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        Console.WriteLine("Hello World");
+    }
+}
+`,
+    },
+  ],
+  compiler: {
+    command: ["cw-csc", "out/main.dll", "{sources}"],
+    sourceExtensions: [".cs"],
+    builds: "program",
+  },
+  runtime: {
+    image: DOTNET_IMAGE,
+    command: ["dotnet", "out/main.dll"],
+  },
+};
+
+const php: LanguageDefinition = {
+  id: "php",
+  name: "PHP",
+  version: "8.4",
+  extensions: [".php"],
+  monacoLanguage: "php",
+  supportLevel: "beta",
+  entryFile: "main.php",
+  imports: [String.raw`\b(?:require|include)(?:_once)?\s*\(?\s*(?:__DIR__\s*\.\s*)?["']/?([^"'\n]+)["']`],
+  diagnostics: ["php"],
+  template: [
+    {
+      path: "main.php",
+      content: `<?php
+
+echo "Hello World\n";
+`,
+    },
+  ],
+  runtime: {
+    image: "php:8.4-cli-alpine",
+    // Errors once, on the error stream (the default prints them on both).
+    command: ["php", "-d", "display_errors=stderr", "-d", "log_errors=0", "{entry}"],
+  },
+};
+
+const ruby: LanguageDefinition = {
+  id: "ruby",
+  name: "Ruby",
+  version: "3.4",
+  extensions: [".rb"],
+  monacoLanguage: "ruby",
+  supportLevel: "beta",
+  entryFile: "main.rb",
+  imports: [String.raw`^[ \t]*require_relative\s+["']([^"'\n]+)["']`, String.raw`^[ \t]*(?:require|load)\s+["']\.\/([^"'\n]+)["']`],
+  diagnostics: ["ruby"],
+  template: [
+    {
+      path: "main.rb",
+      content: `puts "Hello World"
+`,
+    },
+  ],
+  runtime: {
+    image: "ruby:3.4-alpine",
+    // What is printed shows at once (a prompt before its answer is typed), as in a terminal; the file still runs as the program ($0).
+    command: ["ruby", "-e", "$stdout.sync = $stderr.sync = true; $0 = ARGV.shift; load $0", "{entry}"],
+  },
+};
+
+const bash: LanguageDefinition = {
+  id: "bash",
+  name: "Bash",
+  version: "5.2",
+  extensions: [".sh"],
+  monacoLanguage: "shell",
+  supportLevel: "beta",
+  entryFile: "main.sh",
+  imports: [String.raw`^[ \t]*(?:source|\.)[ \t]+["']?(?:\.\/)?([^"'\s;]+)`],
+  diagnostics: ["bash"],
+  template: [
+    {
+      path: "main.sh",
+      content: `#!/bin/bash
+
+echo "Hello World"
+`,
+    },
+  ],
+  runtime: {
+    // The Python image is Debian with bash and the usual tools (awk, sed, grep, sort).
+    image: "python:3.13-slim",
+    command: ["bash", "{entry}"],
+  },
+};
+
+/**
+ * Runs a file of SQL on a new, empty SQLite database, one statement at a
+ * time, printing the rows of every statement that returns some as a table. An
+ * error names the line its statement starts on and stops the run.
+ */
+const SQL_RUNNER = [
+  "import sqlite3, sys",
+  "path = sys.argv[1]",
+  'src = open(path, encoding="utf-8").read()',
+  'db = sqlite3.connect(":memory:")',
+  "db.isolation_level = None",
+  'db.execute("PRAGMA foreign_keys = ON")',
+  "def show(cur):",
+  "    cols = [d[0] for d in cur.description]",
+  '    rows = [["NULL" if v is None else str(v) for v in r] for r in cur.fetchall()]',
+  "    w = [max([len(c)] + [len(r[i]) for r in rows]) for i, c in enumerate(cols)]",
+  '    line = lambda cells: " | ".join(c.ljust(w[i]) for i, c in enumerate(cells)).rstrip()',
+  "    print(line(cols))",
+  '    print("-+-".join("-" * x for x in w))',
+  "    for r in rows: print(line(r))",
+  '    print("(%d row%s)\\n" % (len(rows), "" if len(rows) == 1 else "s"))',
+  "def run(stmt, at):",
+  "    try:",
+  "        cur = db.execute(stmt)",
+  "        if cur.description: show(cur)",
+  "    except sqlite3.Error as e:",
+  "        sys.stdout.flush()",
+  '        print("%s:%d: error: %s" % (path, at, e), file=sys.stderr)',
+  "        sys.exit(1)",
+  'stmt, at, line = "", 1, 1',
+  "for ch in src:",
+  "    if not stmt.strip(): at = line",
+  "    stmt += ch",
+  '    if ch == "\\n": line += 1',
+  '    if ch == ";" and sqlite3.complete_statement(stmt):',
+  "        run(stmt, at)",
+  '        stmt = ""',
+  "if stmt.strip(): run(stmt, at)",
+].join("\n");
+
+const sql: LanguageDefinition = {
+  id: "sql",
+  name: "SQL",
+  version: "SQLite 3",
+  extensions: [".sql"],
+  monacoLanguage: "sql",
+  supportLevel: "beta",
+  entryFile: "main.sql",
+  diagnostics: ["plain"],
+  template: [
+    {
+      path: "main.sql",
+      content: `CREATE TABLE students (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  marks INTEGER
+);
+
+INSERT INTO students (name, marks) VALUES
+  ('Asha', 91),
+  ('Ravi', 78),
+  ('Meera', 85);
+
+SELECT name, marks FROM students ORDER BY marks DESC;
+`,
+    },
+  ],
+  runtime: {
+    image: "python:3.13-slim",
+    command: ["python3", "-c", SQL_RUNNER, "{entry}"],
+  },
+};
+
+const html: LanguageDefinition = {
+  id: "html",
+  name: "HTML, CSS, JS",
+  version: "Runs in your browser",
+  extensions: [".html", ".htm"],
+  monacoLanguage: "html",
+  supportLevel: "stable",
+  entryFile: "index.html",
+  diagnostics: [],
+  preview: "browser",
+  template: [
+    {
+      path: "index.html",
+      content: `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My page</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Hello World</h1>
+    <p>You have clicked the button <span id="count">0</span> times.</p>
+    <button id="button">Click me</button>
+
+    <script src="script.js"></script>
+  </body>
+</html>
+`,
+    },
+    {
+      path: "style.css",
+      content: `body {
+  font-family: system-ui, sans-serif;
+  max-width: 40rem;
+  margin: 3rem auto;
+  padding: 0 1rem;
+  color: #1f2328;
+}
+
+button {
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 6px;
+  background: #3574f0;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+`,
+    },
+    {
+      path: "script.js",
+      content: `const button = document.getElementById("button");
+const count = document.getElementById("count");
+let clicks = 0;
+
+button.addEventListener("click", () => {
+  clicks += 1;
+  count.textContent = clicks;
+  console.log("Clicked", clicks);
+});
+`,
+    },
+  ],
+  // Nothing runs on the server: the page is shown in a preview.
+  runtime: { image: "", command: [] },
+};
+
+export const LANGUAGES: readonly LanguageDefinition[] = [java, python, cpp, c, javascript, typescript, html, go, rust, csharp, php, ruby, sql, bash];
 
 const byId = new Map(LANGUAGES.map((l) => [l.id, l]));
 
@@ -251,6 +580,7 @@ export function monacoLanguageForPath(path: string): string {
   for (const lang of LANGUAGES) {
     if (lang.extensions.some((ext) => lower.endsWith(ext))) return lang.monacoLanguage;
   }
+  if (lower.endsWith(".css")) return "css";
   if (lower.endsWith(".json")) return "json";
   if (lower.endsWith(".md")) return "markdown";
   return "plaintext";

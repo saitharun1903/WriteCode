@@ -98,8 +98,10 @@ export function compilePlans(lang: LanguageDefinition, ctx: { entry: string; fil
   }
   const plans: CompilePlan[] = [];
   for (const sources of lists) {
-    if (plans.some((p) => p.sources.join("\n") === sources.join("\n"))) continue;
-    plans.push({ sources, argv: expandCommand(template, { ...base, sources }) });
+    // (A compiler that is given only the entry file runs the same command whatever the list.)
+    const argv = expandCommand(template, { ...base, sources });
+    if (plans.some((p) => p.argv.join("\n") === argv.join("\n"))) continue;
+    plans.push({ sources, argv });
   }
   return plans;
 }

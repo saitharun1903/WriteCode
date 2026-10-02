@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import Docker from "dockerode";
-import { GDB_IMAGE, LANGUAGES } from "@cw/shared";
+import { DOTNET_IMAGE, GDB_IMAGE, GO_IMAGE, LANGUAGES } from "@cw/shared";
 import type { Logger } from "./logger.js";
 import { SANDBOX_LABEL } from "./sandbox/sandbox.js";
 
@@ -40,7 +40,8 @@ async function pull(docker: Docker, image: string): Promise<void> {
 /** Returns ids of languages whose sandbox image is present locally. */
 export async function readyLanguages(docker: Docker): Promise<string[]> {
   const out: string[] = [];
-  for (const lang of LANGUAGES) if (await hasImage(docker, lang.runtime.image)) out.push(lang.id);
+  // A language that runs in the browser needs no image.
+  for (const lang of LANGUAGES) if (lang.preview || (await hasImage(docker, lang.runtime.image))) out.push(lang.id);
   return out;
 }
 
@@ -48,7 +49,7 @@ export async function readyLanguages(docker: Docker): Promise<string[]> {
  * Images the worker builds itself: a pulled image plus tools (gdb for C/C++
  * debugging and visualizing), from a Dockerfile shipped in sandbox-images/.
  */
-const BUILT_IMAGES: Record<string, string> = { [GDB_IMAGE]: "gcc-gdb" };
+const BUILT_IMAGES: Record<string, string> = { [GDB_IMAGE]: "gcc-gdb", [GO_IMAGE]: "golang", [DOTNET_IMAGE]: "dotnet" };
 const IMAGES_DIR = new URL("../sandbox-images/", import.meta.url);
 
 async function build(docker: Docker, image: string, folder: string): Promise<void> {
@@ -64,7 +65,8 @@ async function build(docker: Docker, image: string, folder: string): Promise<voi
 
 /** Pulls any missing sandbox images, one at a time, then builds the worker's own, reporting progress. */
 export async function ensureImages(docker: Docker, log: Logger, onProgress: () => void): Promise<void> {
-  const images = [...new Set(LANGUAGES.map((l) => l.runtime.image))];
+  // Pulled here: the images that are used as they come. The worker's own are built below (their base images are pulled by the build).
+  const images = [...new Set(LANGUAGES.filter((l) => !l.preview).map((l) => l.runtime.image))].filter((image) => !(image in BUILT_IMAGES));
   for (const image of images) {
     if (await hasImage(docker, image)) continue;
     log.info("pulling sandbox image", { image });

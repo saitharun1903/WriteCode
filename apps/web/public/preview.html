@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Preview</title>
+<script>
+  // The frame a web project is shown in. It is only ever used sandboxed (an
+  // origin of its own, "null"), where the page it shows can reach nothing of
+  // the site around it; opened any other way, it does nothing.
+  if (window.origin === "null" && window.parent !== window) {
+    window.addEventListener("message", function (e) {
+      if (e.source !== window.parent || !e.data || e.data.cw !== "render" || typeof e.data.html !== "string") return;
+      document.open();
+      document.write(e.data.html);
+      document.close();
+    });
+    window.parent.postMessage({ cw: "ready" }, "*");
+  }
+</script>

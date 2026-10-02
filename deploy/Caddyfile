@@ -30,7 +30,22 @@ www.{$PUBLIC_HOST} {
 {$PUBLIC_HOST} {
 	encode zstd gzip
 
-	header {
+	# The frame a web project (HTML, CSS, JavaScript) is previewed in. The page in it is
+	# someone's own code, so the frame is cut off from this site: "sandbox" gives it an
+	# origin of its own wherever it is opened, where it can read nothing of the site's
+	# storage. In return it may load what any web page may (a CDN, a font, a picture).
+	@preview path /preview.html
+	header @preview {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "sandbox allow-scripts allow-forms allow-modals allow-popups; default-src * data: blob: 'unsafe-inline' 'unsafe-eval'; frame-ancestors 'self'"
+		-Server
+	}
+
+	@site not path /preview.html
+	header @site {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"

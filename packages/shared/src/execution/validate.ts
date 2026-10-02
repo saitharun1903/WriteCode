@@ -41,6 +41,7 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
   if (typeof body.language !== "string" || !getLanguage(body.language)) {
     return { ok: false, error: `Unsupported language: ${String(body.language)}` };
   }
+  if (getLanguage(body.language)!.preview) return { ok: false, error: `${getLanguage(body.language)!.name} runs in your browser: press Run to see the page in the preview.` };
   if (!Array.isArray(body.files) || body.files.length === 0) {
     return { ok: false, error: "At least one file is required." };
   }

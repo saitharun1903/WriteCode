@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import {
+  getLanguage,
   isTerminalStatus,
   parseDiagnostics,
   runTarget,
@@ -18,6 +19,7 @@ import { useSettings } from "@/features/settings/store";
 import { createId } from "@/lib/id";
 import { useDebug } from "@/features/debug/store";
 import { useVisualize } from "@/features/visualize/store";
+import { usePreview } from "@/features/preview/store";
 import { ApiError, api, streamExecution, waitForResult, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
@@ -238,6 +240,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
     async execute(options) {
       const mode = options?.mode ?? "run";
+      // A page that runs in the browser is shown in the preview; nothing is sent to a sandbox.
+      const project = useWorkspace.getState().project;
+      if (project && getLanguage(project.language)?.preview) return void usePreview.getState().run();
       if (starting || isOwnRun(get().run)) return;
       starting = true;
       try {

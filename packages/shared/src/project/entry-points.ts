@@ -179,8 +179,12 @@ function pythonGuardLine(source: string): number | null {
   return null;
 }
 
-function cMainLine(source: string): number | null {
+function cMainLine(source: string, pattern?: string): number | null {
   const masked = maskSource(source, "c");
+  if (pattern) {
+    const m = new RegExp(pattern, "m").exec(masked);
+    return m ? lineAt(source, m.index + (m[0].length - m[0].trimStart().length)) : null;
+  }
   let depth = 0;
   for (const m of masked.matchAll(/[{}]|\bint\s+main\s*\(/g)) {
     if (m[0] === "{") depth++;
@@ -203,7 +207,8 @@ function isSource(language: string, path: string): boolean {
  * a `__main__` guard. Languages with no marker list none.
  */
 export function findEntryPoints(language: string, files: readonly SourceFile[]): EntryPoint[] {
-  const style = getLanguage(language)?.entryPoints;
+  const lang = getLanguage(language);
+  const style = lang?.entryPoints;
   if (!style) return [];
   const out: EntryPoint[] = [];
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));
@@ -216,7 +221,7 @@ export function findEntryPoints(language: string, files: readonly SourceFile[]):
         out.push({ file: f.path, line: m.line, label: mainClass.replaceAll("$", "."), mainClass });
       }
     } else {
-      const line = style === "function-main" ? cMainLine(f.content) : pythonGuardLine(f.content);
+      const line = style === "function-main" ? cMainLine(f.content, lang?.entryPattern) : pythonGuardLine(f.content);
       if (line) out.push({ file: f.path, line, label: f.path });
     }
   }

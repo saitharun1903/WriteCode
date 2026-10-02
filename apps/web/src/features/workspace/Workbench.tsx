@@ -5,6 +5,8 @@ import { AnimatePresence, motion, useDragControls, useReducedMotion } from "moti
 import dynamic from "next/dynamic";
 import { Bug, FileText, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
+import { getLanguage } from "@cw/shared";
+import { useWorkspace } from "@/features/projects/store";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileExplorer } from "@/features/explorer/FileExplorer";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -83,12 +85,13 @@ function DesktopWorkbench() {
     if (!layout.assistantOpen && !p.isCollapsed()) p.collapse();
   }, [layout.assistantOpen]);
 
-  // The visualizer draws frames and objects side by side; give it room when it opens.
+  // The visualizer draws frames and objects side by side, and a web page needs room to be seen: give them room when they open.
+  const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
   useEffect(() => {
     const p = bottomRef.current;
-    if (!p || !layout.bottomOpen || layout.bottomTab !== "visualize") return;
+    if (!p || !layout.bottomOpen || !(layout.bottomTab === "visualize" || (layout.bottomTab === "run" && previews))) return;
     if (p.getSize().asPercentage < 50) p.resize("55%");
-  }, [layout.bottomOpen, layout.bottomTab]);
+  }, [layout.bottomOpen, layout.bottomTab, previews]);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -296,6 +299,7 @@ function CompactWorkbench() {
   const run = useExecution((s) => s.run);
   const paused = useDebug((s) => s.phase === "paused");
   const keyboard = useKeyboardOpen();
+  const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
   const tablet = useMediaQuery("(min-width: 700px)");
   // Wide enough for the assistant to stand beside the code.
   const roomy = useMediaQuery("(min-width: 1000px)");
@@ -356,7 +360,7 @@ function CompactWorkbench() {
           <div className="min-h-0 flex-1" onFocusCapture={() => setTypingCode(true)} onBlurCapture={() => setTypingCode(false)}>
             <EditorArea />
           </div>
-          {drawer === "bottom" && <div className={cn("shrink-0 border-t border-line bg-surface", bottomTab === "visualize" && !restricted ? "h-[58%]" : "h-[44%]", under)}>{bottom}</div>}
+          {drawer === "bottom" && <div className={cn("shrink-0 border-t border-line bg-surface", (bottomTab === "visualize" || (bottomTab === "run" && previews)) && !restricted ? "h-[58%]" : "h-[44%]", under)}>{bottom}</div>}
           {drawer === "assistant" && !roomy && <div className={cn("h-[58%] shrink-0 border-t border-line bg-surface", under)}>{assistant}</div>}
         </div>
         {drawer === "assistant" && roomy && <div className="w-[400px] shrink-0 border-l border-line bg-surface">{assistant}</div>}

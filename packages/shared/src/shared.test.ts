@@ -18,6 +18,7 @@ import {
   validateExecutionRequest,
   validateName,
   parseDebugCommand,
+  requireLanguage,
 } from "./index.js";
 
 describe("language registry", () => {
@@ -26,7 +27,8 @@ describe("language registry", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const lang of LANGUAGES) {
       expect(lang.template.some((f) => f.path === lang.entryFile)).toBe(true);
-      expect(lang.runtime.image).toMatch(/:/);
+      // A language that runs in the browser has no sandbox image.
+      if (!lang.preview) expect(lang.runtime.image).toMatch(/:/);
     }
   });
 
@@ -230,13 +232,16 @@ describe("debug protocol", () => {
     expect(validateExecutionRequest({ ...base, tests: ["x"] }).ok).toBe(false);
   });
 
-  it("debugs and visualizes every language; rejects bad breakpoints", () => {
+  it("debugs and visualizes the languages that say they can, and no others; rejects bad breakpoints", () => {
     for (const lang of LANGUAGES) {
       const entry = lang.entryFile;
-      for (const mode of ["debug", "visualize"] as const) {
-        expect(validateExecutionRequest({ language: lang.id, files: [{ path: entry, content: "" }], entry, mode }).ok, `${lang.id} ${mode}`).toBe(true);
-      }
+      const request = (mode: string) => validateExecutionRequest({ language: lang.id, files: [{ path: entry, content: "" }], entry, mode }).ok;
+      expect(request("debug"), `${lang.id} debug`).toBe(!!lang.debugger && !lang.preview);
+      expect(request("visualize"), `${lang.id} visualize`).toBe(!!lang.visualizer && !lang.preview);
+      // A page that runs in the browser is never sent to a sandbox.
+      expect(request("run"), `${lang.id} run`).toBe(!lang.preview);
     }
+    for (const id of ["java", "python", "c", "cpp", "javascript", "typescript"]) expect(getLanguage(id)?.debugger && getLanguage(id)?.visualizer, id).toBeTruthy();
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Main.java": [0] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "fly" }).ok).toBe(false);
@@ -324,7 +329,7 @@ describe("what Run builds and starts", () => {
   });
 
   it("every language says how it is built, where programs start and how errors read", () => {
-    for (const lang of LANGUAGES) {
+    for (const lang of LANGUAGES.filter((l) => !l.preview)) {
       expect(lang.diagnostics.length, lang.id).toBeGreaterThan(0);
       expect(anyFileIsRunnable(lang.id), lang.id).toBe(!lang.compiler);
       // A compiled language has to say where a program starts, or Run could not tell programs apart.
@@ -368,5 +373,69 @@ describe("what Run builds and starts", () => {
     // The debugger's build follows the same plan.
     expect(compilePlans(cpp, { entry: "main.cpp", files }, cpp.debugger!.compiler)[0]!.argv).toEqual(["g++", "-std=c++20", "-O0", "-g3", "-Wall", "-o", "out/main", "main.cpp", "util.cpp"]);
     expect(compilePlans(getLanguage("python")!, { entry: "main.py", files: [] })).toEqual([]);
+  });
+});
+
+describe("errors of the languages added later", () => {
+  const first = (language: string, text: string, files: string[]) => parseDiagnostics(language, text, files)[0];
+
+  it("Go: compiler errors and the place of a panic", () => {
+    expect(parseDiagnostics("go", "# command-line-arguments\n./main.go:6:2: declared and not used: x\n./main.go:7:14: undefined: y\n", ["main.go"])).toEqual([
+      { file: "main.go", line: 6, column: 2, severity: "error", message: "declared and not used: x", source: "compiler" },
+      { file: "main.go", line: 7, column: 14, severity: "error", message: "undefined: y", source: "compiler" },
+    ]);
+    expect(first("go", "panic: runtime error: index out of range [3] with length 1\n\ngoroutine 1 [running]:\nmain.main()\n\t/workspace/main.go:8 +0x17\n", ["main.go"])).toMatchObject({ file: "main.go", line: 8, source: "runtime", message: "panic: runtime error: index out of range [3] with length 1" });
+  });
+
+  it("Rust: an error with its arrow line, and a panic", () => {
+    expect(first("rust", 'error[E0308]: mismatched types\n --> main.rs:1:26\n  |\n1 | fn main() { let x: i32 = "a"; }\n', ["main.rs"])).toEqual({ file: "main.rs", line: 1, column: 26, severity: "error", message: "mismatched types", source: "compiler" });
+    expect(first("rust", "\nthread 'main' panicked at main.rs:1:46:\nindex out of bounds: the len is 1 but the index is 3\nnote: run with `RUST_BACKTRACE=1`\n", ["main.rs"])).toMatchObject({ line: 1, column: 46, source: "runtime", message: "index out of bounds: the len is 1 but the index is 3" });
+  });
+
+  it("C#: the compiler's line and column, and the line an exception was thrown on", () => {
+    expect(first("csharp", "Program.cs(5,13): error CS0029: Cannot implicitly convert type 'string' to 'int'\n", ["Program.cs"])).toEqual({ file: "Program.cs", line: 5, column: 13, severity: "error", message: "Cannot implicitly convert type 'string' to 'int' (CS0029)", source: "compiler" });
+    expect(first("csharp", "Unhandled exception. System.IndexOutOfRangeException: Index was outside the bounds of the array.\n   at Program.Main(String[] args) in /workspace/Program.cs:line 8\n", ["Program.cs"])).toMatchObject({ file: "Program.cs", line: 8, source: "runtime", message: "System.IndexOutOfRangeException: Index was outside the bounds of the array." });
+  });
+
+  it("PHP, Ruby, Bash and SQL", () => {
+    expect(first("php", '\nParse error: syntax error, unexpected token "echo" in /workspace/main.php on line 3\n', ["main.php"])).toMatchObject({ file: "main.php", line: 3, source: "compiler" });
+    expect(first("php", "\nFatal error: Uncaught Exception: boom in /workspace/main.php:2\nStack trace:\n#0 /workspace/main.php(3): f()\n", ["main.php"])).toMatchObject({ line: 2, source: "runtime", message: "Uncaught Exception: boom" });
+    expect(first("ruby", "main.rb:2:in 'Object#f': boom (RuntimeError)\n\tfrom main.rb:4:in '<main>'\n", ["main.rb"])).toMatchObject({ line: 2, source: "runtime", message: "boom (RuntimeError)" });
+    expect(first("ruby", "main.rb: --> main.rb\n\nmain.rb:2: syntax error found (SyntaxError)\n", ["main.rb"])).toMatchObject({ line: 2, source: "compiler" });
+    expect(parseDiagnostics("bash", "main.sh: line 2: foo: command not found\nmain.sh: line 5: syntax error near unexpected token `then'\nmain.sh: line 5: `if then'\n", ["main.sh"]).map((d) => [d.line, d.message])).toEqual([
+      [2, "foo: command not found"],
+      [5, "syntax error near unexpected token `then'"],
+    ]);
+    expect(first("sql", "main.sql:7: error: no such table: student\n", ["main.sql"])).toMatchObject({ line: 7, message: "no such table: student" });
+  });
+});
+
+describe("where a program starts, in the languages added later", () => {
+  const starts = (language: string, path: string, content: string) => findEntryPoints(language, [{ path, content }]).map((e) => e.line);
+
+  it("finds the main function each language declares, not one in a comment", () => {
+    expect(starts("go", "main.go", "package main\n\n// func main() {}\nfunc main() {\n}\n")).toEqual([4]);
+    expect(starts("go", "util.go", "package main\n\nfunc twice(x int) int { return x * 2 }\n")).toEqual([]);
+    expect(starts("rust", "main.rs", "mod util;\n\nfn main() {\n}\n")).toEqual([3]);
+    expect(starts("csharp", "Program.cs", "using System;\n\nclass Program\n{\n    static async Task Main(string[] args)\n    {\n    }\n}\n")).toEqual([5]);
+    expect(starts("csharp", "Util.cs", "static class Util { public static int Twice(int x) => x * 2; }\n")).toEqual([]);
+  });
+
+  it("a compiler given only the entry file is asked once", () => {
+    const files = [
+      { path: "main.rs", content: "mod util;\nfn main() {}\n" },
+      { path: "util.rs", content: "pub fn twice(x: i32) -> i32 { x * 2 }\n" },
+    ];
+    const plans = compilePlans(requireLanguage("rust"), { entry: "main.rs", files });
+    expect(plans.map((p) => p.argv.at(-1))).toEqual(["main.rs"]);
+    // Go and C# link every file that is not a program of its own.
+    const go = compilePlans(requireLanguage("go"), { entry: "a.go", files: [{ path: "a.go", content: "package main\nfunc main() {}\n" }, { path: "b.go", content: "package main\nfunc main() {}\n" }, { path: "c.go", content: "package main\nfunc f() {}\n" }] });
+    expect(go[0]!.sources).toEqual(["a.go", "c.go"]);
+  });
+
+  it("a language that runs in the browser names no sandbox image", () => {
+    const html = requireLanguage("html");
+    expect(html.preview).toBe("browser");
+    expect(html.runtime.image).toBe("");
   });
 });

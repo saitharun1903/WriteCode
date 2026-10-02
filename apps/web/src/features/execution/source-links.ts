@@ -13,12 +13,13 @@
 export type Segment = { text: string } | { text: string; file: string; line: number; column?: number };
 
 const SANDBOX = /^\/?workspace\//;
-const EXT = "java|py|cpp|cc|cxx|hpp|h|c|js|mjs|cjs|ts|mts";
+const EXT = "java|py|cpp|cc|cxx|hpp|h|c|js|mjs|cjs|ts|mts|go|rs|cs|php|rb|sql|sh";
 const PATTERN = new RegExp(
   // Python: File "path", line N
   `File "([^"\\n]+)", line (\\d+)` +
-    // Everything else: path:line[:column], the path made of path characters and ending in a source extension.
-    `|((?:/?workspace/)?[A-Za-z0-9_./-]*[A-Za-z0-9_-]\\.(?:${EXT})):(\\d+)(?::(\\d+))?`,
+    // Everything else: a path made of path characters and ending in a source extension, then its line as
+    // `:line[:column]`, `(line[,column])` (C#, PHP), or the words ` on line ` (PHP), `: line ` (Bash) or `:line ` (.NET).
+    `|((?:/?workspace/)?[A-Za-z0-9_./-]*[A-Za-z0-9_-]\\.(?:${EXT}))(?::(\\d+)(?::(\\d+))?|\\((\\d+)(?:,(\\d+))?\\)|(?: on line |: line |:line )(\\d+))`,
   "g",
 );
 
@@ -36,8 +37,8 @@ export function linkSources(text: string, files: readonly string[]): Segment[] {
   let at = 0;
   for (const m of text.matchAll(PATTERN)) {
     const printed = m[1] ?? m[3]!;
-    const line = Number(m[2] ?? m[4]);
-    const column = m[5] ? Number(m[5]) : undefined;
+    const line = Number(m[2] ?? m[4] ?? m[6] ?? m[8]);
+    const column = (m[5] ?? m[7]) ? Number(m[5] ?? m[7]) : undefined;
     const file = resolveFile(printed, files);
     if (!file || !line) continue;
     if (m.index > at) out.push({ text: text.slice(at, m.index) });

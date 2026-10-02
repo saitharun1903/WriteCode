@@ -41,6 +41,14 @@ const MARKS: Record<string, { text: string; bg: string; fg: string }> = {
   c: { text: "C", bg: "#5c6bc0", fg: "#fff" },
   javascript: { text: "JS", bg: "#f0db4f", fg: "#1e1f22" },
   typescript: { text: "TS", bg: "#3178c6", fg: "#fff" },
+  html: { text: "</>", bg: "#c9451a", fg: "#fff" },
+  go: { text: "Go", bg: "#007d9c", fg: "#fff" },
+  rust: { text: "Rs", bg: "#8f3b12", fg: "#fff" },
+  csharp: { text: "C#", bg: "#68217a", fg: "#fff" },
+  php: { text: "php", bg: "#4f5b93", fg: "#fff" },
+  ruby: { text: "Rb", bg: "#b5241c", fg: "#fff" },
+  sql: { text: "SQL", bg: "#0f5f85", fg: "#fff" },
+  bash: { text: "$_", bg: "#2e3436", fg: "#8ae234" },
 };
 
 export function LanguageMark({ id, size = 40, className }: { id: string; size?: number; className?: string }) {
@@ -55,6 +63,9 @@ export function LanguageMark({ id, size = 40, className }: { id: string; size?: 
     </span>
   );
 }
+
+/** The languages with the debugger and the visualizer, by name. */
+const withTools = LANGUAGES.filter((l) => l.debugger && l.visualizer).map((l) => l.name);
 
 /** Welcome screen shown when no project is open. */
 export function StartScreen() {
@@ -90,7 +101,7 @@ export function StartScreen() {
             <span aria-hidden className="cw-caret" />
           </h1>
           <p className="mt-3 max-w-2xl text-[15px] leading-snug text-fg-muted">
-            Free online compiler, debugger and visualizer for {LANGUAGES.slice(0, -1).map((l) => l.name).join(", ")} and {LANGUAGES[LANGUAGES.length - 1]!.name}.
+            Free online compiler for {LANGUAGES.length} languages, with a debugger and visualizer for {withTools.slice(0, -1).join(", ")} and {withTools[withTools.length - 1]}, and a live preview for HTML and CSS.
           </p>
           <p className="mt-2 font-mono text-xs text-fg-subtle">no sign-up · nothing to install · saved in this browser</p>
         </header>
