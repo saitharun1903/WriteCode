@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  SQL_STATE_FILE,
+  SQL_STATE_MARK,
+  splitSqlOutput,
+  sqlStateFile,
   LANGUAGES,
   anyFileIsRunnable,
   buildTree,
@@ -395,6 +399,23 @@ describe("errors of the languages added later", () => {
   it("C#: the compiler's line and column, and the line an exception was thrown on", () => {
     expect(first("csharp", "Program.cs(5,13): error CS0029: Cannot implicitly convert type 'string' to 'int'\n", ["Program.cs"])).toEqual({ file: "Program.cs", line: 5, column: 13, severity: "error", message: "Cannot implicitly convert type 'string' to 'int' (CS0029)", source: "compiler" });
     expect(first("csharp", "Unhandled exception. System.IndexOutOfRangeException: Index was outside the bounds of the array.\n   at Program.Main(String[] args) in /workspace/Program.cs:line 8\n", ["Program.cs"])).toMatchObject({ file: "Program.cs", line: 8, source: "runtime", message: "System.IndexOutOfRangeException: Index was outside the bounds of the array." });
+  });
+
+  it("SQL: what a run prints is told apart from the database it leaves", () => {
+    const report = { v: 1, log: [{ line: 1, sql: "SELECT 1;", message: "1 row returned", ok: true, ms: 0.1 }], tables: [{ name: "t", kind: "table", columns: [{ name: "id", type: "INTEGER", pk: true }], rows: 2 }], data: "eJw=", names: ["school"], current: "school" };
+    const out = splitSqlOutput(`a\n-\n1\n(1 row)\n\n${SQL_STATE_MARK}${JSON.stringify(report)}\n`);
+    expect(out.text).toBe("a\n-\n1\n(1 row)\n\n");
+    expect(out.report).toEqual({ log: report.log, database: { data: "eJw=", names: ["school"], current: "school", tables: report.tables } });
+    // The next run is sent what the last one left.
+    expect(JSON.parse(sqlStateFile(out.report!.database))).toEqual({ data: "eJw=", names: ["school"], current: "school" });
+    expect(JSON.parse(sqlStateFile(undefined))).toEqual({ data: "", names: [], current: null });
+    // Output with nothing after it, a report that was cut, and one whose database could not be kept.
+    expect(splitSqlOutput("x\n")).toEqual({ text: "x\n", report: null });
+    expect(splitSqlOutput(`x\n${SQL_STATE_MARK}{"v":1,"log":[`)).toEqual({ text: "x\n", report: null });
+    expect(splitSqlOutput(`x\n${SQL_STATE_MARK}${JSON.stringify({ log: [], tables: [], tooLarge: true, names: [], current: null })}\n`).report).toEqual({ log: [], tooLarge: true });
+    // What is not a database is not taken for one.
+    expect(splitSqlOutput(`${SQL_STATE_MARK}${JSON.stringify({ log: [], tables: [{ name: 1 }], data: "", names: [] })}`).report).toEqual({ log: [] });
+    expect(getLanguage("sql")?.database?.file).toBe(SQL_STATE_FILE);
   });
 
   it("PHP, Ruby, Bash and SQL", () => {

@@ -1,5 +1,6 @@
 import type { ExecutionResult } from "../execution/types.js";
 import type { InterviewRecord, InterviewVerdict } from "../live/interview.js";
+import type { SqlDatabase } from "../languages/sql-state.js";
 
 export interface ProjectFile {
   /** Relative path using `/` separators, e.g. `src/Main.java`. */
@@ -39,6 +40,8 @@ export interface Project {
   lastRunAt?: number;
   /** The project is an interview this browser gave: what happened in it. */
   interview?: InterviewRecord;
+  /** A SQL project's database, as its last run left it. Unset until a run makes something in it. */
+  database?: SqlDatabase;
 }
 
 /** An interview in the start screen's list. */

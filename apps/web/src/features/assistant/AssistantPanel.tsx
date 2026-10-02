@@ -181,7 +181,7 @@ const MessageContext = createContext<{ id: string; pending: boolean }>({ id: "",
 function EditCard({ body, index }: { body: string; index: number }) {
   const { id, pending } = useContext(MessageContext);
   const key = `${id}:${index}`;
-  const block = useMemo(() => parseEditBlock(body), [body]);
+  const block = useMemo(() => parseEditBlock(body, !pending), [body, pending]);
   const applied = useAssistant((s) => s.applied[key]);
   const target = block ? editTarget(block.file) : null;
   const content = useWorkspace((s) => (target ? (s.project?.files.find((f) => f.path === target)?.content ?? null) : null));
@@ -399,7 +399,9 @@ function Message({ message, last }: { message: ChatMessage; last: boolean }) {
   const retry = useAssistant((s) => s.retry);
   const streaming = useAssistant((s) => s.streaming);
   const text = useSmoothText(message.text, !!message.pending);
-  const context = useMemo(() => ({ id: message.id, pending: !!message.pending }), [message.id, message.pending]);
+  // An answer is still arriving until all of it is on screen: its last edit block may be half shown.
+  const arriving = !!message.pending || text.length < message.text.length;
+  const context = useMemo(() => ({ id: message.id, pending: arriving }), [message.id, arriving]);
 
   if (message.role === "user") {
     return (

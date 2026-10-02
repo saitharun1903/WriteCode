@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowRight, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronDown, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -65,6 +65,22 @@ export function LanguageMark({ id, size = 40, className }: { id: string; size?: 
   );
 }
 
+/** The languages most people come for are shown first; the rest are one press away. */
+const POPULAR = ["python", "java", "cpp", "c", "javascript", "html", "sql", "typescript"];
+const popular = POPULAR.map((id) => LANGUAGES.find((l) => l.id === id)).filter((l) => !!l);
+const others = LANGUAGES.filter((l) => !POPULAR.includes(l.id));
+
+/** The parts of the start screen, in the order they come. */
+const SECTIONS = [
+  { id: "new", label: "New project" },
+  { id: "recent", label: "Recent" },
+  { id: "interviews", label: "Interviews" },
+  { id: "about", label: "What’s inside" },
+  { id: "faq", label: "Questions" },
+] as const;
+/** Recent projects shown before "Show all". */
+const SHOWN = 6;
+
 /** The languages with the debugger and the visualizer, by name. */
 const withTools = LANGUAGES.filter((l) => l.debugger && l.visualizer).map((l) => l.name);
 
@@ -83,6 +99,25 @@ export function StartScreen() {
   const filtered = projects.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const temporary = useWorkspace((s) => s.temporaryMode);
+  const [more, setMore] = useState(false);
+  const [allShown, setAllShown] = useState(false);
+  const [allInterviews, setAllInterviews] = useState(false);
+  // The part of the page in view, for the links that stay at its top.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [section, setSection] = useState<string>("new");
+  const spy = () => {
+    const el = scroller.current;
+    if (!el) return;
+    const line = el.getBoundingClientRect().top + 96;
+    let current: string = SECTIONS[0].id;
+    for (const sec of SECTIONS) {
+      const node = document.getElementById(sec.id);
+      if (node && node.getBoundingClientRect().top <= line) current = sec.id;
+    }
+    // At the very end the last part may never reach the top.
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) current = SECTIONS[SECTIONS.length - 1]!.id;
+    if (current !== section) setSection(current);
+  };
 
   const create = async (id: string, name: string) => {
     setBusy(id);
@@ -93,10 +128,31 @@ export function StartScreen() {
   /** A temporary project needs no name: it is gone when it is closed. */
   const pick = (id: string) => (temporary ? void create(id, `${getLanguage(id)?.name ?? "Temporary"} project`) : setNaming(id));
 
+  const tile = (lang: (typeof LANGUAGES)[number]) => (
+    <button
+      key={lang.id}
+      aria-label={`New ${lang.name} project`}
+      disabled={!!busy}
+      onClick={() => pick(lang.id)}
+      className={cn(
+        "group flex items-center gap-3 rounded-xl border bg-surface p-3 text-left transition-[border-color,transform] duration-150 sm:p-3.5",
+        "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
+        temporary ? "border-dashed border-accent/60" : "border-line-strong",
+      )}
+    >
+      <LanguageMark id={lang.id} size={42} className="max-sm:size-10! max-sm:text-[15px]!" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold text-fg">{lang.name}</span>
+        {temporary && <span className="block truncate text-[13px] text-fg-subtle">Not saved</span>}
+      </span>
+      {temporary && <Hourglass className="hidden size-3.5 shrink-0 text-accent-ink sm:block" />}
+    </button>
+  );
+
   return (
-    <div className="h-full overflow-y-auto bg-surface-2">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8 sm:py-14">
-        <header className="mb-10">
+    <div ref={scroller} onScroll={spy} className="h-full overflow-y-auto bg-surface-2">
+      <div className="mx-auto max-w-5xl px-4 pb-8 pt-8 sm:px-8 sm:pb-14 sm:pt-12">
+        <header>
           <h1 className="text-[32px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[38px]" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
             {PRODUCT.name}
             <span aria-hidden className="cw-caret" />
@@ -107,11 +163,37 @@ export function StartScreen() {
           <p className="mt-2 font-mono text-xs text-fg-subtle">no sign-up · nothing to install · saved in this browser</p>
         </header>
 
-        <section aria-labelledby="new-heading">
+        {/* Where everything on this page is: it stays in view while the page scrolls. */}
+        <nav aria-label="On this page" className="sticky top-0 z-20 -mx-4 mt-6 border-b border-line-strong/60 bg-surface-2 px-4 sm:-mx-8 sm:px-8">
+          <ul className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
+            {SECTIONS.map((sec) => (
+              <li key={sec.id} className="shrink-0">
+                <button
+                  type="button"
+                  aria-current={section === sec.id ? "true" : undefined}
+                  onClick={() => document.getElementById(sec.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors [[data-touch]_&]:h-9",
+                    section === sec.id ? "bg-accent-soft text-accent-ink" : "text-fg-muted hover:bg-hover hover:text-fg",
+                  )}
+                >
+                  {sec.label}
+                  {sec.id === "recent" && projects.length > 0 && <span className="font-mono text-[11px] font-normal opacity-70">{projects.length}</span>}
+                  {sec.id === "interviews" && interviews.length > 0 && <span className="font-mono text-[11px] font-normal opacity-70">{interviews.length}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <section id="new" aria-labelledby="new-heading" className="scroll-mt-16 pt-8">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
-              New project
-            </h2>
+            <div>
+              <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
+                New project
+              </h2>
+              <p className="mt-1 text-[13px] text-fg-subtle">Pick a language. The editor opens with a program you can run straight away.</p>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -144,30 +226,29 @@ export function StartScreen() {
               </p>
             </div>
           )}
-          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-3">
-            {LANGUAGES.map((lang) => (
-              <button
-                key={lang.id}
-                aria-label={`New ${lang.name} project`}
-                disabled={!!busy}
-                onClick={() => pick(lang.id)}
-                className={cn(
-                  "group flex items-center gap-3 rounded-xl border bg-surface p-3 text-left transition-[border-color,transform] duration-150 sm:gap-4 sm:p-4",
-                  "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
-                  temporary ? "border-dashed border-accent/60" : "border-line-strong",
-                )}
-              >
-                <LanguageMark id={lang.id} size={46} className="max-sm:size-10! max-sm:text-[15px]!" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-semibold text-fg sm:text-base">{lang.name}</span>
-                  {temporary && <span className="block truncate text-sm text-fg-subtle">Not saved</span>}
-                </span>
-                <span className="hidden size-7 shrink-0 items-center justify-center rounded-full text-fg-faint transition-colors group-hover:bg-accent group-hover:text-accent-fg sm:flex">
-                  {temporary ? <Hourglass className="size-3.5" /> : <ArrowRight className="size-4" />}
-                </span>
-              </button>
-            ))}
-          </div>
+          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">{popular.map(tile)}</div>
+          {more && (
+            <div id="more-languages" className="mt-2.5 grid grid-cols-2 gap-2.5 sm:mt-3 sm:gap-3 lg:grid-cols-4">
+              {others.map(tile)}
+            </div>
+          )}
+          <button
+            type="button"
+            aria-expanded={more}
+            aria-controls="more-languages"
+            onClick={() => setMore(!more)}
+            className="mt-2.5 flex h-11 w-full items-center justify-center gap-2.5 rounded-xl border border-dashed border-line-strong text-[13px] font-medium text-fg-muted transition-colors hover:border-accent hover:text-fg sm:mt-3"
+          >
+            {more ? "Fewer languages" : "More languages"}
+            {!more && (
+              <span aria-hidden className="flex items-center gap-1">
+                {others.map((l) => (
+                  <LanguageMark key={l.id} id={l.id} size={20} className="rounded-[5px]" />
+                ))}
+              </span>
+            )}
+            <ChevronDown className={cn("size-4 transition-transform", more && "rotate-180")} />
+          </button>
         </section>
 
         <NameDialog key={naming ?? "none"} language={naming} taken={allProjects.map((p) => p.name)} busy={!!busy} onCancel={() => setNaming(null)} onCreate={(name) => void create(naming!, name)} />
@@ -178,61 +259,76 @@ export function StartScreen() {
           </p>
         )}
 
-        <section aria-labelledby="recent-heading" className="mt-12">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="recent-heading" className="text-xl font-semibold tracking-tight text-fg">
-              Recent projects {projects.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{projects.length}</span>}
-            </h2>
-            <TransferButton className="sm:ml-auto" />
-            {projects.length > 0 && (
-              <div className="relative w-full sm:w-64">
+        {/* What is already here: projects on the left, interviews beside them. */}
+        <div className="mt-12 grid gap-x-8 gap-y-12 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <section id="recent" aria-labelledby="recent-heading" className="scroll-mt-16">
+            <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <h2 id="recent-heading" className="text-xl font-semibold tracking-tight text-fg">
+                Recent projects {projects.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{projects.length}</span>}
+              </h2>
+              <TransferButton />
+            </div>
+            {projects.length > SHOWN && (
+              <div className="relative mt-3">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
                 <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" className="h-8 pl-8" />
               </div>
             )}
-          </div>
-          {projects.length > 0 ? (
-            <>
-              <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filtered.map((p) => (
-                  <ProjectCard key={p.id} project={p} />
-                ))}
-              </ul>
-              {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
-            </>
-          ) : (
-            <Empty icon={<FolderOpen className="size-5" />}>Nothing here yet. A project shows up once you run it or change its code, and it stays saved in this browser.</Empty>
-          )}
-        </section>
+            {projects.length > 0 ? (
+              <>
+                <ul aria-label="Recent projects" className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {(allShown || query ? filtered : filtered.slice(0, SHOWN)).map((p) => (
+                    <ProjectCard key={p.id} project={p} />
+                  ))}
+                </ul>
+                {filtered.length === 0 && <p className="py-8 text-center text-sm text-fg-subtle">No projects match “{query}”.</p>}
+                {!query && filtered.length > SHOWN && (
+                  <button type="button" onClick={() => setAllShown(!allShown)} className="mt-3 text-[13px] font-medium text-accent-ink hover:underline">
+                    {allShown ? "Show fewer" : `Show all ${filtered.length} projects`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <Empty icon={<FolderOpen className="size-5" />}>Nothing here yet. A project shows up once you run it or change its code, and it stays saved in this browser.</Empty>
+            )}
+          </section>
 
-        <section aria-labelledby="interviews-heading" className="mt-12">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="interviews-heading" className="text-xl font-semibold tracking-tight text-fg">
-              Interviews {interviews.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{interviews.length}</span>}
-            </h2>
-            <Button variant="secondary" className="h-8 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useInterviewUI.getState().openSetup("create")}>
-              New interview
-            </Button>
-          </div>
-          {interviews.length > 0 ? (
-            <ul aria-label="Interviews" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {interviews.map((p) => (
-                <InterviewCard key={p.id} project={p} />
-              ))}
-            </ul>
-          ) : (
-            <Empty icon={<ClipboardList className="size-5" />}>No interviews yet. Set a question with hidden tests and send the candidate a link. Afterwards their code, your notes and the report are kept here.</Empty>
-          )}
-        </section>
+          <section id="interviews" aria-labelledby="interviews-heading" className="scroll-mt-16">
+            <div className="flex min-h-9 flex-wrap items-center justify-between gap-3">
+              <h2 id="interviews-heading" className="text-xl font-semibold tracking-tight text-fg">
+                Interviews {interviews.length > 0 && <span className="ml-1 font-mono text-sm font-normal text-fg-subtle">{interviews.length}</span>}
+              </h2>
+              <Button variant="secondary" className="h-8 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useInterviewUI.getState().openSetup("create")}>
+                New interview
+              </Button>
+            </div>
+            {interviews.length > 0 ? (
+              <>
+                <ul aria-label="Interviews" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  {(allInterviews ? interviews : interviews.slice(0, 3)).map((p) => (
+                    <InterviewCard key={p.id} project={p} />
+                  ))}
+                </ul>
+                {interviews.length > 3 && (
+                  <button type="button" onClick={() => setAllInterviews(!allInterviews)} className="mt-3 text-[13px] font-medium text-accent-ink hover:underline">
+                    {allInterviews ? "Show fewer" : `Show all ${interviews.length} interviews`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <Empty icon={<ClipboardList className="size-5" />}>None yet. Set a question with hidden tests and send the candidate a link. Their code, your notes and the report are kept here.</Empty>
+            )}
+          </section>
+        </div>
 
-        <section aria-labelledby="about-heading" className="mt-16">
+        <section id="about" aria-labelledby="about-heading" className="mt-16 scroll-mt-16">
           <h2 id="about-heading" className="text-xl font-semibold tracking-tight text-fg">
             What’s inside
           </h2>
-          <FeatureDeck />
+          <FeatureDeck top={52} />
         </section>
 
-        <section aria-labelledby="faq-heading" className="mt-12">
+        <section id="faq" aria-labelledby="faq-heading" className="mt-12 scroll-mt-16">
           <h2 id="faq-heading" className="text-xl font-semibold tracking-tight text-fg">
             Questions and answers
           </h2>

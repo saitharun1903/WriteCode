@@ -12,6 +12,10 @@
  *                   high = mid - 1;
  *   >>>>>>> UPDATED
  *   ```
+ *
+ * An edit with nothing in ORIGINAL makes its file when the project has none of
+ * that name, fills the file when it is empty, and otherwise adds its lines at
+ * the end.
  */
 
 export interface EditHunk {
@@ -30,8 +34,13 @@ const START = /^<{5,}\s*ORIGINAL\s*$/;
 const MIDDLE = /^={5,}\s*$/;
 const END = /^>{5,}\s*UPDATED\s*$/;
 
-/** Parses the body of an ```edit block. Returns null when it has no FILE line yet. */
-export function parseEditBlock(body: string): EditBlock | null {
+/**
+ * Parses the body of an ```edit block. Returns null when it has no FILE line yet.
+ * `final`: the answer has ended, so what a model sometimes leaves out is filled
+ * in: the end mark of the last pair, the ORIGINAL mark of a pair with nothing to
+ * replace, or the marks altogether (the lines after FILE are then new lines).
+ */
+export function parseEditBlock(body: string, final = false): EditBlock | null {
   const lines = body.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
   const fileLine = lines.findIndex((l) => /^FILE:\s*\S/.test(l.trim()));
   if (fileLine < 0) return null;
@@ -39,11 +48,15 @@ export function parseEditBlock(body: string): EditBlock | null {
   const hunks: EditHunk[] = [];
   let state: "none" | "original" | "updated" = "none";
   let current: EditHunk = { original: [], updated: [] };
+  /** Lines outside any pair. */
+  const loose: string[] = [];
   for (const line of lines.slice(fileLine + 1)) {
     if (START.test(line.trim())) {
       state = "original";
       current = { original: [], updated: [] };
-    } else if (MIDDLE.test(line.trim()) && state === "original") {
+    } else if (MIDDLE.test(line.trim()) && state !== "updated") {
+      // Without an ORIGINAL mark before it, there is nothing to replace.
+      if (state === "none") current = { original: [], updated: [] };
       state = "updated";
     } else if (END.test(line.trim()) && state === "updated") {
       hunks.push(current);
@@ -52,7 +65,16 @@ export function parseEditBlock(body: string): EditBlock | null {
       current.original.push(line);
     } else if (state === "updated") {
       current.updated.push(line);
-    }
+    } else loose.push(line);
+  }
+  if (final && state === "updated") {
+    hunks.push(current);
+    state = "none";
+  }
+  if (final && state === "none" && hunks.length === 0 && loose.some((l) => l.trim())) {
+    while (loose.length && !loose[0]!.trim()) loose.shift();
+    while (loose.length && !loose[loose.length - 1]!.trim()) loose.pop();
+    hunks.push({ original: [], updated: loose });
   }
   return { file, hunks, complete: state === "none" && hunks.length > 0 };
 }
@@ -104,7 +126,7 @@ export function resolveEdit(content: string | null, block: EditBlock): Resolutio
   }
 
   const eol = content.includes("\r\n") ? "\r\n" : "\n";
-  const trailing = /\r?\n$/.test(content);
+  let trailing = /\r?\n$/.test(content);
   let lines = content.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
   const hunks: ResolvedHunk[] = [];
   for (const hunk of block.hunks) {
@@ -112,7 +134,21 @@ export function resolveEdit(content: string | null, block: EditBlock): Resolutio
     const original = [...hunk.original];
     while (original.length && !original[0]!.trim()) original.shift();
     while (original.length && !original[original.length - 1]!.trim()) original.pop();
-    if (original.length === 0) return { ok: false, reason: "the fix does not say which lines to change" };
+    if (original.length === 0) {
+      if (hunk.updated.every((l) => !l.trim())) return { ok: false, reason: "the fix does not say which lines to change" };
+      if (lines.every((l) => !l.trim())) {
+        // An empty file: the new lines are its content.
+        hunks.push({ startLine: 1, removed: [], added: hunk.updated });
+        lines = [...hunk.updated];
+        trailing = true;
+      } else {
+        // Nothing to replace: the new lines go at the end, a blank line after what is there.
+        const added = lines[lines.length - 1]!.trim() ? ["", ...hunk.updated] : hunk.updated;
+        hunks.push({ startLine: lines.length + 1, removed: [], added });
+        lines = [...lines, ...added];
+      }
+      continue;
+    }
     const found = locate(lines, original);
     if ("error" in found) return { ok: false, reason: found.error };
 

@@ -65,7 +65,7 @@ function SessionTab({ tab }: { tab: BottomTab }) {
     <div className="flex h-full min-w-0 items-center gap-2">
       <span className="relative flex h-full items-center gap-1.5 px-2 text-sm text-fg">
         <FileIcon name={run.entry} />
-        <span className="truncate">{basename(run.entry)}</span>
+        <span className="truncate">{run.title ?? basename(run.entry)}</span>
         <span className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-accent" />
       </span>
       <span className={cn("flex items-center gap-1 text-sm", toneClass[tone])}>

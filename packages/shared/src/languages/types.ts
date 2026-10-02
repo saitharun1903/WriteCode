@@ -106,6 +106,11 @@ export interface LanguageDefinition {
   /** `tables`: the program prints the results of queries as tables (see sql-runner.ts), which the console draws as tables. */
   output?: "tables";
   /**
+   * The project has a database that its runs share (see sql-runner.ts): a run
+   * is sent the database in this file and prints it back after its output.
+   */
+  database?: { file: string };
+  /**
    * Set for a language that runs in the visitor's browser, not in a sandbox:
    * Run shows the page in a preview. Its `runtime` names no image or command.
    */

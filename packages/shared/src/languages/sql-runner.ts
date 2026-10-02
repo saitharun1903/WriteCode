@@ -1,7 +1,6 @@
 /**
  * The program that runs a file of SQL (Python, with the SQLite that ships in
- * it). It runs the file's statements one at a time on a new, empty database
- * and prints:
+ * it). It runs the file's statements one at a time and prints:
  *
  * - the rows of every statement that returns some, as a table: the column
  *   names, a rule, one line per row with ` | ` between the cells, then
@@ -14,18 +13,53 @@
  * An error names the line its statement starts on (`main.sql:7: error: ...`)
  * and stops the run.
  *
+ * The database belongs to the project, as it does in a database tool: a run
+ * starts from what the runs before it left. The sandbox keeps nothing, so the
+ * database travels with the run. It comes in as the file `SQL_STATE_FILE`
+ * (`{ data, names, current }`, `data` being the SQLite database deflated and in
+ * base64), and goes out after the output: the character `SQL_STATE_MARK`, then
+ * one line of JSON with the database as it is now (`data`), its tables and
+ * views with their columns (`tables`), and what every statement did (`log`).
+ * Without the file (a test case, an interview's hidden tests) the run starts
+ * empty and prints nothing after its output.
+ *
  * SQL is taught mostly with MySQL, so what MySQL scripts commonly contain is
  * accepted where SQLite has the same thing under another name: AUTO_INCREMENT
  * columns, table options (ENGINE=...), UNSIGNED, ENUM(...), `#` comments,
- * CREATE DATABASE and USE, SHOW TABLES, DESCRIBE, TRUNCATE, INSERT IGNORE, and
- * functions such as NOW(), CONCAT(), IF() and YEAR(). Nothing else is rewritten.
+ * CREATE DATABASE and USE, SHOW DATABASES, SHOW TABLES, DESCRIBE, TRUNCATE,
+ * INSERT IGNORE, and functions such as NOW(), CONCAT(), IF() and YEAR().
+ * Nothing else is rewritten. There is one database: CREATE DATABASE and USE
+ * name it, and DROP DATABASE of the one in use empties it.
  */
-export const SQL_RUNNER = String.raw`import datetime, random, re, sqlite3, sys
+/** The file a run's database arrives in. */
+export const SQL_STATE_FILE = "cw-database.json";
+/** In a run's output, what follows this character is the database after the run, not something the program printed. */
+export const SQL_STATE_MARK = "\x1e";
+
+export const SQL_RUNNER = String.raw`import base64, datetime, json, os, random, re, sqlite3, sys, time, zlib
 
 path = sys.argv[1]
 src = open(path, encoding="utf-8").read()
 db = sqlite3.connect(":memory:")
 db.isolation_level = None
+
+# ---- the project's database: what the runs before this one left in it
+STATE = "cw-database.json"
+# Without the file (a test, a judge) the run starts empty and leaves nothing behind.
+keeps = os.path.exists(STATE)
+names, current = [], None
+if keeps:
+    try:
+        saved = json.load(open(STATE, encoding="utf-8"))
+        names = [str(n) for n in saved.get("names") or []][:50]
+        current = saved.get("current") if saved.get("current") in names else None
+        if saved.get("data"):
+            db.deserialize(zlib.decompress(base64.b64decode(saved["data"])))
+            db.execute("SELECT count(*) FROM sqlite_master").fetchone()
+    except Exception:
+        db = sqlite3.connect(":memory:")
+        db.isolation_level = None
+        names, current = [], None
 db.execute("PRAGMA foreign_keys = ON")
 
 # ---- functions MySQL has and SQLite names differently or lacks
@@ -80,6 +114,7 @@ for name, n, fn in [
     ("if", 3, lambda c, a, b: a if c else b), ("ucase", 1, _str(str.upper)), ("lcase", 1, _str(str.lower)),
     ("truncate", 2, _truncate), ("rand", 0, random.random), ("char_length", 1, _str(len)), ("reverse", 1, _str(lambda s: s[::-1])),
     ("repeat", 2, _str(lambda s, n: s * max(0, int(n or 0)))),
+    ("database", 0, lambda: current or "main"), ("schema", 0, lambda: current or "main"), ("version", 0, lambda: "SQLite " + sqlite3.sqlite_version),
     ("lpad", 3, _str(lambda s, n, p: s.rjust(int(n), str(p or " ")[:1])[: int(n)])), ("rpad", 3, _str(lambda s, n, p: s.ljust(int(n), str(p or " ")[:1])[: int(n)])),
 ]:
     db.create_function(name, n, fn)
@@ -165,11 +200,13 @@ def cell(v):
     if v is None:
         return "NULL"
     text = "x'" + v.hex() + "'" if isinstance(v, bytes) else str(v)
-    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "\\n").replace("\n", "\\n")
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("\r\n", "\\n").replace("\n", "\\n").replace("\x1e", " ")
 
 def show(cur):
+    global last
     cols = [cell(d[0]) for d in cur.description]
     rows = [[cell(v) for v in r] for r in cur.fetchall()]
+    last = count(len(rows), "returned")
     w = [max([len(c)] + [len(r[i]) for r in rows]) for i, c in enumerate(cols)]
     line = lambda cells: " | ".join(c.ljust(w[i]) for i, c in enumerate(cells)).rstrip()
     print(line(cols))
@@ -187,14 +224,98 @@ def flush_inserts():
     pending = None
 
 def note(text):
+    global last
     flush_inserts()
     print("-- " + text)
+    last = text
+
+# ---- what every statement did, for the list beside the results
+log, last = [], None
+
+def record(at, ps, message, ok, started):
+    if len(log) < 400:
+        text = " ".join("".join(p for p in ps if not (p.startswith("--") or p.startswith("/*"))).split())
+        log.append({"line": at, "sql": text[:200], "message": message, "ok": ok, "ms": round((time.perf_counter() - started) * 1000, 2)})
+
+def objects():
+    """The tables and views of the database, with their columns."""
+    out = []
+    for name, kind in db.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type, name COLLATE NOCASE").fetchall()[:200]:
+        cols, rows = [], None
+        try:
+            refs = {}
+            if kind == "table":
+                for r in db.execute("SELECT * FROM pragma_foreign_key_list(?)", (name,)):
+                    refs[r[3]] = "%s.%s" % (r[2], r[4]) if r[4] else r[2]
+            for c in db.execute('SELECT name, type, "notnull", pk FROM pragma_table_info(?)', (name,)):
+                col = {"name": c[0], "type": c[1] or ""}
+                if c[3]:
+                    col["pk"] = True
+                elif c[2]:
+                    col["notNull"] = True
+                if c[0] in refs:
+                    col["ref"] = refs[c[0]]
+                cols.append(col)
+            if kind == "table":
+                rows = db.execute('SELECT count(*) FROM "%s"' % name.replace('"', '""')).fetchone()[0]
+        except sqlite3.Error:
+            pass
+        out.append({"name": name, "kind": kind, "columns": cols, "rows": rows})
+    return out
+
+def drop_all():
+    db.execute("PRAGMA foreign_keys = OFF")
+    for kind in ("view", "table"):
+        for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%'", (kind,)).fetchall():
+            db.execute('DROP %s IF EXISTS "%s"' % (kind.upper(), name.replace('"', '""')))
+    db.execute("PRAGMA foreign_keys = ON")
+
+def finish(code):
+    """Ends the run. After the output comes the database as it is now, for the next run to start from."""
+    flush_inserts()
+    if keeps:
+        out = {"v": 1, "log": log}
+        try:
+            if db.in_transaction:
+                db.execute("ROLLBACK")
+                print("-- The transaction was not committed, so its changes were rolled back")
+            out["tables"] = objects()
+            data = ""
+            if out["tables"]:
+                try:
+                    db.execute("VACUUM")
+                except sqlite3.Error:
+                    pass
+                data = base64.b64encode(zlib.compress(db.serialize(), 6)).decode("ascii")
+            if len(data) > 240000:
+                out["tooLarge"] = True
+            else:
+                out["data"] = data
+        except Exception as e:
+            out["failed"] = str(e)
+        out["names"], out["current"] = names, current
+        sys.stdout.flush()
+        sys.stdout.write("\x1e" + json.dumps(out) + "\n")
+    sys.stdout.flush()
+    sys.exit(code)
+
+def hint(message):
+    """One more line under an error, when the cause is likely something the run cannot show."""
+    m = re.match(r"(table|view|index|trigger) (.+) already exists", message)
+    if m and keeps:
+        return "It is in the database from an earlier run: the database keeps what was made in it. Write DROP %s IF EXISTS %s; above this statement, or reset the database." % (m.group(1).upper(), m.group(2))
+    if message.startswith("UNIQUE constraint failed") and keeps:
+        return "A row with that value is already in the table. Rows stay in the database from one run to the next, until they are deleted or the database is reset."
+    if message.startswith("no such table"):
+        have = [t["name"] for t in objects() if t["kind"] == "table"]
+        return "The tables in the database: %s." % ", ".join(have[:30]) if have else "The database has no tables yet. Run the CREATE TABLE statements first."
+    return None
 
 def count(n, what):
     return "%d row%s %s" % (n, "" if n == 1 else "s", what)
 
 def run(stmt, at):
-    global pending
+    global pending, last, current
     ps = PIECE.findall(stmt)
     # MySQL's # comments are SQLite's --.
     ps = ["--" + p[1:] if p.startswith("#") else p for p in ps]
@@ -202,63 +323,102 @@ def run(stmt, at):
     w = [p.upper() for p in real]
     if not w:
         return
+    last, started = None, time.perf_counter()
     try:
-        # There is one database: making one and choosing it are accepted, and change nothing.
-        if w[0] in ("CREATE", "DROP") and len(w) > 2 and w[1] in ("DATABASE", "SCHEMA"):
-            return note("Database %s %s" % (name_of(real[-1]), "created" if w[0] == "CREATE" else "dropped"))
-        if w[0] == "USE" and len(w) == 2:
-            return note("Using database " + name_of(real[1]))
-        if w[:2] == ["SHOW", "DATABASES"]:
-            return note("One database is used here; every run starts with it empty")
-        if w[:2] == ["SHOW", "TABLES"]:
-            flush_inserts()
-            return show(db.execute("SELECT name AS Tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"))
-        table = real[1] if w[0] in ("DESCRIBE", "DESC") and len(w) == 2 else real[3] if w[:3] == ["SHOW", "COLUMNS", "FROM"] and len(w) == 4 else None
-        if table is not None:
-            flush_inserts()
-            table = name_of(table)
-            if not db.execute("SELECT 1 FROM pragma_table_info(?)", (table,)).fetchone():
-                raise sqlite3.OperationalError("no such table: " + table)
-            return show(db.execute("SELECT name AS Field, type AS Type, CASE WHEN \"notnull\" OR pk THEN 'NO' ELSE 'YES' END AS \"Null\", CASE WHEN pk THEN 'PRI' ELSE '' END AS \"Key\", dflt_value AS \"Default\" FROM pragma_table_info(?)", (table,)))
-        if w[0] == "TRUNCATE":
-            ps, real = ["DELETE FROM ", real[-1]], ["DELETE", "FROM", real[-1]]
-            w = [p.upper() for p in real]
-        if w[:2] == ["INSERT", "IGNORE"]:
-            i = [p.upper() for p in ps].index("IGNORE")
-            ps = ps[:i] + ["OR IGNORE"] + ps[i + 1 :]
-        if w[0] == "CREATE" and "TABLE" in w[:3]:
-            ps = create_table(ps)
-        before = db.total_changes
-        cur = db.execute("".join(ps))
-        if cur.description:
-            flush_inserts()
-            return show(cur)
-        changed = db.total_changes - before
-        after = lambda word: name_of(real[w.index(word) + 1]) if word in w and w.index(word) + 1 < len(real) else "the table"
-        if w[0] in ("INSERT", "REPLACE"):
-            t = after("INTO")
-            if pending and pending[0] == t:
-                pending[1] += changed
-            else:
-                flush_inserts()
-                pending = [t, changed]
-        elif w[0] == "UPDATE":
-            note(count(changed, "updated in " + name_of(real[1])))
-        elif w[0] == "DELETE":
-            note(count(changed, "deleted from " + after("FROM")))
-        elif w[0] in ("CREATE", "DROP", "ALTER") and any(k in w[:4] for k in ("TABLE", "VIEW", "INDEX", "TRIGGER")):
-            kind = next(k for k in ("TABLE", "VIEW", "INDEX", "TRIGGER") if k in w[:4])
-            i = w.index(kind) + 1
-            while i < len(w) and w[i] in ("IF", "NOT", "EXISTS"):
-                i += 1
-            note("%s %s %s" % (kind.capitalize(), name_of(real[i]) if i < len(real) else "", {"CREATE": "created", "DROP": "dropped", "ALTER": "changed"}[w[0]]))
-        else:
-            flush_inserts()
+        execute(ps, real, w)
+        record(at, ps, last or "Done", True, started)
     except sqlite3.Error as e:
         flush_inserts()
+        record(at, ps, str(e), False, started)
         sys.stdout.flush()
         print("%s:%d: error: %s" % (path, at, e), file=sys.stderr)
-        sys.exit(1)
+        more = hint(str(e))
+        if more:
+            print(more, file=sys.stderr)
+        finish(1)
+
+def execute(ps, real, w):
+    global pending, last, current
+    # There is one database. Making one names it, USE chooses the name, and dropping the one in use empties it.
+    if w[0] in ("CREATE", "DROP") and len(w) > 2 and w[1] in ("DATABASE", "SCHEMA"):
+        i = 2
+        while i < len(w) - 1 and w[i] in ("IF", "NOT", "EXISTS"):
+            i += 1
+        name = name_of(real[i])
+        if w[0] == "CREATE":
+            if name in names:
+                return note("Database %s is already there" % name)
+            names.append(name)
+            if current is None:
+                current = name
+            return note("Database %s created" % name)
+        if name not in names:
+            return note("There is no database %s" % name)
+        names.remove(name)
+        if name == current:
+            drop_all()
+            current = names[0] if names else None
+        return note("Database %s dropped" % name)
+    if w[0] == "USE" and len(w) == 2:
+        current = name_of(real[1])
+        if current not in names:
+            names.append(current)
+        return note("Using database " + current)
+    if w[:2] in (["SHOW", "DATABASES"], ["SHOW", "SCHEMAS"]):
+        flush_inserts()
+        return show(db.execute("SELECT value AS \"Database\" FROM json_each(?)", (json.dumps(names or ["main"]),)))
+    if w[:2] == ["SHOW", "TABLES"]:
+        flush_inserts()
+        return show(db.execute("SELECT name AS Tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"))
+    table = real[1] if w[0] in ("DESCRIBE", "DESC") and len(w) == 2 else real[3] if w[:3] == ["SHOW", "COLUMNS", "FROM"] and len(w) == 4 else None
+    if table is not None:
+        flush_inserts()
+        table = name_of(table)
+        if not db.execute("SELECT 1 FROM pragma_table_info(?)", (table,)).fetchone():
+            raise sqlite3.OperationalError("no such table: " + table)
+        return show(db.execute("SELECT name AS Field, type AS Type, CASE WHEN \"notnull\" OR pk THEN 'NO' ELSE 'YES' END AS \"Null\", CASE WHEN pk THEN 'PRI' ELSE '' END AS \"Key\", dflt_value AS \"Default\" FROM pragma_table_info(?)", (table,)))
+    if w[0] == "TRUNCATE":
+        ps, real = ["DELETE FROM ", real[-1]], ["DELETE", "FROM", real[-1]]
+        w = [p.upper() for p in real]
+    if w[:2] == ["INSERT", "IGNORE"]:
+        i = [p.upper() for p in ps].index("IGNORE")
+        ps = ps[:i] + ["OR IGNORE"] + ps[i + 1 :]
+    if w[0] == "CREATE" and "TABLE" in w[:3]:
+        ps = create_table(ps)
+    # DROP ... IF EXISTS of something that is not there does nothing, and says so.
+    gone = None
+    if w[0] == "DROP" and len(w) > 3 and w[1] in ("TABLE", "VIEW", "INDEX", "TRIGGER") and w[2:4] == ["IF", "EXISTS"] and len(real) > 4:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type = ? AND name = ? COLLATE NOCASE", (w[1].lower(), name_of(real[4]))).fetchone():
+            gone = "There was no %s %s to drop" % (w[1].lower(), name_of(real[4]))
+    before = db.total_changes
+    cur = db.execute("".join(ps))
+    if gone:
+        return note(gone)
+    if cur.description:
+        flush_inserts()
+        return show(cur)
+    changed = db.total_changes - before
+    after = lambda word: name_of(real[w.index(word) + 1]) if word in w and w.index(word) + 1 < len(real) else "the table"
+    if w[0] in ("INSERT", "REPLACE"):
+        t = after("INTO")
+        if pending and pending[0] == t:
+            pending[1] += changed
+        else:
+            flush_inserts()
+            pending = [t, changed]
+        last = count(changed, "inserted into " + t)
+    elif w[0] == "UPDATE":
+        note(count(changed, "updated in " + name_of(real[1])))
+    elif w[0] == "DELETE":
+        note(count(changed, "deleted from " + after("FROM")))
+    elif w[0] in ("CREATE", "DROP", "ALTER") and any(k in w[:4] for k in ("TABLE", "VIEW", "INDEX", "TRIGGER")):
+        kind = next(k for k in ("TABLE", "VIEW", "INDEX", "TRIGGER") if k in w[:4])
+        i = w.index(kind) + 1
+        while i < len(w) and w[i] in ("IF", "NOT", "EXISTS"):
+            i += 1
+        note("%s %s %s" % (kind.capitalize(), name_of(real[i]) if i < len(real) else "", {"CREATE": "created", "DROP": "dropped", "ALTER": "changed"}[w[0]]))
+    else:
+        flush_inserts()
 
 stmt, at, line = [], 1, 1
 for p in PIECE.findall(src):
@@ -272,5 +432,5 @@ for p in PIECE.findall(src):
         stmt = []
 if solid(stmt):
     run("".join(stmt), at)
-flush_inserts()
+finish(0)
 `;

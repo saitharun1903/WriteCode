@@ -1,5 +1,7 @@
 export * from "./languages/types.js";
 export * from "./languages/registry.js";
+export { SQL_STATE_FILE, SQL_STATE_MARK } from "./languages/sql-runner.js";
+export * from "./languages/sql-state.js";
 export * from "./execution/types.js";
 export * from "./execution/validate.js";
 export * from "./execution/judge.js";

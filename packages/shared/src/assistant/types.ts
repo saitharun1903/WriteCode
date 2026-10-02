@@ -83,6 +83,8 @@ export interface AssistantContext {
   visualizer?: AssistantStep;
   debug?: AssistantDebug;
   tests?: AssistantTests;
+  /** A SQL project's database as it is now: one line per table or view, with its columns. */
+  database?: string;
 }
 
 /**
@@ -150,6 +152,7 @@ export function validateAssistantRequest(input: unknown): AssistantValidation {
     if (!isObject(f) || !isString(f.path, 256) || !isString(f.content, ASSISTANT_LIMITS.maxTotalChars)) return fail("Each file needs a path and content.");
   }
   if (!optString(context.activeFile, 256) || !optInt(context.cursorLine)) return fail("Invalid editor position.");
+  if (!optString(context.database, 8_000)) return fail("Invalid database description.");
 
   const sel = context.selection;
   if (sel !== undefined && (!isObject(sel) || !isString(sel.file, 256) || !isString(sel.text, ASSISTANT_LIMITS.maxMessageChars) || !optInt(sel.startLine) || !optInt(sel.endLine))) {

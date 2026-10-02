@@ -6,6 +6,11 @@ import {
   isTerminalStatus,
   parseDiagnostics,
   runTarget,
+  splitSqlOutput,
+  sqlStateFile,
+  SQL_STATE_MARK,
+  basename,
+  type SqlLogEntry,
   type DebugCommand,
   type Diagnostic,
   type ExecutionMode,
@@ -20,6 +25,7 @@ import { createId } from "@/lib/id";
 import { useDebug } from "@/features/debug/store";
 import { useVisualize } from "@/features/visualize/store";
 import { usePreview } from "@/features/preview/store";
+import { editorBridge } from "@/features/editor/bridge";
 import { ApiError, api, streamExecution, waitForResult, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
@@ -35,6 +41,14 @@ export interface RunState {
   projectId: string;
   /** Entry file the run was started with. */
   entry: string;
+  /** What ran, when it was not a whole file: a selection (`main.sql · lines 3-5`) or a table opened from the database panel. */
+  title?: string;
+  /** SQL run from the database panel, not from a file. */
+  query?: boolean;
+  /** A SQL run: what each statement did, once the run has ended. */
+  statements?: SqlLogEntry[];
+  /** A SQL run that could not leave its database behind: why. */
+  databaseNote?: string;
   mode: ExecutionMode;
   /** The program's stdin stays open for typed input (no prepared input was given). */
   interactive: boolean;
@@ -53,6 +67,12 @@ export interface RunState {
   startedAt: number;
 }
 
+/** SQL run on the project's database without being a file of the project: opening a table from the database panel. */
+export interface Query {
+  title: string;
+  sql: string;
+}
+
 interface ExecutionState {
   runner: RunnerStatus;
   runnerReason?: string;
@@ -69,7 +89,7 @@ interface ExecutionState {
    * program cannot be told (the open file and the entry file have no entry
    * point and several other files do), asks which one to run instead of guessing.
    */
-  execute: (options?: { mode?: ExecutionMode; entry?: string }) => Promise<void>;
+  execute: (options?: { mode?: ExecutionMode; entry?: string; query?: Query }) => Promise<void>;
   /** Sends a line (or raw text) of input to the running program; `eof` closes its stdin. */
   sendInput: (text: string, eof?: boolean) => void;
   cancel: () => Promise<void>;
@@ -183,6 +203,24 @@ export const useExecution = create<ExecutionState>((set, get) => {
     stream?.close();
     stream = null;
     const watched = !!get().run?.watchedBy;
+    let sql: Pick<RunState, "statements" | "databaseNote"> = {};
+    if (getLanguage(result.language)?.database && get().run?.mode === "run") {
+      // After the output comes the database as the run left it: the project keeps it for its next run.
+      const { text, report } = splitSqlOutput(result.stdout);
+      result = { ...result, stdout: text };
+      const ran = result.status === "SUCCESS" || result.status === "RUNTIME_ERROR";
+      if (report?.database && useWorkspace.getState().project?.id === project.id) useWorkspace.getState().setDatabase(report.database);
+      sql = {
+        statements: report?.log,
+        databaseNote: report?.database
+          ? undefined
+          : report?.tooLarge
+            ? "The database has grown past what can be kept between runs (about 200 KB), so it is as it was before this run. Delete rows or tables you no longer need."
+            : ran
+              ? "The database could not be read back after this run, so it is as it was before it."
+              : undefined,
+      };
+    }
     if (get().run?.mode === "debug" && !watched) useDebug.getState().onEnded();
     const files = project.files.map((f) => f.path);
     const diagnostics = [
@@ -190,11 +228,11 @@ export const useExecution = create<ExecutionState>((set, get) => {
       ...parseDiagnostics(result.language, result.stderr, files),
     ];
     set((s) => ({
-      run: s.run && s.run.id === result.id ? { ...s.run, status: result.status, result } : s.run,
+      run: s.run && s.run.id === result.id ? { ...s.run, status: result.status, result, ...sql } : s.run,
       diagnostics,
     }));
-    // A temporary project leaves nothing behind, its runs included.
-    if (useSettings.getState().recordHistory && !watched && !project.temporary) {
+    // A temporary project leaves nothing behind, its runs included. Neither does a look at a table.
+    if (useSettings.getState().recordHistory && !watched && !project.temporary && !get().run?.query) {
       try {
         await historyRepo.record({
           id: createId(),
@@ -246,7 +284,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
       if (starting || isOwnRun(get().run)) return;
       starting = true;
       try {
-        await start(mode, options?.entry);
+        await start(mode, options?.entry, options?.query);
       } finally {
         starting = false;
       }
@@ -323,16 +361,18 @@ export const useExecution = create<ExecutionState>((set, get) => {
     },
   };
 
-  async function start(mode: ExecutionMode, entry?: string) {
+  async function start(mode: ExecutionMode, entry?: string, query?: Query) {
       cancelRequested = false;
       if (entry) useWorkspace.getState().setEntryFile(entry);
       await useWorkspace.getState().flush();
       let project = useWorkspace.getState().project;
       if (!project) return;
+      const database = mode === "run" ? getLanguage(project.language)?.database : undefined;
+      if (query && !database) return;
 
       // What is on screen is what runs; other programs in the project are left alone.
-      const target = runTarget(project, entry ?? useWorkspace.getState().activeFile);
-      if (target.choices && entryChooser.open) {
+      const target = query ? { entry: project.entryFile } : runTarget(project, entry ?? useWorkspace.getState().activeFile);
+      if ("choices" in target && target.choices && entryChooser.open) {
         entryChooser.open(mode);
         return;
       }
@@ -342,7 +382,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
         // A read-only copy cannot remember the choice; it still runs what was asked.
         if (project.entryFile !== target.entry) project = { ...project, entryFile: target.entry };
       }
-      if (!project.files.some((f) => f.path === project.entryFile)) {
+      if (!query && !project.files.some((f) => f.path === project.entryFile)) {
         set({
           run: {
             projectId: project.id,
@@ -360,12 +400,32 @@ export const useExecution = create<ExecutionState>((set, get) => {
 
       useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: mode === "debug" ? "debug" : mode === "visualize" ? "visualize" : "run" });
       // With no prepared input, the program reads what the user types while it runs.
-      const interactive = !project.stdin;
+      const interactive = !project.stdin && !query;
+
+      // What is sent. With a database, as in a database tool: the selected statements run on their own
+      // (kept on their lines, so an error still names the right one), and the database goes along.
+      let files = snapshotFiles(project);
+      let runEntry = project.entryFile;
+      let title: string | undefined;
+      if (database) {
+        const selected = !query && !entry && useWorkspace.getState().activeFile === project.entryFile ? editorBridge.selection() : null;
+        if (query) {
+          runEntry = "query.sql";
+          files = [{ path: runEntry, content: query.sql }];
+          title = query.title;
+        } else if (selected && selected.text.trim()) {
+          files = files.map((f) => (f.path === runEntry ? { path: f.path, content: "\n".repeat(selected.startLine - 1) + selected.text } : f));
+          title = `${basename(runEntry)} · ${selected.startLine === selected.endLine ? `line ${selected.startLine}` : `lines ${selected.startLine}-${selected.endLine}`}`;
+        }
+        files = [...files.filter((f) => f.path !== database.file), { path: database.file, content: sqlStateFile(project.database) }];
+      }
       set({
         diagnostics: [],
         run: {
           projectId: project.id,
           entry: project.entryFile,
+          ...(title ? { title } : {}),
+          ...(query ? { query: true } : {}),
           mode,
           interactive,
           status: "SUBMITTING",
@@ -380,9 +440,9 @@ export const useExecution = create<ExecutionState>((set, get) => {
       try {
         ({ id, controlToken } = await api.createExecution({
           language: project.language,
-          files: snapshotFiles(project),
-          entry: project.entryFile,
-          stdin: project.stdin || undefined,
+          files,
+          entry: runEntry,
+          stdin: query ? undefined : project.stdin || undefined,
           interactive,
           ...(mode === "debug" ? { mode, breakpoints: liveBreakpoints(project) } : mode === "visualize" ? { mode } : {}),
         }));
@@ -413,13 +473,16 @@ export const useExecution = create<ExecutionState>((set, get) => {
         cancelRequested = false;
         void api.cancelExecution(id).catch(() => {});
       }
-      useWorkspace.getState().markRun();
+      if (!query) useWorkspace.getState().markRun();
       if (mode === "debug") useDebug.getState().onStarted(id);
       follow(id, controlToken, project);
   }
 
   /** Streams an execution's events into the console: this person's run, or one they watch. */
   function follow(id: string, controlToken: string, project: Project) {
+      // A run with a database prints the database after its output; that part is not for the console.
+      const reports = !!getLanguage(project.language)?.database;
+      let reporting = false;
       stream?.close();
       stream = streamExecution(id, controlToken, {
         onEvent: (event) => {
@@ -430,7 +493,14 @@ export const useExecution = create<ExecutionState>((set, get) => {
               set((s) => ({ run: s.run ? { ...s.run, status: event.status } : s.run }));
               if (event.status === "WAITING_FOR_INPUT") showInputFor(get().run);
               break;
-            case "stdout":
+            case "stdout": {
+              if (reporting) break;
+              const at = reports ? event.chunk.indexOf(SQL_STATE_MARK) : -1;
+              reporting = at >= 0;
+              const text = at >= 0 ? event.chunk.slice(0, at) : event.chunk;
+              if (text) queueLog(id, { stream: "stdout", text });
+              break;
+            }
             case "stderr":
             case "compile":
             case "stdin":
@@ -464,7 +534,7 @@ export const useExecution = create<ExecutionState>((set, get) => {
                       log: [
                         ...s.run.log.filter((c) => c.stream === "system"),
                         ...(result.compileOutput ? [{ stream: "compile" as const, text: result.compileOutput }] : []),
-                        ...(result.stdout ? [{ stream: "stdout" as const, text: result.stdout }] : []),
+                        ...(result.stdout ? [{ stream: "stdout" as const, text: reports ? splitSqlOutput(result.stdout).text : result.stdout }] : []),
                         ...(result.stderr ? [{ stream: "stderr" as const, text: result.stderr }] : []),
                       ],
                     }

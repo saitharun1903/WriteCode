@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Redis } from "ioredis";
 import { afterAll, describe, expect, it } from "vitest";
-import { LANGUAGES, STREAM_FIELD, parseDiagnostics, redisKeys, type ExecutionResult, type ExecutionStatus } from "@cw/shared";
+import { LANGUAGES, STREAM_FIELD, parseDiagnostics, redisKeys, type ExecutionResult, type ExecutionStatus, SQL_STATE_FILE, splitSqlOutput, sqlStateFile } from "@cw/shared";
 import { config } from "./config.js";
 import { createDocker } from "./docker.js";
 import type { EventEmitter } from "./events.js";
@@ -1420,6 +1420,64 @@ describe.runIf(enabled)("Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
     expect(o.result.status).toBe("RUNTIME_ERROR");
     expect(o.result.stderr).toContain("main.sql:3: error: no such table: missing");
     expect(marks("sql", o, bad)).toEqual(["main.sql:3 runtime"]);
+  });
+
+  it("SQL: the project's database goes into a run and comes back out of it", { timeout: T }, async () => {
+    const state = (o: Awaited<ReturnType<typeof run>>) => splitSqlOutput(o.result.stdout);
+    // With the database file (here: nothing in it yet), the run reports what it left behind after its output.
+    const made = await run("sql", {
+      "main.sql": "DROP TABLE IF EXISTS students;\nCREATE TABLE students (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(40) NOT NULL);\nCREATE TABLE marks (student_id INT REFERENCES students(id), marks INT);\nINSERT INTO students (name) VALUES ('Asha'), ('Ravi');\nINSERT INTO marks VALUES (1, 91), (2, 78);\nCREATE VIEW toppers AS SELECT name FROM students JOIN marks ON id = student_id WHERE marks > 80;\n",
+      [SQL_STATE_FILE]: sqlStateFile(undefined),
+    });
+    expect(made.result.status).toBe("SUCCESS");
+    const first = state(made);
+    expect(first.text).toBe("-- There was no table students to drop\n-- Table students created\n-- Table marks created\n-- 2 rows inserted into students\n-- 2 rows inserted into marks\n-- View toppers created\n");
+    expect(first.report!.database!.tables).toEqual([
+      { name: "marks", kind: "table", rows: 2, columns: [{ name: "student_id", type: "INT", ref: "students.id" }, { name: "marks", type: "INT" }] },
+      { name: "students", kind: "table", rows: 2, columns: [{ name: "id", type: "INTEGER", pk: true }, { name: "name", type: "VARCHAR(40)", notNull: true }] },
+      { name: "toppers", kind: "view", rows: null, columns: [{ name: "name", type: "VARCHAR(40)" }] },
+    ]);
+    expect(first.report!.log.map((l) => [l.line, l.ok, l.message])).toEqual([
+      [1, true, "There was no table students to drop"],
+      [2, true, "Table students created"],
+      [3, true, "Table marks created"],
+      [4, true, "2 rows inserted into students"],
+      [5, true, "2 rows inserted into marks"],
+      [6, true, "View toppers created"],
+    ]);
+
+    // Another file, run on that database: the tables are there. What ran before an error stays; a table made twice says why.
+    const next = await run("sql", {
+      "queries.sql": "SELECT * FROM toppers;\nINSERT INTO students (name) VALUES ('Meera');\nCREATE TABLE students (id INT);\nSELECT 1;\n",
+      [SQL_STATE_FILE]: sqlStateFile(first.report!.database),
+    });
+    expect(next.result.status).toBe("RUNTIME_ERROR");
+    const second = state(next);
+    expect(second.text).toBe("name\n----\nAsha\n(1 row)\n\n-- 1 row inserted into students\n");
+    expect(next.result.stderr).toBe("queries.sql:3: error: table students already exists\nIt is in the database from an earlier run: the database keeps what was made in it. Write DROP TABLE IF EXISTS students; above this statement, or reset the database.\n");
+    expect(second.report!.database!.tables.find((t) => t.name === "students")!.rows).toBe(3);
+    expect(second.report!.log.at(-1)).toMatchObject({ line: 3, ok: false, message: "table students already exists" });
+
+    // The database has a name once it is given one; dropping the one in use empties it. An uncommitted transaction is undone.
+    const named = await run("sql", {
+      "main.sql": "CREATE DATABASE IF NOT EXISTS school CHARACTER SET utf8mb4;\nUSE school;\nSHOW DATABASES;\nSELECT DATABASE() AS db;\nBEGIN;\nDELETE FROM marks;\n",
+      [SQL_STATE_FILE]: sqlStateFile(second.report!.database),
+    });
+    const third = state(named);
+    expect(third.text).toBe("-- Database school created\n-- Using database school\nDatabase\n--------\nschool\n(1 row)\n\ndb\n------\nschool\n(1 row)\n\n-- 2 rows deleted from marks\n-- The transaction was not committed, so its changes were rolled back\n");
+    expect(third.report!.database).toMatchObject({ names: ["school"], current: "school" });
+    expect(third.report!.database!.tables.find((t) => t.name === "marks")!.rows).toBe(2);
+    const dropped = state(await run("sql", { "main.sql": "DROP DATABASE school;\nSHOW TABLES;\n", [SQL_STATE_FILE]: sqlStateFile(third.report!.database) }));
+    expect(dropped.text).toBe("-- Database school dropped\nTables\n------\n(0 rows)\n\n");
+    expect(dropped.report!.database).toEqual({ data: "", names: [], current: null, tables: [] });
+
+    // Without the file (a test case, an interview's tests) the run starts empty and prints nothing after its output.
+    const plain = await run("sql", { "main.sql": "SELECT COUNT(*) AS n FROM sqlite_master;\n" });
+    expect(plain.result.stdout).toBe("n\n-\n0\n(1 row)\n\n");
+    // A database file that cannot be read is an empty database, not a failed run.
+    const broken = state(await run("sql", { "main.sql": "SHOW TABLES;\n", [SQL_STATE_FILE]: '{"data":"!!","names":["x"],"current":"x"}' }));
+    expect(broken.text).toBe("Tables\n------\n(0 rows)\n\n");
+    expect(broken.report!.database).toEqual({ data: "", names: [], current: null, tables: [] });
   });
 
   it("Bash: input, a sourced file, the usual tools, and an error on its line", { timeout: T }, async () => {

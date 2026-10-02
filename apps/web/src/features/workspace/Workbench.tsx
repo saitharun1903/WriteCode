@@ -10,6 +10,7 @@ import { usePreview } from "@/features/preview/store";
 import { useWorkspace } from "@/features/projects/store";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileExplorer } from "@/features/explorer/FileExplorer";
+import { DatabasePanel } from "@/features/sql/DatabasePanel";
 import { isRunning, useExecution } from "@/features/execution/store";
 import { useDebug } from "@/features/debug/store";
 import { HistoryPanel } from "@/features/history/HistoryPanel";
@@ -27,23 +28,40 @@ import { CandidateTests } from "@/features/interview/CandidateTests";
 import { useCandidate } from "@/features/interview/candidate";
 import { useRestriction } from "@/features/interview/restrict";
 
+const separatorClass =
+  "relative bg-line outline-none transition-colors data-[separator]:hover:bg-accent-line data-[separator=active]:bg-accent focus-visible:bg-accent";
+
 const PreviewPanel = dynamic(() => import("@/features/preview/PreviewPanel").then((m) => m.PreviewPanel), { ssr: false });
 // Downloaded the first time the assistant is opened.
 const AssistantPanel = dynamic(() => import("@/features/assistant/AssistantPanel").then((m) => m.AssistantPanel), { ssr: false });
 
+/** A SQL project's explorer, as in a database tool: the database and what is in it, then the files of SQL. */
+function SqlExplorer() {
+  const split = useDefaultLayout({ id: "cw-sql-side", panelIds: ["database", "files"] });
+  return (
+    <Group orientation="vertical" id="cw-sql-side" defaultLayout={split.defaultLayout} onLayoutChanged={split.onLayoutChanged}>
+      <Panel id="database" defaultSize="58%" minSize="96px">
+        <DatabasePanel />
+      </Panel>
+      <Separator className={cn(separatorClass, "h-px")} />
+      <Panel id="files" minSize="96px">
+        <FileExplorer title="SQL files" />
+      </Panel>
+    </Group>
+  );
+}
+
 function SideView() {
   const view = useSettings((s) => s.layout.sideView);
+  const database = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.database);
   return (
     <aside aria-label="Sidebar" className="h-full min-h-0 bg-surface">
-      {view === "explorer" && <FileExplorer />}
+      {view === "explorer" && (database ? <SqlExplorer /> : <FileExplorer />)}
       {view === "search" && <SearchPanel />}
       {view === "history" && <HistoryPanel />}
     </aside>
   );
 }
-
-const separatorClass =
-  "relative bg-line outline-none transition-colors data-[separator]:hover:bg-accent-line data-[separator=active]:bg-accent focus-visible:bg-accent";
 
 /** Desktop: resizable, collapsible panels whose sizes persist per browser. */
 function DesktopWorkbench() {
@@ -98,7 +116,7 @@ function DesktopWorkbench() {
   const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
   const previewOpen = usePreview((s) => s.open);
   const previewFull = usePreview((s) => s.full);
-  const split = useDefaultLayout({ id: "cw-preview", panelIds: ["code", "preview"] });
+  const split = useDefaultLayout({ id: "cw-preview-2", panelIds: ["code", "preview"] });
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -124,14 +142,14 @@ function DesktopWorkbench() {
           <Group orientation="vertical" id="cw-inner" defaultLayout={inner.defaultLayout} onLayoutChanged={inner.onLayoutChanged}>
             <Panel id="editor" minSize="20%">
               {previews ? (
-                <Group orientation="horizontal" id="cw-preview" defaultLayout={split.defaultLayout} onLayoutChanged={split.onLayoutChanged}>
-                  <Panel id="code" minSize="25%">
+                <Group orientation="horizontal" id="cw-preview-2" defaultLayout={split.defaultLayout} onLayoutChanged={split.onLayoutChanged}>
+                  <Panel id="code" minSize="30%">
                     <EditorArea />
                   </Panel>
                   {previewOpen && (
                     <>
                       <Separator className={cn(separatorClass, "w-px")} />
-                      <Panel id="preview" defaultSize="48%" minSize="280px">
+                      <Panel id="preview" defaultSize="36%" minSize="280px">
                         <PreviewPanel full={previewFull} />
                       </Panel>
                     </>
@@ -393,7 +411,7 @@ function CompactWorkbench() {
         </div>
         {drawer === "assistant" && roomy && <div className="w-[400px] shrink-0 border-l border-line bg-surface">{assistant}</div>}
         {previewOpen && (
-          <div className={cn("shrink-0 border-l border-line", roomy ? "w-[46%]" : "w-0")}>
+          <div className={cn("shrink-0 border-l border-line", roomy ? "w-[40%]" : "w-0")}>
             <PreviewPanel full={previewFull || !roomy} />
           </div>
         )}

@@ -9,11 +9,12 @@ import { cn } from "@/lib/cn";
  * (On phones they are a plain list.) Each card shows the thing it talks about,
  * drawn small, rather than describing it.
  */
-export function FeatureDeck() {
+/** `top`: room kept above the cards for what stays at the top of the page while it scrolls. */
+export function FeatureDeck({ top = 0 }: { top?: number }) {
   return (
     <ol className="mt-5">
       {HOME_FEATURES.map((f, i) => (
-        <li key={f.slug} className="mb-4 sm:sticky" style={{ top: 12 + i * 14 }}>
+        <li key={f.slug} className="mb-4 sm:sticky" style={{ top: top + 12 + i * 14 }}>
           <article className="grid overflow-hidden rounded-2xl border border-line-strong bg-surface sm:h-[310px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <div className="flex flex-col p-5 sm:p-7">
               <p className="font-mono text-xs text-fg-subtle">

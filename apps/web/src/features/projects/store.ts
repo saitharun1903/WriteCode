@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { getLanguage, isWithin, rebase, type InterviewRecord, type Project, type ProjectSummary, type TestCase } from "@cw/shared";
+import { getLanguage, isWithin, rebase, type InterviewRecord, type Project, type ProjectSummary, type SqlDatabase, type TestCase } from "@cw/shared";
 import { toast } from "@/components/ui/toast";
 import { createId } from "@/lib/id";
 import { historyRepo, projectRepo } from "./db";
@@ -62,6 +62,8 @@ interface WorkspaceState {
   importFiles: (files: PlannedFile[]) => void;
   /** Records that the open project was run or debugged, which makes it recent work. */
   markRun: () => void;
+  /** Keeps a SQL project's database as a run left it; `undefined` empties it. */
+  setDatabase: (database: SqlDatabase | undefined) => void;
   flush: () => Promise<void>;
   /** Opens someone else's live project without saving it. */
   openShared: (project: Project) => void;
@@ -323,6 +325,15 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     markRun() {
       const project = get().project;
       if (project) commit({ ...project, lastRunAt: Date.now() });
+    },
+
+    setDatabase(database) {
+      const project = get().project;
+      if (!project) return;
+      const next = { ...project };
+      if (database && (database.tables.length || database.names.length)) next.database = database;
+      else delete next.database;
+      commit(next);
     },
 
     async renameProject(id, name) {

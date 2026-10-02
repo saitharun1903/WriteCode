@@ -1,8 +1,8 @@
 "use client";
 
 import { getLanguage } from "@cw/shared";
-import { SqlResults } from "./SqlResults";
-import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, Lightbulb, Radio, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
+import { SqlRunView, StatementList } from "./SqlResults";
+import { ArrowDownToLine, Check, Copy, CornerDownLeft, Eraser, Keyboard, Lightbulb, Radio, RotateCw, Search, Sparkles, Square, Trash2, TriangleAlert, WrapText, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -144,14 +144,15 @@ function LinkedText({ text, query }: { text: string; query: string }) {
 }
 
 /** Closing line printed after the program ends, in the style of an IDE run console. */
-function Epilogue({ run }: { run: RunState }) {
+function Epilogue({ run, statements = false }: { run: RunState; statements?: boolean }) {
   const r = run.result;
   if (!r) return null;
   let line: ReactNode;
   switch (r.status) {
     case "SUCCESS":
     case "RUNTIME_ERROR":
-      line = <span className="text-fg-subtle">Process finished with exit code {r.exitCode ?? "unknown"}</span>;
+      // A run of SQL statements is not a process to the person reading it: the list above says how it went.
+      line = statements ? null : <span className="text-fg-subtle">Process finished with exit code {r.exitCode ?? "unknown"}</span>;
       break;
     case "COMPILATION_ERROR":
       line = <span className="text-danger">{r.message ?? `Compilation failed${r.exitCode !== undefined ? ` (exit code ${r.exitCode})` : ""}`}</span>;
@@ -166,8 +167,11 @@ function Epilogue({ run }: { run: RunState }) {
       line = <span className="text-warning">{r.message ?? STATUS_META[r.status].hint}</span>;
   }
   const failed = r.status !== "SUCCESS" && r.status !== "CANCELLED";
+  // What an earlier run left in the database is in this one's way: starting from nothing is one press.
+  const leftover = statements && failed && /already exists|UNIQUE constraint failed/.test(r.stderr) && !!useWorkspace.getState().project?.database;
+  if (!line && !failed) return null;
   return (
-    <div className="mt-[20px]">
+    <div className={statements ? "mt-2" : "mt-[20px]"}>
       {/* What the crash means, in plain words, worked out from the exception itself. */}
       {r.status === "RUNTIME_ERROR" && r.message && (
         <p className="mb-2 flex max-w-3xl items-start gap-2 whitespace-normal rounded-md border-l-2 border-warning bg-warning-soft px-3 py-1.5 font-sans text-[13px] leading-5 text-fg">
@@ -183,6 +187,18 @@ function Epilogue({ run }: { run: RunState }) {
           className="ml-3 inline-flex items-center gap-1 rounded-full border border-[#8a7cf5]/60 px-2 font-sans text-xs text-fg hover:bg-[#8a7cf5]/15"
         >
           <Sparkles className="size-3 text-[#8a7cf5]" /> Fix with AI
+        </button>
+      )}
+      {leftover && (
+        <button
+          type="button"
+          onClick={() => {
+            useWorkspace.getState().setDatabase(undefined);
+            runCommand("run.execute");
+          }}
+          className="ml-2 inline-flex items-center gap-1 rounded-full border border-line-strong px-2 font-sans text-xs text-fg hover:bg-hover"
+        >
+          <Eraser className="size-3 text-fg-subtle" /> Empty the database and run again
         </button>
       )}
     </div>
@@ -205,8 +221,8 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
     if (el && follow && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [run?.log, run?.result, follow]);
 
-  return (
-    <div className="flex h-full min-h-0 flex-col">
+  /** The console. For a SQL run it is the Output tab: `notes` is what the statements said they did. */
+  const body = (notes?: string[]) => (
     <div
       ref={scrollRef}
       onScroll={(e) => {
@@ -216,7 +232,7 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
       className="min-h-0 flex-1 overflow-auto bg-surface-2"
       role="log"
       aria-live="polite"
-      aria-label="Program output"
+      aria-label={notes ? "Statements" : "Program output"}
     >
       {!run && (
         <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center text-sm text-fg-subtle">
@@ -244,8 +260,8 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
             wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
           )}
         >
-          {/* A language that prints tables (SQL): what it printed is drawn as tables, then the rest (an error) as text. */}
-          {tables && <SqlResults text={printed} />}
+          {/* A language that prints tables (SQL): what each statement did, then the rest (an error) as text. */}
+          {notes && <StatementList run={run} notes={notes} />}
           {run.log.map((chunk, i) =>
             tables && chunk.stream === "stdout" ? null : (
               <span key={i} className={streamClass[chunk.stream]}>
@@ -263,14 +279,26 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
               </button>
             </div>
           )}
-          {!run.error && <Epilogue run={run} />}
+          {run.databaseNote && (
+            <p role="note" className="mt-2 flex max-w-3xl items-start gap-2 whitespace-normal rounded-md border-l-2 border-warning bg-warning-soft px-3 py-1.5 font-sans text-[13px] leading-5 text-fg">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
+              {run.databaseNote}
+            </p>
+          )}
+          {!run.error && <Epilogue run={run} statements={!!notes} />}
           {running && (run.status === "SUBMITTING" || run.status === "QUEUED" || run.status === "STARTING" || run.status === "COMPILING") && (
             <span className="text-fg-subtle">{run.status === "COMPILING" ? "Compiling…" : run.status === "QUEUED" ? "Waiting for a free sandbox…" : "Starting…"}</span>
           )}
         </div>
       )}
     </div>
-    <ConsoleInput />
+  );
+
+  if (tables && run) return <SqlRunView key={run.startedAt} run={run} printed={printed} output={body} />;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {body()}
+      <ConsoleInput />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { SQL_RUNNER } from "./sql-runner.js";
+import { SQL_RUNNER, SQL_STATE_FILE } from "./sql-runner.js";
 import type { LanguageDefinition } from "./types.js";
 
 const java: LanguageDefinition = {
@@ -464,10 +464,14 @@ const sql: LanguageDefinition = {
   entryFile: "main.sql",
   diagnostics: ["plain"],
   output: "tables",
+  database: { file: SQL_STATE_FILE },
   template: [
     {
       path: "main.sql",
-      content: `-- Press Run: the result of every query is shown as a table.
+      content: `-- Press Run: the rows of every query are shown as a table.
+-- The database keeps its tables between runs, so this script removes its own first.
+DROP TABLE IF EXISTS students;
+
 CREATE TABLE students (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,

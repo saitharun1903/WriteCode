@@ -16,6 +16,42 @@ const CANDIES = `public class Candies {
 
 const block = (body: string) => parseEditBlock(body)!;
 
+describe("an edit with nothing to replace", () => {
+  const add = block("FILE: sai.sql\n<<<<<<< ORIGINAL\n=======\nSELECT MAX(salary) FROM employees;\n>>>>>>> UPDATED\n");
+
+  it("fills an empty file", () => {
+    expect(resolveEdit("", add)).toMatchObject({ ok: true, content: "SELECT MAX(salary) FROM employees;\n", created: false, hunks: [{ startLine: 1, removed: [], added: ["SELECT MAX(salary) FROM employees;"] }] });
+    expect(resolveEdit("\n  \n", add)).toMatchObject({ ok: true, content: "SELECT MAX(salary) FROM employees;\n" });
+  });
+
+  it("goes at the end of a file that has code, after a blank line", () => {
+    expect(resolveEdit("SELECT 1;\n", add)).toMatchObject({ ok: true, content: "SELECT 1;\n\nSELECT MAX(salary) FROM employees;\n", hunks: [{ startLine: 2, removed: [] }] });
+  });
+
+  it("makes the file when the project has none of that name", () => {
+    expect(resolveEdit(null, add)).toMatchObject({ ok: true, created: true });
+  });
+});
+
+describe("an edit block written loosely, once the answer has ended", () => {
+  const want = { file: "sai.sql", complete: true, hunks: [{ original: [], updated: ["SELECT 1;"] }] };
+
+  it("is read without its end mark, without its ORIGINAL mark, or without any mark", () => {
+    expect(parseEditBlock("FILE: sai.sql\n<<<<<<< ORIGINAL\n=======\nSELECT 1;\n", true)).toEqual(want);
+    expect(parseEditBlock("FILE: sai.sql\n=======\nSELECT 1;\n>>>>>>> UPDATED\n", true)).toEqual(want);
+    expect(parseEditBlock("FILE: sai.sql\n\nSELECT 1;\n", true)).toEqual(want);
+  });
+
+  it("is still incomplete while the answer is arriving", () => {
+    expect(parseEditBlock("FILE: sai.sql\n<<<<<<< ORIGINAL\n=======\nSELECT 1;\n")!.complete).toBe(false);
+    expect(parseEditBlock("FILE: sai.sql\nSELECT 1;\n")!.complete).toBe(false);
+  });
+
+  it("does not guess when the lines to replace were never closed", () => {
+    expect(parseEditBlock("FILE: a.py\n<<<<<<< ORIGINAL\nx = 1\n", true)!.complete).toBe(false);
+  });
+});
+
 describe("parseEditBlock", () => {
   it("reads the file and each ORIGINAL/UPDATED pair", () => {
     const b = block("FILE: Candies.java\n<<<<<<< ORIGINAL\n                high = mid -\n=======\n                high = mid - 1;\n>>>>>>> UPDATED\n");

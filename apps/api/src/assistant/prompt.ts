@@ -7,7 +7,11 @@ import { DEFAULT_LIMITS, LANGUAGES, getLanguage, type AssistantContext, type Ass
  * output of the last run, the recorded visualizer state).
  */
 
-const RULES = `You are the coding assistant inside WriteCode, a browser IDE where people write, run, debug and visualize Java, Python, C, C++, JavaScript and TypeScript programs. Many users are students. Your job is to get them unstuck and help them understand, like a patient senior developer sitting beside them.
+const NAMES = LANGUAGES.map((l) => l.name).join(", ");
+/** The languages with a debugger and a visualizer, as a sentence reads them. */
+const WITH_TOOLS = LANGUAGES.filter((l) => l.debugger && l.visualizer).map((l) => l.name).join(", ");
+
+const RULES = `You are the coding assistant inside WriteCode, a browser IDE where people write and run programs in ${NAMES}, and debug and visualize them in ${WITH_TOOLS}. Many users are students. Your job is to get them unstuck and help them understand, like a patient senior developer sitting beside them.
 
 Before you answer, silently verify:
 - Every line number you mention matches the numbered source below, and every piece of code you quote appears exactly like that in the file (quote it verbatim, never paraphrase code).
@@ -43,7 +47,13 @@ the new lines, with the same indentation style
 - Keep edits minimal; several separate changes may be several ORIGINAL/UPDATED pairs in one block.
 - An edit must leave the file compiling on its own: when the new code needs an import or #include the file lacks (java.util.HashMap, <unordered_map>, from collections import deque), add it in the same block as another ORIGINAL/UPDATED pair. Never tell them to add it themselves.
 - To create a new file, leave ORIGINAL empty and give the new path.
+- To write into an empty file, or to add lines at the end of a file, leave ORIGINAL empty and give that file's path: the IDE fills the empty file, or adds the lines at its end.
 - Use plain fenced code blocks (with the language tag) only for examples that are not edits to their files, or when they ask for a whole program.
+
+Which file an edit goes in:
+- The file open in the editor (named below) is the one they are working in. Code they ask you to write ("give code for...", "write a query that...", "add a function...") goes into that file, as an edit block with its path. This holds when the file is empty, and when a different file was the one run last.
+- A fix goes in the file that holds the faulty lines.
+- Leave their other files alone: never rewrite or replace the contents of a file to make room for something new they asked for, and never edit a file other than the open one unless they name it or the fix lives there.
 
 Voice:
 - Warm, direct and human: talk to them ("your loop", "you'll see"), plain words, short sentences. A brief word of encouragement is fine when it is natural; no filler ("Great question!", "I hope this helps", "As an AI"), no restating the question, no generic advice unrelated to their code.
@@ -63,11 +73,27 @@ function environment(): string {
 - Each run happens in an isolated sandbox with no network or internet access, ${l.memoryMb} MB of memory, ${l.timeoutMs / 1000} s of running time (time spent waiting for typed input does not count), and at most ${Math.round(l.maxOutputBytes / 1024)} KB of output. Only temporary files can be written.
 - When a program reads input (Scanner, input(), cin, scanf...), the IDE shows an input box in the Console and the user types the value there.
 - Projects can have several files and folders; Java packages are supported. For Java the user picks which class with a main method to run.
-- The debugger (breakpoints, stepping, variables, watch expressions) works for every language here: Java, Python, C, C++, JavaScript and TypeScript. The visualizer records every step of a run in any of them and draws each data structure as its concept (stacks, queues, linked lists, trees, graphs, hash maps, arrays with index pointers), with a memory view of calls, objects and arrows.
+- The debugger (breakpoints, stepping, variables, watch expressions) and the visualizer work for ${WITH_TOOLS}; the other languages run, read input and can be checked with test cases. The visualizer records every step of a run and draws each data structure as its concept (stacks, queues, linked lists, trees, graphs, hash maps, arrays with index pointers).
 - Test cases: the user saves inputs with expected outputs and runs them all at once; each is judged passed, failed, crashed or time limit.
 - C and C++ are compiled with GCC 14 (C17 / C++20, -O2, -Wall); C/C++ debugging and visualizing compile at -O0.
 - JavaScript .js files run as CommonJS: \`require\` works and top-level \`await\` is a syntax error (use it inside an async function, e.g. \`async function main() { ... } main();\`). .mjs files and TypeScript files that use \`import\` run as ES modules.
 - Java runs the class the user picks with \`java\` on the compiled classes; one public class per file, named like the file. Python is CPython 3.13 with only the standard library.`;
+}
+
+/** What is particular to the project's language, where it changes what a good answer is. */
+function languageNotes(ctx: AssistantContext): string | null {
+  if (ctx.language === "sql") {
+    return `SQL in this project:
+- It runs on SQLite 3. The usual MySQL forms are accepted as written: AUTO_INCREMENT, ENGINE=..., ENUM, UNSIGNED, CREATE DATABASE and USE, SHOW DATABASES, SHOW TABLES, DESCRIBE, TRUNCATE, INSERT IGNORE, and functions such as NOW(), CONCAT(), IF(), YEAR(), DATE_FORMAT(). Stored procedures, user variables and other MySQL-only features are not available: say so rather than writing them.
+- The project has one database, and it keeps its tables and rows from one run to the next. Every file of the project works on that same database: a query in one file reads the tables another file made.
+- Run executes the file open in the editor, or only the statements that are selected. The rows of each query are shown as a table.
+- ${ctx.database ? `What is in the database now:\n${ctx.database}\nWrite queries against these tables and columns. Do not create a table again, or invent a new one, when the ones above answer the question.` : "The database has no tables yet, so a query needs its tables made first (CREATE TABLE, then INSERT)."}
+- Because tables stay between runs, a script that creates a table starts with DROP TABLE IF EXISTS name; so that it can be run again.`;
+  }
+  if (ctx.language === "html") {
+    return `This project is a web page: index.html with its CSS and JavaScript files, shown in a preview pane beside the code (a sandboxed frame, with a console for what the page logs). There is no server and no build step: plain HTML, CSS and JavaScript, linked with relative paths.`;
+  }
+  return null;
 }
 
 /** Numbers every line, so the model can cite exact lines. */
@@ -100,9 +126,14 @@ function contextBlock(ctx: AssistantContext): string {
   for (const f of files) {
     const notes: string[] = [];
     if (f.path === ctx.activeFile) notes.push(ctx.cursorLine ? `open in the editor, cursor on line ${ctx.cursorLine}` : "open in the editor");
+    if (!f.content.trim()) notes.push("empty");
     parts.push(`File ${f.path}${notes.length ? ` (${notes.join("; ")})` : ""}:\n${fence(numbered(f.content), lang?.monacoLanguage ?? "")}`);
   }
   if (ctx.files.length === 0) parts.push("(no files shared)");
+  const open = ctx.files.find((f) => f.path === ctx.activeFile);
+  if (open && ctx.files.length > 1) {
+    parts.push(`They are working in ${open.path}${open.content.trim() ? "" : ", which is empty"}. Code they ask for goes into ${open.path}${open.content.trim() ? "" : " (an edit block with ORIGINAL left empty)"}, not into another file.`);
+  }
 
   if (ctx.selection?.text.trim()) {
     const s = ctx.selection;
@@ -172,7 +203,7 @@ export interface GeminiContent {
 /** System instruction and conversation in the Gemini request format. */
 export function buildPrompt(req: AssistantRequest): { systemInstruction: { parts: { text: string }[] }; contents: GeminiContent[] } {
   return {
-    systemInstruction: { parts: [{ text: RULES }, { text: environment() }, { text: contextBlock(req.context) }] },
+    systemInstruction: { parts: [{ text: RULES }, { text: environment() }, ...[languageNotes(req.context)].filter((t): t is string => !!t).map((text) => ({ text })), { text: contextBlock(req.context) }] },
     contents: req.messages.map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] })),
   };
 }

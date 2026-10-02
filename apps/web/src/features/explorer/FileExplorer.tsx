@@ -53,7 +53,7 @@ function rowKey(row: Row) {
   return row.type === "node" ? row.node.path : `__create__:${row.dir}`;
 }
 
-export function FileExplorer() {
+export function FileExplorer({ title = "Project" }: { title?: string }) {
   const project = useWorkspace((s) => s.project);
   const activeFile = useWorkspace((s) => s.activeFile);
   const ws = useWorkspace.getState;
@@ -265,7 +265,7 @@ export function FileExplorer() {
         </div>
       )}
       <PanelHeader
-        title="Project"
+        title={title}
         actions={
           <>
             <IconButton label="New File" size="sm" onClick={() => startCreate("", "file")}>

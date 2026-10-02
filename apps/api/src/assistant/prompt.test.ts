@@ -8,6 +8,29 @@ const request = (over: Partial<AssistantRequest["context"]> = {}): AssistantRequ
 });
 
 describe("prompt", () => {
+  it("says which file the user is working in, and what a SQL project's database holds", () => {
+    const p = buildPrompt({
+      messages: [{ role: "user", text: "give code for max salary" }],
+      context: {
+        language: "sql",
+        files: [
+          { path: "main.sql", content: "CREATE TABLE employees (id INTEGER PRIMARY KEY, salary INTEGER);\n" },
+          { path: "sai.sql", content: "" },
+        ],
+        activeFile: "sai.sql",
+        database: "employees(id INTEGER primary key, salary INTEGER), 4 rows",
+      },
+    });
+    const system = p.systemInstruction.parts.map((x) => x.text).join("\n");
+    expect(system).toContain("File sai.sql (open in the editor; empty)");
+    expect(system).toContain("They are working in sai.sql, which is empty. Code they ask for goes into sai.sql (an edit block with ORIGINAL left empty), not into another file.");
+    expect(system).toContain("employees(id INTEGER primary key, salary INTEGER), 4 rows");
+    expect(system).toContain("keeps its tables and rows from one run to the next");
+    expect(system).toContain("Kotlin");
+    // Other languages are not told about databases.
+    expect(buildPrompt(request()).systemInstruction.parts.map((x) => x.text).join("\n")).not.toContain("SQLite 3. The usual MySQL");
+  });
+
   it("numbers source lines so answers can cite them", () => {
     expect(numbered("a\nb\n")).toBe("1 | a\n2 | b");
     expect(numbered(Array.from({ length: 10 }, (_, i) => `l${i}`).join("\n")).split("\n")[0]).toBe(" 1 | l0");

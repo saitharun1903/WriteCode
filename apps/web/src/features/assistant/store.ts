@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import type { Project } from "@cw/shared";
 import type { AssistantContext, AssistantDebug, AssistantEffort, AssistantEvent, AssistantMessage, AssistantRun, AssistantStep, AssistantTests } from "@cw/shared";
 import { useDebug } from "@/features/debug/store";
 import { judge } from "@/features/tests/compare";
@@ -193,6 +194,16 @@ function testResults(): AssistantTests | undefined {
   return total > 0 ? { total, passed, failures } : undefined;
 }
 
+/** A SQL project's tables and views as the last run left them: `students(id INTEGER primary key, name TEXT), 4 rows`. */
+function databaseNow(database: Project["database"]): string | undefined {
+  if (!database?.tables.length) return undefined;
+  const lines = database.tables.map((t) => {
+    const columns = t.columns.map((c) => `${c.name}${c.type ? ` ${c.type}` : ""}${c.pk ? " primary key" : ""}${c.notNull ? " not null" : ""}${c.ref ? ` references ${c.ref}` : ""}`).join(", ");
+    return `${t.kind === "view" ? "view " : ""}${t.name}(${columns})${t.rows !== null ? `, ${t.rows} row${t.rows === 1 ? "" : "s"}` : ""}`;
+  });
+  return tail(lines.join("\n"), 7_500);
+}
+
 /** Everything the assistant should know, taken from what the user can see in the IDE. */
 export function buildContext(): AssistantContext | null {
   const { project, activeFile } = useWorkspace.getState();
@@ -219,6 +230,7 @@ export function buildContext(): AssistantContext | null {
     visualizer: visualizerStep(),
     debug: debugPause(),
     tests: testResults(),
+    database: databaseNow(project.database),
   };
 }
 

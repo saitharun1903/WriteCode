@@ -46,7 +46,11 @@ async function newProject(page: Page, language: "Java" | "Python", code: string)
   });
   await page.reload();
   await expect(page.getByText("Runner online")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: `New ${language} project` }).click();
+  await page.getByRole("heading", { name: "New project" }).waitFor();
+  const tile = page.getByRole("button", { name: `New ${language} project` });
+  // The languages past the first eight are behind "More languages".
+  if (!(await tile.isVisible())) await page.getByRole("button", { name: "More languages" }).click();
+  await tile.click();
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText("Hello World");
   await editor(page).click();

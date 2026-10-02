@@ -9,7 +9,8 @@ import { expect, test, type Page } from "@playwright/test";
 test.setTimeout(240_000);
 
 const editor = (page: Page) => page.locator(".monaco-editor .view-lines").first();
-const output = (page: Page) => page.getByRole("log", { name: "Program output" });
+// The output of a SQL run is a region with a tab per result; for the other languages it is the console.
+const output = (page: Page) => page.locator('[aria-label="Program output"]').first();
 
 async function freshProject(page: Page, language: string, starts: string) {
   await page.goto("/");
@@ -21,7 +22,11 @@ async function freshProject(page: Page, language: string, starts: string) {
     });
   });
   await page.reload();
-  await page.getByRole("button", { name: `New ${language} project` }).click();
+  await page.getByRole("heading", { name: "New project" }).waitFor();
+  const tile = page.getByRole("button", { name: `New ${language} project` });
+  // The languages past the first eight are behind "More languages".
+  if (!(await tile.isVisible())) await page.getByRole("button", { name: "More languages" }).click();
+  await tile.click();
   await page.getByRole("button", { name: "Create", exact: true }).click();
   await expect(editor(page)).toContainText(starts);
 }
@@ -44,7 +49,7 @@ test("Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash: the starter runs, input is 
     ["C#", "Hello World", "using System;\n\nclass Program\n{\n    static void Main()\n    {\n        int n = int.Parse(Console.ReadLine());\n        Console.WriteLine(n * 2);\n    }\n}\n", 'class Program\n{\n    static void Main()\n    {\n        int n = "text";\n    }\n}\n', 5, false],
     ["PHP", "Hello World", '<?php\n$n = (int) trim(fgets(STDIN));\necho $n * 2, "\\n";\n', "<?php\necho 1\necho 2;\n", 3, false],
     ["Ruby", "Hello World", "n = gets.to_i\nputs n * 2\n", 'def f\n  raise "boom"\nend\nf\n', 2, false],
-    ["SQL", "Asha", null, "CREATE TABLE t (id INTEGER);\n\nSELECT * FROM missing;\n", 3, false],
+    ["SQL", "Hyderabad", null, "CREATE TABLE t (id INTEGER);\n\nSELECT * FROM missing;\n", 3, false],
     ["Bash", "Hello World", "read n\necho $(( n * 2 ))\n", "echo start\nnosuchcommand\n", 2, false],
   ];
   for (const [language, hello, doubles, broken, line, tools] of programs) {
@@ -77,40 +82,162 @@ test("Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash: the starter runs, input is 
   }
 });
 
-test("SQL: every query's rows are a table; other statements say what they did; SQL written for MySQL runs", async ({ page }) => {
+const database = (page: Page) => page.getByRole("region", { name: "Database" });
+
+async function newFile(page: Page, name: string, code: string) {
+  await page.getByRole("button", { name: "New File" }).first().click();
+  await page.getByRole("textbox", { name: "Name" }).fill(name);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tab", { name })).toBeVisible();
+  await setCode(page, code);
+}
+
+test("SQL: a tab of rows for every query, a list of what each statement did, and SQL written for MySQL", async ({ page }) => {
   test.skip(!process.env.E2E_EXECUTION, "needs the API, worker and Docker");
   await freshProject(page, "SQL", "CREATE TABLE");
   await page.getByRole("button", { name: "Run program" }).click();
-  // The starter has two queries: two tables, with their column names and rows.
+  // The starter has two queries on one table: a tab for each, named after the table, and the last one is shown.
+  const tabs = output(page).getByRole("tablist", { name: "Results" });
+  await expect(tabs.getByRole("tab")).toHaveText([/^students 1\s*4$/, /^students 2\s*3$/, /^Output\s*5$/], { timeout: 120_000 });
+  const second = output(page).getByRole("table", { name: "Result 2" });
+  await expect(second.getByRole("columnheader")).toHaveText(["city", "students", "average"]);
+  await tabs.getByRole("tab", { name: /students 1/ }).click();
   const first = output(page).getByRole("table", { name: "Result 1" });
-  await expect(first).toBeVisible({ timeout: 120_000 });
   await expect(first.getByRole("columnheader")).toHaveText(["name", "city", "marks"]);
   await expect(first.getByRole("row")).toHaveCount(5);
-  await expect(first.getByRole("row").nth(1).getByRole("cell")).toHaveText(["Asha", "Hyderabad", "91"]);
-  await expect(output(page).getByRole("table", { name: "Result 2" }).getByRole("columnheader")).toHaveText(["city", "students", "average"]);
-  await expect(output(page)).toContainText("Table students created");
-  await expect(output(page)).toContainText("4 rows inserted into students");
-  // Numbers are set to the right, as in a spreadsheet.
-  await expect(first.getByRole("row").nth(1).getByRole("cell").nth(2)).toHaveCSS("text-align", "right");
+  // Each row has its number, then its cells; numbers are set to the right, as in a spreadsheet.
+  await expect(first.getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "Asha", "Hyderabad", "91"]);
+  await expect(first.getByRole("row").nth(1).getByRole("cell").nth(3)).toHaveCSS("text-align", "right");
+  await expect(output(page)).toContainText("4 rows");
+  // Output: every statement with its line, what it did and how long it took.
+  await tabs.getByRole("tab", { name: /Output/ }).click();
+  const statements = output(page).getByRole("table", { name: "Statements" });
+  await expect(statements.getByRole("row")).toHaveCount(6);
+  await expect(statements).toContainText("Table students created");
+  await expect(statements).toContainText("4 rows inserted into students");
+  await expect(statements).toContainText("3 rows returned");
+  await statements.getByRole("button", { name: "12", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^12:/);
 
   await setCode(
     page,
-    "CREATE DATABASE shop;\nUSE shop;\nCREATE TABLE items (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(40) NOT NULL,\n  price DECIMAL(8,2),\n  note TEXT\n) ENGINE=InnoDB;\nINSERT INTO items (name, price) VALUES ('Pen', 10), ('Book | A5', 55.5);\nSHOW TABLES;\nDESCRIBE items;\nSELECT id, name, price, note, CONCAT(name, ': ', price) AS label FROM items;\nUPDATE items SET price = price + 1 WHERE price > 20;\nSELECT * FROM missing_table;\n",
+    "CREATE DATABASE shop;\nUSE shop;\nCREATE TABLE items (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  name VARCHAR(40) NOT NULL,\n  price DECIMAL(8,2),\n  note TEXT\n) ENGINE=InnoDB;\nINSERT INTO items (name, price) VALUES ('Pen', 10), ('Book | A5', 55.5);\nSHOW DATABASES;\nSHOW TABLES;\nDESCRIBE items;\nSELECT id, name, price, note, CONCAT(name, ': ', price) AS label FROM items;\nUPDATE items SET price = price + 1 WHERE price > 20;\nSELECT * FROM missing_table;\n",
   );
   await page.getByRole("button", { name: "Run program" }).click();
-  const rows = output(page).getByRole("table", { name: "Result 3" });
-  await expect(rows).toBeVisible({ timeout: 120_000 });
-  await expect(output(page).getByRole("table", { name: "Result 1" }).getByRole("columnheader")).toHaveText(["Tables"]);
-  await expect(output(page).getByRole("table", { name: "Result 2" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["id", "INTEGER", "NO", "PRI", "NULL"]);
+  // The run stops at the first error: Output is shown, with the error and the line of its statement.
+  await expect(output(page)).toContainText("no such table: missing_table", { timeout: 120_000 });
+  await expect(output(page)).toContainText("The tables in the database: items, students.");
+  await expect(output(page).getByRole("table", { name: "Statements" })).toContainText("1 row updated in items");
+  await output(page).getByRole("button", { name: /main\.sql:15/ }).click();
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^15:/);
+  // What ran before the error is there: the database's name, its tables, the structure of one, and its rows.
+  await expect(tabs.getByRole("tab")).toHaveCount(5);
+  await tabs.getByRole("tab").nth(0).click();
+  await expect(output(page).getByRole("table", { name: "Result 1" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "shop"]);
+  await tabs.getByRole("tab", { name: /items · structure/ }).click();
+  await expect(output(page).getByRole("table", { name: "Result 3" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "id", "INTEGER", "NO", "PRI", "NULL"]);
+  await tabs.getByRole("tab").nth(3).click();
+  const rows = output(page).getByRole("table", { name: "Result 4" });
   // The ids were counted up; a bar inside a value stays inside its cell; NULL is NULL.
-  await expect(rows.getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "Pen", "10", "NULL", "Pen: 10"]);
-  await expect(rows.getByRole("row").nth(2).getByRole("cell")).toHaveText(["2", "Book | A5", "55.5", "NULL", "Book | A5: 55.5"]);
-  await expect(output(page)).toContainText("1 row updated in items");
-  // The run stops at the first error, which names the line of its statement.
-  await expect(output(page)).toContainText("no such table: missing_table");
-  const link = output(page).getByRole("button", { name: /main\.sql:14/ });
-  await link.click();
-  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(/^14:/);
+  await expect(rows.getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "1", "Pen", "10", "NULL", "Pen: 10"]);
+  await expect(rows.getByRole("row").nth(2).getByRole("cell")).toHaveText(["2", "2", "Book | A5", "55.5", "NULL", "Book | A5: 55.5"]);
+});
+
+test("SQL: the project has a database, as in a database tool: it keeps its tables between runs and files, and shows what is in it", async ({ page }) => {
+  test.skip(!process.env.E2E_EXECUTION, "needs the API, worker and Docker");
+  await freshProject(page, "SQL", "CREATE TABLE");
+  const db = database(page);
+  await expect(db).toContainText("No tables yet");
+  await page.getByRole("button", { name: "Run program" }).click();
+  // The table the run made is in the database panel, with its row count and, opened, its columns.
+  const students = db.getByRole("button", { name: "students", exact: true });
+  await expect(students).toBeVisible({ timeout: 120_000 });
+  await expect(db.getByRole("region", { name: "Tables" })).toContainText("4");
+  await students.click();
+  await expect(db.getByRole("list", { name: "Columns of students" }).getByRole("listitem")).toHaveText([/^id\s*integer$/i, /^name\s*text$/i, /^city\s*text$/i, /^marks\s*integer$/i]);
+
+  // Another file of the project queries the table the first one made.
+  await newFile(page, "queries.sql", "SELECT MAX(marks) AS top FROM students;\nINSERT INTO students (name, city, marks) VALUES ('Zoya', 'Pune', 99);\nSELECT COUNT(*) AS n FROM students;\n");
+  await page.getByRole("button", { name: "Run program" }).click();
+  const tabs = output(page).getByRole("tablist", { name: "Results" });
+  await expect(tabs.getByRole("tab")).toHaveCount(3, { timeout: 120_000 });
+  await expect(output(page).getByRole("table", { name: "Result 2" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "5"]);
+  await tabs.getByRole("tab").first().click();
+  await expect(output(page).getByRole("table", { name: "Result 1" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "91"]);
+
+  // Only the selected statement runs, and an error in it still names its own line.
+  await setCode(page, "SELECT COUNT(*) AS n FROM students;\nSELECT absent FROM students;\nSELECT 'whole file';\n");
+  await page.evaluate(() => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { setSelection(r: object): void }[] } } }).monaco;
+    m.editor.getEditors()[0]!.setSelection({ startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 40 });
+  });
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(page.getByRole("region", { name: "Run" }).getByText("queries.sql · line 1")).toBeVisible({ timeout: 120_000 });
+  await expect(tabs.getByRole("tab")).toHaveCount(2);
+  await expect(output(page).getByRole("table", { name: "Result 1" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "5"]);
+  await page.evaluate(() => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { setSelection(r: object): void }[] } } }).monaco;
+    m.editor.getEditors()[0]!.setSelection({ startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: 40 });
+  });
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("queries.sql:2: error: no such column: absent", { timeout: 120_000 });
+
+  // The database is the project's: it is there after the page is loaded again.
+  await page.reload();
+  await expect(database(page).getByRole("button", { name: "students", exact: true })).toBeVisible();
+  await expect(database(page).getByRole("region", { name: "Tables" })).toContainText("5");
+
+  // A table opens from the panel without writing a query.
+  await database(page).getByRole("button", { name: "Show the rows of students" }).click();
+  const shown = output(page).getByRole("table", { name: "Result 1" });
+  await expect(shown.getByRole("row")).toHaveCount(6, { timeout: 120_000 });
+  await expect(shown.getByRole("row").nth(5).getByRole("cell")).toHaveText(["5", "5", "Zoya", "Pune", "99"]);
+  await expect(page.getByRole("region", { name: "Run" }).getByText("students", { exact: true }).first()).toBeVisible();
+
+  // Making a table that is already there says why, and offers the way out.
+  await setCode(page, "CREATE TABLE students (id INTEGER);\nSELECT COUNT(*) AS n FROM students;\n");
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("table students already exists", { timeout: 120_000 });
+  await expect(output(page)).toContainText("Write DROP TABLE IF EXISTS students; above this statement, or reset the database.");
+  await output(page).getByRole("button", { name: "Empty the database and run again" }).click();
+  await expect(output(page).getByRole("table", { name: "Result 1" }).getByRole("row").nth(1).getByRole("cell")).toHaveText(["1", "0"], { timeout: 120_000 });
+  await expect(database(page).getByRole("list", { name: "Columns of students" })).toHaveCount(0);
+
+  // Emptying the database from the panel leaves the files alone.
+  await database(page).getByRole("button", { name: "Empty the database" }).click();
+  await page.getByRole("dialog", { name: "Empty the database?" }).getByRole("button", { name: "Empty the database" }).click();
+  await expect(database(page)).toContainText("No tables yet");
+  await expect(page.getByRole("treeitem", { name: /queries\.sql/ })).toBeVisible();
+});
+
+test("SQL: what the assistant writes goes into the file that is open, not into another one", async ({ page }) => {
+  await freshProject(page, "SQL", "CREATE TABLE");
+  const main = await page.evaluate(() => (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { getValue(): string } }[] } } }).monaco.editor.getEditors()[0]!.getModel().getValue());
+  await newFile(page, "sai.sql", "");
+  // The model's answer is given here, so the test is about what the IDE sends and does with it.
+  let sent: { context: { activeFile?: string; files: { path: string; content: string }[] } } | null = null;
+  await page.route("**/api/v1/assistant/status", (route) => route.fulfill({ json: { available: true } }));
+  await page.route("**/api/v1/assistant/chat", async (route) => {
+    sent = route.request().postDataJSON();
+    const answer = "Here is the query:\n\n```edit\nFILE: sai.sql\n<<<<<<< ORIGINAL\n=======\nSELECT MAX(marks) AS top FROM students;\n>>>>>>> UPDATED\n```\n";
+    await route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ type: "text", text: answer })}\n\ndata: ${JSON.stringify({ type: "done" })}\n\n` });
+  });
+  await page.getByRole("button", { name: "AI Assistant" }).click();
+  const panel = page.getByRole("region", { name: "AI Assistant" });
+  await panel.getByLabel("Ask the assistant").fill("give code for max marks");
+  await page.keyboard.press("Enter");
+  const card = panel.getByRole("group", { name: "Suggested change to sai.sql" });
+  await card.getByRole("button", { name: "Apply fix" }).click();
+  await expect(panel.getByText("Applied")).toBeVisible();
+  // The assistant was told which file is open (and that it is empty)...
+  expect(sent!.context.activeFile).toBe("sai.sql");
+  expect(sent!.context.files[0]).toEqual({ path: "sai.sql", content: "" });
+  // ...and its code is in that file; the other file is as it was.
+  await expect(editor(page)).toContainText("SELECT MAX(marks) AS top FROM students;");
+  await page.getByRole("treeitem", { name: /main\.sql/ }).click();
+  await expect(editor(page)).toContainText("DROP TABLE IF EXISTS students;");
+  const after = await page.evaluate(() => (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { getValue(): string } }[] } } }).monaco.editor.getEditors()[0]!.getModel().getValue());
+  expect(after).toBe(main);
 });
 
 test("a web project runs in a browser of its own beside the code: the page, its styles, its script, its console, as it is typed", async ({ page }) => {
@@ -125,6 +252,8 @@ test("a web project runs in a browser of its own beside the code: the page, its 
   // It stands beside the code, not under it.
   const [code, frame] = [(await page.locator(".monaco-editor").first().boundingBox())!, (await preview.boundingBox())!];
   expect(frame.x).toBeGreaterThan(code.x + 200);
+  // The code keeps most of the room, so its lines are read in full; the page can be dragged wider.
+  expect(code.width).toBeGreaterThan(frame.width * 1.3);
   expect(frame.height).toBeGreaterThan(500);
   // style.css is applied, and script.js runs.
   await expect(shown.getByRole("button", { name: "Click me" })).toHaveCSS("background-color", "rgb(53, 116, 240)");
@@ -196,4 +325,31 @@ test.describe("on a phone", () => {
     await page.getByRole("button", { name: "Run program" }).click();
     await expect(preview).toBeVisible();
   });
+});
+
+test("the start screen shows the languages most people use; the rest are one press away, and its parts are one press away too", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("heading", { name: "New project" }).waitFor();
+  const tiles = page.getByRole("button", { name: /^New .+ project$/ });
+  const names = () => tiles.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")!.slice(4, -8)));
+  expect(await names()).toEqual(["Python", "Java", "C++", "C", "JavaScript", "HTML, CSS, JS", "SQL", "TypeScript"]);
+  const more = page.getByRole("button", { name: "More languages" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(tiles).toHaveCount(15);
+  expect((await names()).slice(8)).toEqual(["Kotlin", "Go", "Rust", "C#", "PHP", "Ruby", "Bash"]);
+  await page.getByRole("button", { name: "Fewer languages" }).click();
+  await expect(tiles).toHaveCount(8);
+
+  // The links at the top stay in view and say which part of the page is on screen.
+  const nav = page.getByRole("navigation", { name: "On this page" });
+  await expect(nav.getByRole("button", { name: "New project" })).toHaveAttribute("aria-current", "true");
+  await nav.getByRole("button", { name: "Questions" }).click();
+  await expect(page.getByRole("heading", { name: "Questions and answers" })).toBeInViewport();
+  await expect(nav.getByRole("button", { name: "Questions" })).toHaveAttribute("aria-current", "true");
+  await expect(nav).toBeInViewport();
+  // Recent projects and interviews are always there, even with nothing in them yet.
+  await nav.getByRole("button", { name: "Recent" }).click();
+  await expect(page.getByRole("heading", { name: "Recent projects" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "Interviews" })).toBeInViewport();
 });
