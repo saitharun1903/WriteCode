@@ -1,5 +1,5 @@
 import type { LanguageDefinition } from "../languages/types.js";
-import { findEntryPoints, javaMainClass, classFilesUsed } from "../project/entry-points.js";
+import { findEntryPoints, javaMainClass, kotlinMainClass, classFilesUsed } from "../project/entry-points.js";
 import type { SourceFile } from "./types.js";
 
 export interface CommandContext {
@@ -38,7 +38,8 @@ function sourceRoots(ctx: CommandContext): string {
  * Expands `{entry}`, `{entryClass}`, `{sources}` and `{sourceRoots}`
  * placeholders in a language command template. `{entryClass}` is the binary
  * name of the class with `main` in the entry file, read from its `package`
- * declaration and class declarations (not from the file's folder). Returns an
+ * declaration and class declarations (not from the file's folder); for a
+ * Kotlin file, the class its top-level `main` is compiled into. Returns an
  * argv array; nothing is ever passed through a shell, so file names cannot
  * inject commands.
  */
@@ -56,7 +57,8 @@ export function expandCommand(template: readonly string[], ctx: CommandContext):
     }
     if (arg.includes("{entryClass}")) {
       const file = ctx.files.find((f) => f.path === ctx.entry);
-      entryClass ??= file ? javaMainClass(file) : stripExtension(ctx.entry.slice(ctx.entry.lastIndexOf("/") + 1));
+      // A Kotlin file's top-level functions are in a class named after the file.
+      entryClass ??= file ? (/\.kts?$/i.test(file.path) ? kotlinMainClass(file) : javaMainClass(file)) : stripExtension(ctx.entry.slice(ctx.entry.lastIndexOf("/") + 1));
     }
     out.push(arg.replaceAll("{entryClass}", entryClass ?? "").replaceAll("{entry}", ctx.entry));
   }

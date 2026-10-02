@@ -1,3 +1,4 @@
+import { SQL_RUNNER } from "./sql-runner.js";
 import type { LanguageDefinition } from "./types.js";
 
 const java: LanguageDefinition = {
@@ -227,6 +228,46 @@ console.log(greeting);
   visualizer: { supportLevel: "beta" },
 };
 
+/** The JDK the Java sandbox uses, with the Kotlin compiler added (sandbox-images/kotlin). */
+export const KOTLIN_IMAGE = "writecode/kotlin:2.2";
+/** Where that image keeps Kotlin's standard library. */
+const KOTLIN_STDLIB = "/opt/kotlinc/lib/kotlin-stdlib.jar";
+
+const kotlin: LanguageDefinition = {
+  id: "kotlin",
+  name: "Kotlin",
+  version: "2.2 (JVM 21)",
+  extensions: [".kt"],
+  monacoLanguage: "kotlin",
+  supportLevel: "beta",
+  entryFile: "Main.kt",
+  entryPoints: "function-main",
+  entryPattern: String.raw`^[ \t]*(?:suspend\s+)?fun\s+main\s*\(`,
+  diagnostics: ["gcc", "jvm-trace"],
+  template: [
+    {
+      path: "Main.kt",
+      content: `fun main() {
+    println("Hello World")
+}
+`,
+    },
+  ],
+  compiler: {
+    command: ["kotlinc", "-nowarn", "-d", "out", "{sources}"],
+    sourceExtensions: [".kt"],
+    builds: "program",
+  },
+  runtime: {
+    image: KOTLIN_IMAGE,
+    command: ["java", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss8m", "-cp", `out:${KOTLIN_STDLIB}`, "{entryClass}"],
+  },
+  // The compiler alone needs about 400 MB.
+  sandbox: { memoryMb: 640 },
+  debugger: { protocol: "jdwp", supportLevel: "beta" },
+  visualizer: { supportLevel: "beta" },
+};
+
 /** golang with its standard library already compiled (sandbox-images/golang), so a build takes a second, not ten. */
 export const GO_IMAGE = "writecode/golang:1.25";
 
@@ -413,46 +454,6 @@ echo "Hello World"
   },
 };
 
-/**
- * Runs a file of SQL on a new, empty SQLite database, one statement at a
- * time, printing the rows of every statement that returns some as a table. An
- * error names the line its statement starts on and stops the run.
- */
-const SQL_RUNNER = [
-  "import sqlite3, sys",
-  "path = sys.argv[1]",
-  'src = open(path, encoding="utf-8").read()',
-  'db = sqlite3.connect(":memory:")',
-  "db.isolation_level = None",
-  'db.execute("PRAGMA foreign_keys = ON")',
-  "def show(cur):",
-  "    cols = [d[0] for d in cur.description]",
-  '    rows = [["NULL" if v is None else str(v) for v in r] for r in cur.fetchall()]',
-  "    w = [max([len(c)] + [len(r[i]) for r in rows]) for i, c in enumerate(cols)]",
-  '    line = lambda cells: " | ".join(c.ljust(w[i]) for i, c in enumerate(cells)).rstrip()',
-  "    print(line(cols))",
-  '    print("-+-".join("-" * x for x in w))',
-  "    for r in rows: print(line(r))",
-  '    print("(%d row%s)\\n" % (len(rows), "" if len(rows) == 1 else "s"))',
-  "def run(stmt, at):",
-  "    try:",
-  "        cur = db.execute(stmt)",
-  "        if cur.description: show(cur)",
-  "    except sqlite3.Error as e:",
-  "        sys.stdout.flush()",
-  '        print("%s:%d: error: %s" % (path, at, e), file=sys.stderr)',
-  "        sys.exit(1)",
-  'stmt, at, line = "", 1, 1',
-  "for ch in src:",
-  "    if not stmt.strip(): at = line",
-  "    stmt += ch",
-  '    if ch == "\\n": line += 1',
-  '    if ch == ";" and sqlite3.complete_statement(stmt):',
-  "        run(stmt, at)",
-  '        stmt = ""',
-  "if stmt.strip(): run(stmt, at)",
-].join("\n");
-
 const sql: LanguageDefinition = {
   id: "sql",
   name: "SQL",
@@ -462,21 +463,32 @@ const sql: LanguageDefinition = {
   supportLevel: "beta",
   entryFile: "main.sql",
   diagnostics: ["plain"],
+  output: "tables",
   template: [
     {
       path: "main.sql",
-      content: `CREATE TABLE students (
+      content: `-- Press Run: the result of every query is shown as a table.
+CREATE TABLE students (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
+  city TEXT,
   marks INTEGER
 );
 
-INSERT INTO students (name, marks) VALUES
-  ('Asha', 91),
-  ('Ravi', 78),
-  ('Meera', 85);
+INSERT INTO students (name, city, marks) VALUES
+  ('Asha', 'Hyderabad', 91),
+  ('Ravi', 'Chennai', 78),
+  ('Meera', 'Hyderabad', 85),
+  ('John', 'Mumbai', 67);
 
-SELECT name, marks FROM students ORDER BY marks DESC;
+SELECT name, city, marks
+FROM students
+ORDER BY marks DESC;
+
+SELECT city, COUNT(*) AS students, ROUND(AVG(marks), 1) AS average
+FROM students
+GROUP BY city
+ORDER BY average DESC;
 `,
     },
   ],
@@ -556,7 +568,7 @@ button.addEventListener("click", () => {
   runtime: { image: "", command: [] },
 };
 
-export const LANGUAGES: readonly LanguageDefinition[] = [java, python, cpp, c, javascript, typescript, html, go, rust, csharp, php, ruby, sql, bash];
+export const LANGUAGES: readonly LanguageDefinition[] = [java, python, cpp, c, javascript, typescript, html, kotlin, go, rust, csharp, php, ruby, sql, bash];
 
 const byId = new Map(LANGUAGES.map((l) => [l.id, l]));
 

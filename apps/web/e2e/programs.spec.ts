@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -493,6 +493,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["C", "#include <stdio.h>\n\nint main(void) {\n    int total = 0;\n    // add them up\n\n    for (int i = 1; i <= 3; i++) total += i;\n    printf(\"%d\\n\", total);\n    return 0;\n}\n", 5, 7],
   ["JavaScript", "let total = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
+  ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
 ];
 
 for (const [language, code, set, stops] of NO_CODE) {
@@ -693,6 +694,12 @@ test("visualizer: a linked list built by hand is already there; the steps start 
       "#include <iostream>\n\nstruct Node {\n    int val;\n    Node* next;\n    Node(int v) : val(v), next(nullptr) {}\n};\n\nint main() {\n    Node* head = new Node(1);\n    Node* second = new Node(2);\n    Node* third = new Node(3);\n    head->next = second;\n    second->next = third;\n    Node* cur = head;\n    int total = 0;\n    while (cur != nullptr) {\n        total += cur->val;\n        cur = cur->next;\n    }\n    std::cout << total << std::endl;\n    return 0;\n}\n",
       17,
       "main.cpp",
+    ],
+    [
+      "Kotlin",
+      "class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun main() {\n    val head = Node(1)\n    val second = Node(2)\n    val third = Node(3)\n    head.next = second\n    second.next = third\n    var cur: Node? = head\n    var total = 0\n    while (cur != null) {\n        total += cur.value\n        cur = cur.next\n    }\n    println(total)\n}\n",
+      13,
+      "Main.kt",
     ],
     [
       "JavaScript",

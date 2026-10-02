@@ -52,6 +52,11 @@ const BRIDGE = `(function () {
   ["localStorage", "sessionStorage"].forEach(function (name) {
     try { window[name].length; } catch (e) { try { Object.defineProperty(window, name, { value: memory(), configurable: true }); } catch (e2) {} }
   });
+  var title = null;
+  var tell = function () { if (document.title !== title) { title = document.title; send({ cw: "title", text: title }); } };
+  document.addEventListener("DOMContentLoaded", tell);
+  window.addEventListener("load", tell);
+  setInterval(tell, 1000);
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
     if (!a) return;

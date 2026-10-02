@@ -1251,7 +1251,7 @@ describe.skipIf(!enabled).concurrent("Only the program being run is built", () =
 /** Where the errors of a run point, as the editor would mark them. */
 const marks = (language: string, o: Outcome, files: Files) => parseDiagnostics(language, o.result.compileOutput + "\n" + o.result.stderr, Object.keys(files)).map((d) => `${d.file}:${d.line} ${d.source}`);
 
-describe.runIf(enabled)("Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
+describe.runIf(enabled)("Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
   it("every language's starter program prints Hello World", { timeout: 6 * T }, async () => {
     for (const lang of LANGUAGES.filter((l) => !l.preview)) {
       const files = Object.fromEntries(lang.template.map((f) => [f.path, f.content]));
@@ -1350,9 +1350,71 @@ describe.runIf(enabled)("Go, Rust, C#, PHP, Ruby, SQL and Bash", () => {
     expect(marks("ruby", c, crash)).toEqual(["main.rb:2 runtime"]);
   });
 
+  it("Kotlin: input, data classes and collections, several files, a compile error and an exception on their lines", { timeout: 2 * T }, async () => {
+    const files = {
+      "Main.kt": 'data class Student(val name: String, val marks: Int)\n\nfun main() {\n    val n = readln().trim().toInt()\n    val best = listOf(Student("a", 3), Student("b", 9)).maxByOrNull { it.marks }!!\n    println("${twice(n)} ${best.name}")\n}\n',
+      "Util.kt": "fun twice(x: Int) = x * 2\n",
+      "Other.kt": 'fun main() {\n    val broken: Int = "text"\n}\n',
+    };
+    expectOk(await run("kotlin", files, { stdin: "21\n" }), "42 b\n");
+    // A file in a package, started by the class its main is compiled into.
+    expectOk(await run("kotlin", { "app/Hello.kt": 'package app\n\nfun main() {\n    println("in a package")\n}\n' }), "in a package\n");
+    const typed = await run("kotlin", { "Main.kt": 'fun main() {\n    print("n? ")\n    val n = readln().toInt()\n    println(n * 2)\n}\n' }, { typed: ["25\n"] });
+    expect(typed.result.stdout).toBe("n? 50\n");
+    const bad = { "Main.kt": 'fun main() {\n    val x: Int = "a"\n}\n' };
+    const o = await run("kotlin", bad);
+    expect(o.result.status).toBe("COMPILATION_ERROR");
+    expect(marks("kotlin", o, bad)).toEqual(["Main.kt:2 compiler"]);
+    const crash = { "Main.kt": "fun main() {\n    val xs = intArrayOf(1)\n    val i = xs.size + 2\n    println(xs[i])\n}\n" };
+    const c = await run("kotlin", crash);
+    expect(c.result.status).toBe("RUNTIME_ERROR");
+    expect(marks("kotlin", c, crash)).toEqual(["Main.kt:4 runtime"]);
+  });
+
   it("SQL: tables are printed for every query; an error names the line of its statement", { timeout: T }, async () => {
     const ok = { "main.sql": "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, score INTEGER);\nINSERT INTO t (name, score) VALUES ('Asha', 91), ('Ravi', NULL);\n-- two queries on one line; a semicolon in a string\nSELECT name, score FROM t ORDER BY id; SELECT count(*) AS n, 'a;b' AS s FROM t;\n" };
-    expectOk(await run("sql", ok), "name | score\n-----+------\nAsha | 91\nRavi | NULL\n(2 rows)\n\nn | s\n--+----\n2 | a;b\n(1 row)\n\n");
+    expectOk(await run("sql", ok), "-- Table t created\n-- 2 rows inserted into t\nname | score\n-----+------\nAsha | 91\nRavi | NULL\n(2 rows)\n\nn | s\n--+----\n2 | a;b\n(1 row)\n\n");
+    // SQL as it is taught with MySQL: what SQLite has under another name is accepted.
+    const mysql = {
+      "main.sql":
+        "CREATE DATABASE school;\nUSE school;\n# a comment\nCREATE TABLE `students` (\n  id INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,\n  name VARCHAR(50) NOT NULL,\n  grade ENUM('A', 'B') DEFAULT 'B',\n  joined DATE,\n  PRIMARY KEY (id)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\nINSERT INTO students (name, joined) VALUES ('Asha', '2024-06-01');\nINSERT INTO students (name, grade, joined) VALUES ('Ra|vi', 'A', '2023-01-15');\nSHOW TABLES;\nDESC students;\nSELECT id, CONCAT(name, '-', grade) AS label, YEAR(joined) AS yr, IF(grade = 'A', 'top', 'ok') AS r FROM students;\nUPDATE students SET grade = 'A' WHERE id = 1;\nTRUNCATE TABLE students;\nSELECT COUNT(*) AS n FROM students;\n",
+    };
+    expectOk(
+      await run("sql", mysql),
+      [
+        "-- Database school created",
+        "-- Using database school",
+        "-- Table students created",
+        "-- 2 rows inserted into students",
+        "Tables",
+        "--------",
+        "students",
+        "(1 row)",
+        "",
+        "Field  | Type        | Null | Key | Default",
+        "-------+-------------+------+-----+--------",
+        "id     | INTEGER     | NO   | PRI | NULL",
+        "name   | VARCHAR(50) | NO   |     | NULL",
+        "grade  | TEXT        | YES  |     | 'B'",
+        "joined | DATE        | YES  |     | NULL",
+        "(4 rows)",
+        "",
+        "id | label    | yr   | r",
+        "---+----------+------+----",
+        "1  | Asha-B   | 2024 | ok",
+        "2  | Ra\\|vi-A | 2023 | top",
+        "(2 rows)",
+        "",
+        "-- 1 row updated in students",
+        "-- 2 rows deleted from students",
+        "n",
+        "-",
+        "0",
+        "(1 row)",
+        "",
+        "",
+      ].join("\n"),
+    );
     const bad = { "main.sql": "CREATE TABLE t (id INTEGER);\n\nSELECT *\nFROM missing;\nSELECT 1;\n" };
     const o = await run("sql", bad);
     expect(o.result.status).toBe("RUNTIME_ERROR");

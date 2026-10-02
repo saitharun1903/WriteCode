@@ -241,7 +241,7 @@ describe("debug protocol", () => {
       // A page that runs in the browser is never sent to a sandbox.
       expect(request("run"), `${lang.id} run`).toBe(!lang.preview);
     }
-    for (const id of ["java", "python", "c", "cpp", "javascript", "typescript"]) expect(getLanguage(id)?.debugger && getLanguage(id)?.visualizer, id).toBeTruthy();
+    for (const id of ["java", "python", "c", "cpp", "javascript", "typescript", "kotlin"]) expect(getLanguage(id)?.debugger && getLanguage(id)?.visualizer, id).toBeTruthy();
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Other.java": [1] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "debug", breakpoints: { "Main.java": [0] } }).ok).toBe(false);
     expect(validateExecutionRequest({ ...base, mode: "fly" }).ok).toBe(false);
@@ -419,6 +419,17 @@ describe("where a program starts, in the languages added later", () => {
     expect(starts("rust", "main.rs", "mod util;\n\nfn main() {\n}\n")).toEqual([3]);
     expect(starts("csharp", "Program.cs", "using System;\n\nclass Program\n{\n    static async Task Main(string[] args)\n    {\n    }\n}\n")).toEqual([5]);
     expect(starts("csharp", "Util.cs", "static class Util { public static int Twice(int x) => x * 2; }\n")).toEqual([]);
+  });
+
+  it("Kotlin: a top-level main, and the class the JVM starts for its file", () => {
+    expect(starts("kotlin", "Main.kt", "// fun main() {}\nfun main() {\n}\n")).toEqual([2]);
+    expect(starts("kotlin", "Util.kt", "fun twice(x: Int) = x * 2\n")).toEqual([]);
+    const run = requireLanguage("kotlin").runtime.command;
+    expect(expandCommand(run, { entry: "Main.kt", files: [{ path: "Main.kt", content: "fun main() {}\n" }] }).at(-1)).toBe("MainKt");
+    expect(expandCommand(run, { entry: "app/hello-world.kt", files: [{ path: "app/hello-world.kt", content: "package app.demo\n\nfun main() {}\n" }] }).at(-1)).toBe("app.demo.Hello_worldKt");
+    // Its errors read like gcc's, and its exceptions like the JVM's.
+    expect(parseDiagnostics("kotlin", "Main.kt:2:18: error: initializer type mismatch\n", ["Main.kt"])[0]).toMatchObject({ line: 2, column: 18, source: "compiler" });
+    expect(parseDiagnostics("kotlin", 'Exception in thread "main" java.lang.IndexOutOfBoundsException: Index 3\n\tat MainKt.main(Main.kt:4)\n\tat MainKt.main(Main.kt)\n', ["Main.kt"])[0]).toMatchObject({ line: 4, source: "runtime" });
   });
 
   it("a compiler given only the entry file is asked once", () => {

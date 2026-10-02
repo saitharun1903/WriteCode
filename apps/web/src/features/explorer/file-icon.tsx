@@ -22,6 +22,7 @@ const TAGS: Record<string, { text: string; color: string }> = {
   html: { text: "<>", color: "#e0703a" },
   htm: { text: "<>", color: "#e0703a" },
   css: { text: "CSS", color: "#3f7fd9" },
+  kt: { text: "KT", color: "#8a63e6" },
   go: { text: "GO", color: "#29a8c9" },
   rs: { text: "RS", color: "#c0703a" },
   cs: { text: "C#", color: "#8a5cc7" },

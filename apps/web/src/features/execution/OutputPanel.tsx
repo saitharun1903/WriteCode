@@ -1,5 +1,7 @@
 "use client";
 
+import { getLanguage } from "@cw/shared";
+import { SqlResults } from "./SqlResults";
 import { ArrowDownToLine, Check, Copy, CornerDownLeft, Keyboard, Lightbulb, Radio, RotateCw, Search, Sparkles, Square, Trash2, WrapText, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "@/components/ui/button";
@@ -194,6 +196,9 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const running = isRunning(run);
+  const tables = useWorkspace((s) => !!s.project && getLanguage(s.project.language)?.output === "tables");
+  const log = run?.log;
+  const printed = useMemo(() => (tables && log ? log.filter((c) => c.stream === "stdout").map((c) => c.text).join("") : ""), [tables, log]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -239,11 +244,15 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
             wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
           )}
         >
-          {run.log.map((chunk, i) => (
-            <span key={i} className={streamClass[chunk.stream]}>
-              {chunk.stream === "system" ? chunk.text : chunk.stream === "stderr" || chunk.stream === "compile" ? <LinkedText text={chunk.text} query={query} /> : highlight(chunk.text, query)}
-            </span>
-          ))}
+          {/* A language that prints tables (SQL): what it printed is drawn as tables, then the rest (an error) as text. */}
+          {tables && <SqlResults text={printed} />}
+          {run.log.map((chunk, i) =>
+            tables && chunk.stream === "stdout" ? null : (
+              <span key={i} className={streamClass[chunk.stream]}>
+                {chunk.stream === "system" ? chunk.text : chunk.stream === "stderr" || chunk.stream === "compile" ? <LinkedText text={chunk.text} query={query} /> : highlight(chunk.text, query)}
+              </span>
+            ),
+          )}
           {run.error && (
             <div role="alert" className="font-sans">
               <p className="text-danger">{run.error.title}</p>

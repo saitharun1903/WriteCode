@@ -13,7 +13,7 @@
 export type Segment = { text: string } | { text: string; file: string; line: number; column?: number };
 
 const SANDBOX = /^\/?workspace\//;
-const EXT = "java|py|cpp|cc|cxx|hpp|h|c|js|mjs|cjs|ts|mts|go|rs|cs|php|rb|sql|sh";
+const EXT = "java|kt|py|cpp|cc|cxx|hpp|h|c|js|mjs|cjs|ts|mts|go|rs|cs|php|rb|sql|sh";
 const PATTERN = new RegExp(
   // Python: File "path", line N
   `File "([^"\\n]+)", line (\\d+)` +

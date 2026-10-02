@@ -72,7 +72,7 @@ function Watermark() {
         <Brand className="gap-2 [&>span]:text-[14px] [&>svg]:size-[18px]" />
         <span className="text-[13px] text-fg-subtle">· {SITE}</span>
       </Link>
-      <p className="max-w-md text-xs text-fg-subtle">Write, run, debug and visualize code in your browser: Java, Python, C, C++, JavaScript and nine more languages. Free, nothing to install.</p>
+      <p className="max-w-md text-xs text-fg-subtle">Write, run, debug and visualize code in your browser: Java, Python, C, C++, JavaScript and ten more languages. Free, nothing to install.</p>
     </footer>
   );
 }

@@ -24,7 +24,7 @@ export interface LandingPage {
   h1: string;
   intro: string;
   /** Language the "Open" button starts a project in. */
-  language: "java" | "python" | "c" | "cpp" | "javascript" | "typescript" | "go" | "rust" | "csharp" | "php" | "ruby" | "sql" | "html";
+  language: "java" | "python" | "c" | "cpp" | "javascript" | "typescript" | "kotlin" | "go" | "rust" | "csharp" | "php" | "ruby" | "sql" | "html";
   cta: string;
   sample: { file: string; code: string };
   features: { title: string; text: string }[];
@@ -111,6 +111,18 @@ const average = (s: Student) => s.marks.reduce((a, b) => a + b, 0) / s.marks.len
 
 const ravi: Student = { name: "Ravi", marks: [78, 91, 85] };
 console.log(\`\${ravi.name}: \${average(ravi).toFixed(1)}\`);`;
+
+const KOTLIN = `data class Student(val name: String, val marks: Int)
+
+fun main() {
+    val n = readln().toInt()
+    val students = List(n) {
+        val (name, marks) = readln().split(" ")
+        Student(name, marks.toInt())
+    }
+    val best = students.maxByOrNull { it.marks }
+    println("Top: \${best?.name}")
+}`;
 
 const GO = `package main
 
@@ -329,6 +341,21 @@ export const LANDING_PAGES: LandingPage[] = [
     extraFaqs: [{ q: "Do I need to compile it first?", a: "No. Press Run and the TypeScript runs directly; types are stripped automatically." }],
   }),
   langPage({
+    slug: "kotlin-online-compiler",
+    language: "kotlin",
+    name: "Kotlin",
+    version: "2.2",
+    label: "Kotlin compiler",
+    sample: { file: "Main.kt", code: KOTLIN },
+    debugs: true,
+    intro: "Write and run Kotlin 2.2 in your browser on a real JVM. Read input with readln(), use data classes and collections, debug with breakpoints and watch the program run step by step in the visualizer. Nothing to install.",
+    extraFaqs: [
+      { q: "Which Kotlin version is used?", a: "Kotlin 2.2, compiled for the JVM (Java 21)." },
+      { q: "Can I debug Kotlin online?", a: "Yes. Set breakpoints, step through the code and see variables and objects; the visualizer draws lists, maps and linked structures as the program runs." },
+      { q: "Can my project have several files?", a: "Yes. Every .kt file of the project is compiled with the file you run." },
+    ],
+  }),
+  langPage({
     slug: "go-online-compiler",
     language: "go",
     name: "Go",
@@ -416,14 +443,15 @@ export const LANDING_PAGES: LandingPage[] = [
     sample: { file: "main.sql", code: SQL },
     features: [
       { title: "A real database", text: "Queries run on SQLite 3, not a simulation: joins, GROUP BY, subqueries, views, indexes, foreign keys and transactions all work." },
-      { title: "Results as tables", text: "Every statement that returns rows prints them as a table with its column names and a row count." },
+      { title: "Results as tables", text: "Every query's rows are shown as a table with its column names and a row count; the other statements say what they did (3 rows inserted, 1 row updated)." },
+      { title: "MySQL-style SQL accepted", text: "AUTO_INCREMENT, ENGINE=..., ENUM, CREATE DATABASE and USE, SHOW TABLES, DESCRIBE, and functions like NOW(), CONCAT(), IF() and YEAR() work as they are written for MySQL." },
       { title: "Errors on their line", text: "A mistake stops the run and names the line where its statement starts; click it to go there." },
       { title: "Several files", text: "Keep the schema in one file and the queries in another; Run runs the file that is open." },
       { title: "Share and work together", text: "Send a link to your queries, or edit them live with someone else." },
     ],
     steps: ["Open the SQL editor: a sample table and query are ready.", "Write your CREATE TABLE, INSERT and SELECT statements.", "Press Run to see each query's result as a table."],
     faqs: [
-      { q: "Which database is it?", a: "SQLite 3. Standard SQL works; a few things specific to MySQL or PostgreSQL (such as AUTO_INCREMENT or SERIAL) are written differently in SQLite." },
+      { q: "Which database is it?", a: "SQLite 3. Standard SQL works, and the usual MySQL forms are accepted too: AUTO_INCREMENT, SHOW TABLES, DESCRIBE, CREATE DATABASE and USE, and functions such as NOW() and CONCAT()." },
       { q: "Is my data kept between runs?", a: "No. Each run starts with an empty database and runs the file from the top, so the result is always the same for the same file." },
       ...COMMON_FAQS,
     ],
@@ -461,21 +489,21 @@ export const LANDING_PAGES: LandingPage[] = [
     language: "java",
     title: "Online Compiler & IDE for Java, Python, C, C++, JavaScript and more",
     description:
-      "Free online compiler and IDE: run Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash in your browser, and preview HTML and CSS live. With input, a debugger, a visualizer, test cases and AI help. No sign-up.",
+      "Free online compiler and IDE: run Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash in your browser, and preview HTML and CSS live. With input, a debugger, a visualizer, test cases and AI help. No sign-up.",
     h1: "Online compiler and IDE",
     intro:
-      "WriteCode is a full coding environment in your browser: projects with many files, real compilers for thirteen languages, a live preview for HTML and CSS, a debugger, a step-by-step visualizer, test cases and live collaboration. Open it and start coding in seconds.",
+      "WriteCode is a full coding environment in your browser: projects with many files, real compilers for fourteen languages, a live preview for HTML and CSS, a debugger, a step-by-step visualizer, test cases and live collaboration. Open it and start coding in seconds.",
     cta: "Open the editor",
     sample: { file: "Main.java", code: JAVA },
     features: [
-      { title: "Fourteen languages", text: "Java 21, Python 3.13, C and C++ (GCC 14), JavaScript and TypeScript (Node.js 22), Go 1.25, Rust 1.90, C# 12, PHP 8.4, Ruby 3.4, SQL (SQLite) and Bash, all running on real toolchains, and HTML with CSS in a live preview." },
+      { title: "Fifteen languages", text: "Java 21, Python 3.13, C and C++ (GCC 14), JavaScript and TypeScript (Node.js 22), Kotlin 2.2, Go 1.25, Rust 1.90, C# 12, PHP 8.4, Ruby 3.4, SQL (SQLite) and Bash, all running on real toolchains, and HTML with CSS in a live preview." },
       ...DEBUG_FEATURES,
       ...RUN_FEATURES("", "").slice(1),
     ],
     steps: ["Choose a language on the start screen.", "Write your code; it saves automatically.", "Press Run, debug, or add test cases.", "Share a live link to code together."],
     faqs: [
-      { q: "Which languages are supported?", a: "Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash, and HTML with CSS and JavaScript in a live preview." },
-      { q: "Which languages have the debugger and the visualizer?", a: "Java, Python, C, C++, JavaScript and TypeScript. The other languages run, read input and can be checked with test cases." },
+      { q: "Which languages are supported?", a: "Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash, and HTML with CSS and JavaScript in a live preview." },
+      { q: "Which languages have the debugger and the visualizer?", a: "Java, Python, C, C++, JavaScript, TypeScript and Kotlin. The other languages run, read input and can be checked with test cases." },
       ...COMMON_FAQS,
     ],
   },
@@ -502,7 +530,7 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the debugger and write or paste your program.", "Click in the margin next to a line to add a breakpoint.", "Press Debug (F5).", "Step with F10 / F11 and watch the variables change."],
     faqs: [
-      { q: "Which languages can I debug?", a: "Java, Python, C, C++, JavaScript and TypeScript." },
+      { q: "Which languages can I debug?", a: "Java, Python, C, C++, JavaScript, TypeScript and Kotlin." },
       ...COMMON_FAQS,
     ],
   },
@@ -608,14 +636,14 @@ export const HOME_FEATURES: { title: string; head: string; text: string; more: s
   {
     title: "Online compiler",
     head: "Type it, run it",
-    text: "Pick one of fourteen languages and press Run. Your program is built by the real compiler (JDK 21, GCC 14, Python 3.13, Node.js 22, Go, Rust, .NET) and the output appears under the code. When it asks for input, you type it in the console, the way you would in a terminal.",
+    text: "Pick one of fifteen languages and press Run. Your program is built by the real compiler (JDK 21, GCC 14, Python 3.13, Node.js 22, Go, Rust, .NET) and the output appears under the code. When it asks for input, you type it in the console, the way you would in a terminal.",
     more: "About the online compiler",
     slug: "online-compiler",
   },
   {
     title: "Online debugger",
     head: "Stop on any line",
-    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in Java, Python, C, C++, JavaScript and TypeScript.",
+    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in Java, Python, C, C++, JavaScript, TypeScript and Kotlin.",
     more: "About the online debugger",
     slug: "online-debugger",
   },
@@ -645,7 +673,7 @@ export const HOME_FEATURES: { title: string; head: string; text: string; more: s
 export const HOME_FAQS: Faq[] = [
   {
     q: "What is WriteCode?",
-    a: "WriteCode (writecode.in) is a free online compiler and IDE that runs in the browser. You can write and run Java, Python, C, C++, JavaScript, TypeScript, Go, Rust, C#, PHP, Ruby, SQL and Bash, preview HTML and CSS live, debug and visualize programs, test them, and share them.",
+    a: "WriteCode (writecode.in) is a free online compiler and IDE that runs in the browser. You can write and run Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash, preview HTML and CSS live, debug and visualize programs, test them, and share them.",
   },
   { q: "Do I need to install anything or sign up?", a: "No. Open writecode.in, choose a language and start typing. There is no download and no account." },
   { q: "Can my program read input?", a: "Yes. Type the input in the console while the program runs, as in a terminal, or prepare it before running. Scanner, input(), scanf, cin and readline all work." },

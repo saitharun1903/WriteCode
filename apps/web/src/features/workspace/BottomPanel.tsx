@@ -13,6 +13,7 @@ import { RunMetrics, RunToolWindow } from "@/features/execution/OutputPanel";
 import { ProblemsPanel } from "@/features/execution/ProblemsPanel";
 import { STATUS_META } from "@/features/execution/status";
 import { isRunning, useExecution } from "@/features/execution/store";
+import { usePreview } from "@/features/preview/store";
 import { useWorkspace } from "@/features/projects/store";
 import { useSettings, type BottomTab } from "@/features/settings/store";
 import { cn } from "@/lib/cn";
@@ -28,7 +29,6 @@ function Loading() {
 // Heavier tool windows download the first time they are opened, keeping the first page load small.
 const DebugToolWindow = dynamic(() => import("@/features/debug/DebugPanel").then((m) => m.DebugToolWindow), { ssr: false, loading: Loading });
 const VisualizerPanel = dynamic(() => import("@/features/visualize/VisualizerPanel").then((m) => m.VisualizerPanel), { ssr: false, loading: Loading });
-const PreviewPanel = dynamic(() => import("@/features/preview/PreviewPanel").then((m) => m.PreviewPanel), { ssr: false, loading: Loading });
 const TestsPanel = dynamic(() => import("@/features/tests/TestsPanel").then((m) => m.TestsPanel), { ssr: false, loading: Loading });
 
 const TITLES: Record<BottomTab, string> = {
@@ -78,9 +78,9 @@ function SessionTab({ tab }: { tab: BottomTab }) {
 
 export function BottomPanel({ onClose }: { onClose: () => void }) {
   const tab = useSettings((s) => s.layout.bottomTab);
-  // A project that runs in the browser: its Run window is the page itself.
+  // A project that runs in the browser has no console here: its page, and what the page logs, are in the preview.
   const preview = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview) && tab === "run";
-  const title = preview ? "Preview" : TITLES[tab];
+  const title = TITLES[tab];
 
   return (
     <section aria-label={title} className="flex h-full min-h-0 flex-col bg-surface">
@@ -95,7 +95,17 @@ export function BottomPanel({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {tab === "run" && (preview ? <PreviewPanel /> : <RunToolWindow />)}
+        {tab === "run" &&
+          (preview ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-fg-subtle">
+              <p>This project runs in your browser. The page, and what it logs, are in the preview.</p>
+              <button type="button" onClick={() => usePreview.getState().run()} className="font-medium text-accent-ink hover:underline">
+                Open the preview
+              </button>
+            </div>
+          ) : (
+            <RunToolWindow />
+          ))}
         {tab === "debug" && <DebugToolWindow />}
         {tab === "visualize" && <VisualizerPanel />}
         {tab === "tests" && <TestsPanel />}

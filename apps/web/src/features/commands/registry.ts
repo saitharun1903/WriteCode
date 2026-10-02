@@ -71,6 +71,9 @@ export function canVisualize(): boolean {
 }
 
 export function showBottom(tab: BottomTab) {
+  // A project that runs in the browser shows its page in the preview: its Run window stays where it is.
+  const project = useWorkspace.getState().project;
+  if (tab === "run" && project && getLanguage(project.language)?.preview) return;
   useSettings.getState().updateLayout({ bottomOpen: true, bottomTab: tab });
   useUI.getState().setDrawer("bottom");
 }

@@ -101,6 +101,10 @@ export interface LanguageDefinition {
    * function. Without it, a C `int main(` at the top level of the file.
    */
   entryPattern?: string;
+  /** What its toolchain needs beyond the usual sandbox (the Kotlin compiler does not fit in the usual memory). */
+  sandbox?: { memoryMb: number };
+  /** `tables`: the program prints the results of queries as tables (see sql-runner.ts), which the console draws as tables. */
+  output?: "tables";
   /**
    * Set for a language that runs in the visitor's browser, not in a sandbox:
    * Run shows the page in a preview. Its `runtime` names no image or command.

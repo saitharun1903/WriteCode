@@ -42,6 +42,7 @@ const MARKS: Record<string, { text: string; bg: string; fg: string }> = {
   javascript: { text: "JS", bg: "#f0db4f", fg: "#1e1f22" },
   typescript: { text: "TS", bg: "#3178c6", fg: "#fff" },
   html: { text: "</>", bg: "#c9451a", fg: "#fff" },
+  kotlin: { text: "Kt", bg: "#6b3fd4", fg: "#fff" },
   go: { text: "Go", bg: "#007d9c", fg: "#fff" },
   rust: { text: "Rs", bg: "#8f3b12", fg: "#fff" },
   csharp: { text: "C#", bg: "#68217a", fg: "#fff" },
@@ -159,7 +160,7 @@ export function StartScreen() {
                 <LanguageMark id={lang.id} size={46} className="max-sm:size-10! max-sm:text-[15px]!" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-semibold text-fg sm:text-base">{lang.name}</span>
-                  <span className="block truncate text-sm text-fg-subtle">{temporary ? "Not saved" : lang.version}</span>
+                  {temporary && <span className="block truncate text-sm text-fg-subtle">Not saved</span>}
                 </span>
                 <span className="hidden size-7 shrink-0 items-center justify-center rounded-full text-fg-faint transition-colors group-hover:bg-accent group-hover:text-accent-fg sm:flex">
                   {temporary ? <Hourglass className="size-3.5" /> : <ArrowRight className="size-4" />}

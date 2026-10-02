@@ -46,6 +46,12 @@ function source(url: URL, cached: Promise<string> | null, set: (p: Promise<strin
   return p;
 }
 
+/** The class path a JVM language runs with (the value after `-cp` in its run command). */
+export function classpathOf(command: readonly string[]): string {
+  const at = command.indexOf("-cp");
+  return at >= 0 && command[at + 1] ? command[at + 1]! : "out";
+}
+
 /** `stdinPath` is the program's stdin: the input file, or the interactive FIFO. */
 export async function debugAdapterFor(docker: Docker, request: ExecutionRequest, stdinPath = STDIN_PATH): Promise<DebugAdapter> {
   const common = { stdinPath, files: request.files.map((f) => f.path), breakpoints: request.breakpoints ?? {} };
@@ -63,7 +69,7 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
           { path: wrapper, content: ["#!/bin/sh", `exec "\${JAVA_HOME:-/opt/java/openjdk}/bin/java" "$@" < ${stdinPath}`, ""].join("\n") },
         ],
         argv: ["java", "-Xmx64m", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xshare:auto", "-cp", ADAPTER_DIR, ADAPTER_MAIN],
-        launch: { ...common, mainClass, classpath: "out", vmOptions, javaHome: JAVA_WRAPPER_HOME },
+        launch: { ...common, mainClass, classpath: classpathOf(lang.runtime.command), vmOptions, javaHome: JAVA_WRAPPER_HOME },
         setup: [["chmod", "755", wrapper]],
         monitorInput: true,
       };

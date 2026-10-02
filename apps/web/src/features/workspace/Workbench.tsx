@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { Bug, FileText, FlaskConical, FolderClosed, History, Play, Sparkles, Workflow } from "lucide-react";
 import { Group, Panel, Separator, useDefaultLayout, type PanelImperativeHandle } from "react-resizable-panels";
 import { getLanguage } from "@cw/shared";
+import { usePreview } from "@/features/preview/store";
 import { useWorkspace } from "@/features/projects/store";
 import { EditorArea } from "@/features/editor/EditorArea";
 import { FileExplorer } from "@/features/explorer/FileExplorer";
@@ -26,6 +27,7 @@ import { CandidateTests } from "@/features/interview/CandidateTests";
 import { useCandidate } from "@/features/interview/candidate";
 import { useRestriction } from "@/features/interview/restrict";
 
+const PreviewPanel = dynamic(() => import("@/features/preview/PreviewPanel").then((m) => m.PreviewPanel), { ssr: false });
 // Downloaded the first time the assistant is opened.
 const AssistantPanel = dynamic(() => import("@/features/assistant/AssistantPanel").then((m) => m.AssistantPanel), { ssr: false });
 
@@ -85,13 +87,18 @@ function DesktopWorkbench() {
     if (!layout.assistantOpen && !p.isCollapsed()) p.collapse();
   }, [layout.assistantOpen]);
 
-  // The visualizer draws frames and objects side by side, and a web page needs room to be seen: give them room when they open.
-  const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
+  // The visualizer draws frames and objects side by side, and a SQL run prints tables: give them room when they open.
+  const tables = useWorkspace((s) => !!s.project && getLanguage(s.project.language)?.output === "tables");
   useEffect(() => {
     const p = bottomRef.current;
-    if (!p || !layout.bottomOpen || !(layout.bottomTab === "visualize" || (layout.bottomTab === "run" && previews))) return;
+    if (!p || !layout.bottomOpen || !(layout.bottomTab === "visualize" || (layout.bottomTab === "run" && tables))) return;
     if (p.getSize().asPercentage < 50) p.resize("55%");
-  }, [layout.bottomOpen, layout.bottomTab, previews]);
+  }, [layout.bottomOpen, layout.bottomTab, tables]);
+  // A project that runs in the browser: its page stands beside the code.
+  const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
+  const previewOpen = usePreview((s) => s.open);
+  const previewFull = usePreview((s) => s.full);
+  const split = useDefaultLayout({ id: "cw-preview", panelIds: ["code", "preview"] });
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -116,7 +123,23 @@ function DesktopWorkbench() {
         <Panel id="main" minSize="30%">
           <Group orientation="vertical" id="cw-inner" defaultLayout={inner.defaultLayout} onLayoutChanged={inner.onLayoutChanged}>
             <Panel id="editor" minSize="20%">
-              <EditorArea />
+              {previews ? (
+                <Group orientation="horizontal" id="cw-preview" defaultLayout={split.defaultLayout} onLayoutChanged={split.onLayoutChanged}>
+                  <Panel id="code" minSize="25%">
+                    <EditorArea />
+                  </Panel>
+                  {previewOpen && (
+                    <>
+                      <Separator className={cn(separatorClass, "w-px")} />
+                      <Panel id="preview" defaultSize="48%" minSize="280px">
+                        <PreviewPanel full={previewFull} />
+                      </Panel>
+                    </>
+                  )}
+                </Group>
+              ) : (
+                <EditorArea />
+              )}
             </Panel>
             <Separator className={cn(separatorClass, "h-px")} />
             <Panel
@@ -299,7 +322,10 @@ function CompactWorkbench() {
   const run = useExecution((s) => s.run);
   const paused = useDebug((s) => s.phase === "paused");
   const keyboard = useKeyboardOpen();
+  // A project that runs in the browser: on a phone its page opens over the code, like a link inside an app.
   const previews = useWorkspace((s) => !!s.project && !!getLanguage(s.project.language)?.preview);
+  const previewOpen = usePreview((s) => s.open) && previews && !restricted;
+  const previewFull = usePreview((s) => s.full);
   const tablet = useMediaQuery("(min-width: 700px)");
   // Wide enough for the assistant to stand beside the code.
   const roomy = useMediaQuery("(min-width: 1000px)");
@@ -335,6 +361,8 @@ function CompactWorkbench() {
         if (t.kind === "side") {
           updateLayout({ sideView: t.id });
           setDrawer(active ? "none" : "sidebar");
+        } else if (t.id === "run" && previews) {
+          usePreview.getState().run();
         } else if (t.kind === "bottom") {
           updateLayout({ bottomTab: t.id });
           setDrawer(active ? "none" : "bottom");
@@ -360,10 +388,15 @@ function CompactWorkbench() {
           <div className="min-h-0 flex-1" onFocusCapture={() => setTypingCode(true)} onBlurCapture={() => setTypingCode(false)}>
             <EditorArea />
           </div>
-          {drawer === "bottom" && <div className={cn("shrink-0 border-t border-line bg-surface", (bottomTab === "visualize" || (bottomTab === "run" && previews)) && !restricted ? "h-[58%]" : "h-[44%]", under)}>{bottom}</div>}
+          {drawer === "bottom" && <div className={cn("shrink-0 border-t border-line bg-surface", bottomTab === "visualize" && !restricted ? "h-[58%]" : "h-[44%]", under)}>{bottom}</div>}
           {drawer === "assistant" && !roomy && <div className={cn("h-[58%] shrink-0 border-t border-line bg-surface", under)}>{assistant}</div>}
         </div>
         {drawer === "assistant" && roomy && <div className="w-[400px] shrink-0 border-l border-line bg-surface">{assistant}</div>}
+        {previewOpen && (
+          <div className={cn("shrink-0 border-l border-line", roomy ? "w-[46%]" : "w-0")}>
+            <PreviewPanel full={previewFull || !roomy} />
+          </div>
+        )}
       </div>
     );
   }
@@ -404,6 +437,7 @@ function CompactWorkbench() {
       </div>
       {/* The tab bar gives its room to the keyboard while it is up. */}
       {!keyboard && <PanelTabs items={items} />}
+      {previewOpen && <PreviewPanel full />}
     </div>
   );
 }

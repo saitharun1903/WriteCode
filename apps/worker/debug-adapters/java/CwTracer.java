@@ -132,6 +132,12 @@ public final class CwTracer {
         }
     }
 
+    /** Where the last recorded line step was, and whether an accessor has been passed over since. */
+    private boolean afterAccessor;
+    private int lastDepth = -1;
+    private int lastLine = -1;
+    private Method lastMethod;
+
     private void handle(Event e) throws Exception {
         if (e instanceof ClassPrepareEvent) {
             ReferenceType type = ((ClassPrepareEvent) e).referenceType();
@@ -144,12 +150,28 @@ public final class CwTracer {
             }
             erm.deleteEventRequest(e.request());
         } else if (e instanceof BreakpointEvent) {
-            mainThread = ((BreakpointEvent) e).thread();
             erm.deleteEventRequest(e.request());
+            // A second main (Kotlin's own, called by the one the JVM starts) is reached while already stepping.
+            if (mainThread != null) return;
+            mainThread = ((BreakpointEvent) e).thread();
             startStepping();
-            record(mainThread, "line", null, null);
+            if (inProject(((BreakpointEvent) e).location())) record(mainThread, "line", null, null);
         } else if (e instanceof StepEvent) {
-            if (recording && inProject(((StepEvent) e).location())) record(((StepEvent) e).thread(), "line", null, null);
+            StepEvent se = (StepEvent) e;
+            Location loc = se.location();
+            if (!recording) return;
+            if (!inProject(loc)) {
+                if (isPropertyAccessor(loc)) afterAccessor = true;
+                return;
+            }
+            // Back from a property accessor that was passed over: the same line again, with nothing changed, is not another step.
+            int depth = se.thread().frameCount();
+            boolean again = afterAccessor && depth == lastDepth && loc.lineNumber() == lastLine && loc.method().equals(lastMethod);
+            afterAccessor = false;
+            lastDepth = depth;
+            lastLine = loc.lineNumber();
+            lastMethod = loc.method();
+            if (!again) record(se.thread(), "line", null, null);
         } else if (e instanceof MethodExitEvent) {
             MethodExitEvent me = (MethodExitEvent) e;
             if (recording && inProject(me.location())) record(me.thread(), "return", me.returnValue(), null);
@@ -341,7 +363,28 @@ public final class CwTracer {
         return projectFileFor(loc) != null;
     }
 
+    /**
+     * A Kotlin property's own getter or setter (`node.next` runs `getNext()`): a
+     * few instructions the compiler wrote, on the line the property is declared.
+     * Reading a property is not a call anyone wrote, so it is not stepped into.
+     */
+    private static boolean isPropertyAccessor(Location loc) {
+        Method m = loc.method();
+        String name = m.name();
+        boolean named = (name.startsWith("get") || name.startsWith("set")) && name.length() > 3 && Character.isUpperCase(name.charAt(3))
+            || name.startsWith("is") && name.length() > 2 && Character.isUpperCase(name.charAt(2));
+        if (!named) return false;
+        try {
+            return loc.sourceName().endsWith(".kt") && m.bytecodes().length <= 16;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private String projectFileFor(Location loc) {
+        // Code the compiler added on its own (Kotlin's main(String[]) that calls the program's main()) is not the program's.
+        if (loc.lineNumber() <= 0 || loc.method().isSynthetic() || loc.method().isBridge()) return null;
+        if (isPropertyAccessor(loc)) return null;
         String sourcePath;
         try {
             sourcePath = loc.sourcePath();

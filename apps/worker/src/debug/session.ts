@@ -68,7 +68,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
   const { request, events } = ctx;
   const lang = requireLanguage(request.language);
   const createdAt = new Date().toISOString();
-  const limits: ExecutionLimits = { ...ctx.limits, memoryMb: DEBUG_SESSION_LIMITS.memoryMb, pids: DEBUG_SESSION_LIMITS.pids };
+  const limits: ExecutionLimits = { ...ctx.limits, memoryMb: Math.max(DEBUG_SESSION_LIMITS.memoryMb, lang.sandbox?.memoryMb ?? 0), pids: DEBUG_SESSION_LIMITS.pids };
 
   let stdout = "";
   let stderr = "";

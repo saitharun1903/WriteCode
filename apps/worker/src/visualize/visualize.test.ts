@@ -299,4 +299,26 @@ public class Main {
     const at7 = trace.steps.find((s) => s.event === "line" && top(s).line === 7)!;
     expect(text(local(at7, "doubled"))).toBe("50");
   });
+
+  it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
+    const files = {
+      "Main.kt":
+        'class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun total(head: Node?): Int {\n    var sum = 0\n    var cur = head\n    while (cur != null) {\n        sum += cur.value\n        cur = cur.next\n    }\n    return sum\n}\n\nfun main() {\n    val head = Node(1)\n    head.next = Node(2)\n    val names = mutableListOf("ada")\n    val t = total(head)\n    println("total=$t ${names.size}")\n}\n',
+    };
+    const { result, trace } = await visualize("kotlin", files);
+    expect(result.status, result.compileOutput + result.stderr).toBe("SUCCESS");
+    expect(result.stdout).toBe("total=3 1\n");
+    // Every step is in the program's own file: none inside Kotlin's library.
+    expect(new Set(trace.steps.flatMap((s) => s.frames.map((f) => f.file)))).toEqual(new Set(["Main.kt"]));
+    const inTotal = trace.steps.find((s) => s.event === "line" && s.frames.length === 2 && top(s).line === 9)!;
+    expect(inTotal.frames.map((f) => f.name)).toEqual(["MainKt.main", "MainKt.total"]);
+    expect(text(local(inTotal, "sum"))).toBe("0");
+    const cur = inTotal.heap[(local(inTotal, "cur") as { id: string }).id]!;
+    expect(cur).toMatchObject({ kind: "object", type: "Node" });
+    expect(cur.fields!.map(([name]) => name)).toEqual(["value", "next"]);
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "MainKt.total")!;
+    expect(text(top(ret).returnValue)).toBe("3");
+    const last = trace.steps.filter((s) => s.event === "line" && s.frames.length === 1).at(-1)!;
+    expect(last.heap[(local(last, "names") as { id: string }).id]).toMatchObject({ kind: "sequence", items: [{ text: '"ada"' }] });
+  });
 });

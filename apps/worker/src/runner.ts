@@ -43,7 +43,9 @@ export async function runExecution(ctx: RunContext): Promise<ExecutionResult> {
   const interactive = request.interactive === true && !!ctx.commandRedis;
   // Visualize mode runs the program under the language's tracer instead of its run command.
   const tracer: Tracer | null = request.mode === "visualize" ? await tracerFor(ctx.docker, request, interactive ? INPUT_FIFO : STDIN_PATH) : null;
-  const limits = tracer ? tracer.limits(ctx.limits) : ctx.limits;
+  // A toolchain that needs more memory than the usual sandbox gets it.
+  const roomy = lang.sandbox ? { ...ctx.limits, memoryMb: Math.max(ctx.limits.memoryMb, lang.sandbox.memoryMb) } : ctx.limits;
+  const limits = tracer ? tracer.limits(roomy) : roomy;
   const tests = request.mode === "test" ? (request.tests ?? []) : null;
 
   let stdout = "";

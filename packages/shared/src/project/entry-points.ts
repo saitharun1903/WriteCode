@@ -168,6 +168,18 @@ export function javaMainClass(file: SourceFile): string {
   return packageName ? `${packageName}.${name}` : name;
 }
 
+/**
+ * The class the JVM starts for a Kotlin file with a top-level `main`: the
+ * file's name with a capital first letter and `Kt` after it (`Main.kt` is
+ * `MainKt`), in the file's package.
+ */
+export function kotlinMainClass(file: SourceFile): string {
+  const pkg = /^[ \t]*package[ \t]+([\w.]+)/m.exec(maskSource(file.content, "c"))?.[1];
+  const stem = stripExtension(basename(file.path)).replace(/[^A-Za-z0-9_$]/g, "_");
+  const name = `${stem.charAt(0).toUpperCase()}${stem.slice(1)}Kt`;
+  return pkg ? `${pkg}.${name}` : name;
+}
+
 const PY_MAIN_GUARD = /^if\s+__name__\s*==\s*(["'])__main__\1\s*:/;
 
 function pythonGuardLine(source: string): number | null {

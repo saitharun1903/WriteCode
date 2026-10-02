@@ -396,7 +396,28 @@ public final class CwDebugAdapter {
     }
 
     /** Maps a JDI source path (e.g. "com/app/Main.java") to a project file. */
+    /**
+     * A Kotlin property's own getter or setter (`node.next` runs `getNext()`): a
+     * few instructions the compiler wrote, on the line the property is declared.
+     * Reading a property is not a call anyone wrote, so it is not stepped into.
+     */
+    private static boolean isPropertyAccessor(Location loc) {
+        Method m = loc.method();
+        String name = m.name();
+        boolean named = (name.startsWith("get") || name.startsWith("set")) && name.length() > 3 && Character.isUpperCase(name.charAt(3))
+            || name.startsWith("is") && name.length() > 2 && Character.isUpperCase(name.charAt(2));
+        if (!named) return false;
+        try {
+            return loc.sourceName().endsWith(".kt") && m.bytecodes().length <= 16;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private String projectFileFor(Location loc) {
+        // Code the compiler added on its own (Kotlin's main(String[]) that calls the program's main()) is not the program's.
+        if (loc.lineNumber() <= 0 || loc.method().isSynthetic() || loc.method().isBridge()) return null;
+        if (isPropertyAccessor(loc)) return null;
         String sourcePath;
         try {
             sourcePath = loc.sourcePath();

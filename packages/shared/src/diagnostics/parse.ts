@@ -113,7 +113,7 @@ function parsePython(text: string, files: ReadonlySet<string>): Diagnostic[] {
 function parseJvmTrace(text: string, files: ReadonlySet<string>): Diagnostic[] {
   const lines = text.split("\n").map((l) => l.replace(/\r$/, ""));
   const header = lines.find((l) => /^Exception in thread|^[\w.$]+(Exception|Error)\b/.test(l));
-  const frameRe = /^\s*at .+\((.+?\.java):(\d+)\)/;
+  const frameRe = /^\s*at .+\((.+?\.(?:java|kt)):(\d+)\)/;
   for (const l of lines) {
     const m = frameRe.exec(l);
     if (!m) continue;

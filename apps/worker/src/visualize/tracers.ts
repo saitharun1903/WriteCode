@@ -3,6 +3,7 @@ import type Docker from "dockerode";
 import { SANDBOX_WORKDIR, TRACE_LIMITS, expandCommand, requireLanguage, type ExecutionLimits, type ExecutionRequest } from "@cw/shared";
 import type { SandboxFile } from "../sandbox/files.js";
 import { ADAPTER_DIR, javaAdapterClasses } from "../debug/java-adapter.js";
+import { classpathOf } from "../debug/adapters.js";
 
 /** How to run a program under a language's tracer inside the sandbox. */
 export interface Tracer {
@@ -67,7 +68,7 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
       const lang = requireLanguage(request.language);
       const mainClass = expandCommand(["{entryClass}"], { entry: request.entry, files: request.files })[0]!;
       const vmOptions = lang.runtime.command.filter((a) => a.startsWith("-X")).concat("-Xmx192m").join(" ");
-      const config = { mainClass, classpath: "out", vmOptions, javaHome: JAVA_WRAPPER_HOME, files, out: OUT_PATH, limits: TRACE_LIMITS };
+      const config = { mainClass, classpath: classpathOf(lang.runtime.command), vmOptions, javaHome: JAVA_WRAPPER_HOME, files, out: OUT_PATH, limits: TRACE_LIMITS };
       const wrapper = `${JAVA_WRAPPER_HOME}/bin/java`;
       return {
         files: [
