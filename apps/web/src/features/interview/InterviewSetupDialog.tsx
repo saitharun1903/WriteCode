@@ -220,9 +220,10 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
     toast.success("Interview ready", "Send the link to the candidate from the Overview tab.");
   };
 
+  const aiOn = useSettings((st) => st.ai);
   return (
     <div className="space-y-5">
-      <Writer
+      {aiOn && <Writer
         disabled={busy}
         onDone={(p) => {
           setTitle(p.title.slice(0, INTERVIEW_LIMITS.maxTitleChars));
@@ -232,7 +233,7 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
           setSolution(p.solution);
           setError(null);
         }}
-      />
+      />}
       <form
         className="space-y-5"
         onSubmit={(e) => {

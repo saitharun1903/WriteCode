@@ -5,6 +5,7 @@ import { LANGUAGES } from "@cw/shared";
 import { isRestricted } from "@/features/interview/restrict";
 import type { editor, languages } from "monaco-editor";
 import { askAssistant } from "@/features/commands/registry";
+import { useSettings } from "@/features/settings/store";
 
 let installed = false;
 
@@ -23,7 +24,7 @@ export function installAiQuickFix(monaco: Monaco) {
     monaco.languages.registerCodeActionProvider(language, {
       provideCodeActions(model: editor.ITextModel, _range: unknown, context: languages.CodeActionContext) {
         const marker = context.markers.find((m: editor.IMarkerData) => m.severity >= monaco.MarkerSeverity.Warning);
-        if (!marker || isRestricted()) return { actions: [], dispose() {} };
+        if (!marker || isRestricted() || !useSettings.getState().ai) return { actions: [], dispose() {} };
         const file = decodeURIComponent(model.uri.path.split("/").slice(2).join("/"));
         return {
           actions: [

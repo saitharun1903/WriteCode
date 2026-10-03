@@ -16,6 +16,7 @@ import { askAssistant } from "@/features/commands/registry";
 import { addInputReading } from "./add-input";
 import { describeReads, readInputFor } from "./read-input";
 import { entryOf, useLastRunAsTest, useTests, type TestOutcome } from "./store";
+import { useSettings } from "@/features/settings/store";
 
 const EMPTY: TestCase[] = [];
 
@@ -434,6 +435,7 @@ function Result({ test, number, outcome, shown, reads }: { test: TestCase; numbe
   const r = outcome.result!;
   const inputProblem = !!r.message && /needed another value|wrong kind|expected a whole number|more input than/.test(r.message);
   const failing = shown === "failed" || shown === "crashed" || shown === "time-limit" || shown === "error";
+  const aiOn = useSettings((s) => s.ai);
   const askAi = () => {
     const parts = [
       `Test ${number} of my program fails (${LOOK[shown].label.toLowerCase()}).`,
@@ -479,7 +481,7 @@ function Result({ test, number, outcome, shown, reads }: { test: TestCase; numbe
           {reads.join(", then ")}
         </p>
       )}
-      {failing && (
+      {failing && aiOn && (
         <button
           type="button"
           onClick={askAi}

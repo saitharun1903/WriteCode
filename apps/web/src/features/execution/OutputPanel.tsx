@@ -13,6 +13,7 @@ import { goToLocation } from "@/features/editor/navigate";
 import { linkSources } from "./source-links";
 import { STATUS_META } from "./status";
 import { isRunning, useExecution, type LogChunk, type RunState } from "./store";
+import { useSettings } from "@/features/settings/store";
 
 const streamClass: Record<LogChunk["stream"], string> = {
   stdout: "text-fg",
@@ -146,6 +147,7 @@ function LinkedText({ text, query }: { text: string; query: string }) {
 /** Closing line printed after the program ends, in the style of an IDE run console. */
 function Epilogue({ run, statements = false }: { run: RunState; statements?: boolean }) {
   const r = run.result;
+  const aiOn = useSettings((s) => s.ai);
   if (!r) return null;
   let line: ReactNode;
   switch (r.status) {
@@ -180,7 +182,7 @@ function Epilogue({ run, statements = false }: { run: RunState; statements?: boo
         </p>
       )}
       {line}
-      {failed && (
+      {failed && aiOn && (
         <button
           type="button"
           onClick={() => runCommand("assistant.explainError")}

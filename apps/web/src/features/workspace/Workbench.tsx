@@ -75,6 +75,12 @@ function DesktopWorkbench() {
 
   const outer = useDefaultLayout({ id: "cw-outer", panelIds: ["side", "main", "assistant"] });
   const inner = useDefaultLayout({ id: "cw-inner", panelIds: ["editor", "bottom"] });
+  const aiOn = useSettings((s) => s.ai);
+
+  // The assistant turned off in Settings closes its panel (an interview's panel stays).
+  useEffect(() => {
+    if (!aiOn && !interview && layout.assistantOpen) updateLayout({ assistantOpen: false });
+  }, [aiOn, interview, layout.assistantOpen, updateLayout]);
 
   // Keep imperative panel state in sync with persisted layout flags.
   useEffect(() => {
@@ -339,6 +345,7 @@ function Grabber({ onDragStart }: { onDragStart: (e: React.PointerEvent) => void
 function CompactWorkbench() {
   const drawer = useUI((s) => s.drawer);
   const interview = useLive((s) => !!s.interview);
+  const aiOn = useSettings((s) => s.ai);
   const restricted = useRestriction((s) => s.restricted);
   const candidateBusy = useCandidate((s) => s.phase !== "idle");
   const setDrawer = useUI((s) => s.setDrawer);
@@ -381,7 +388,9 @@ function CompactWorkbench() {
     { id: "problem", label: "Problem", icon: <FileText />, active: drawer === "assistant", onSelect: () => setDrawer(drawer === "assistant" ? "none" : "assistant") },
     { id: "tests", label: "Tests", icon: <FlaskConical />, active: drawer === "bottom", dot: candidateBusy ? "run" : undefined, onSelect: () => setDrawer(drawer === "bottom" ? "none" : "bottom") },
   ];
-  const items: DockItem[] = restricted ? candidateItems : TABS.map((t) => {
+  // With the assistant turned off in Settings there is no AI tab (an interview's panel stays).
+  const tabs = aiOn || interview ? TABS : TABS.filter((t) => t.kind !== "ai");
+  const items: DockItem[] = restricted ? candidateItems : tabs.map((t) => {
     const active = t.kind === "side" ? drawer === "sidebar" && sideView === t.id : t.kind === "bottom" ? drawer === "bottom" && bottomTab === t.id : drawer === "assistant";
     const dot: DockItem["dot"] =
       t.id === "run" && running && run!.mode === "run"

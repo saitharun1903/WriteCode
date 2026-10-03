@@ -16,7 +16,7 @@ import { runCommand } from "@/features/commands/registry";
 import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
 import { installAutoImport } from "./auto-import-editor";
-import { installSnippets } from "./snippets";
+import { installCompletions } from "./completions";
 import { editorBridge, useCoveredBelow } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
@@ -132,12 +132,15 @@ export function CodeEditor() {
     }
 
     ed.onDidChangeCursorPosition((e) => editorBridge.setCursor(e.position.lineNumber, e.position.column));
-    // Right-click menu: ask the assistant about the code under the cursor.
-    ed.addAction({ id: "cw.ai.explainSelection", label: "Ask AI: Explain Selection", contextMenuGroupId: "0_ai", contextMenuOrder: 1, precondition: "editorHasSelection", run: () => void runCommand("assistant.explainSelection") });
-    ed.addAction({ id: "cw.ai.findBugs", label: "Ask AI: Find Bugs in This File", contextMenuGroupId: "0_ai", contextMenuOrder: 2, run: () => void runCommand("assistant.findBugs") });
+    // Right-click menu: ask the assistant about the code under the cursor (unless it is turned off in Settings).
+    const aiKey = ed.createContextKey<boolean>("cwAi", useSettings.getState().ai);
+    const unsubscribeAi = useSettings.subscribe((st) => aiKey.set(st.ai));
+    ed.onDidDispose(unsubscribeAi);
+    ed.addAction({ id: "cw.ai.explainSelection", label: "Ask AI: Explain Selection", contextMenuGroupId: "0_ai", contextMenuOrder: 1, precondition: "cwAi && editorHasSelection", run: () => void runCommand("assistant.explainSelection") });
+    ed.addAction({ id: "cw.ai.findBugs", label: "Ask AI: Find Bugs in This File", contextMenuGroupId: "0_ai", contextMenuOrder: 2, precondition: "cwAi", run: () => void runCommand("assistant.findBugs") });
     installBreakpointGutter(ed, monaco);
     installAiQuickFix(monaco);
-    installSnippets(monaco);
+    installCompletions(monaco);
     installAutoImport(ed);
     setMounted(true);
 

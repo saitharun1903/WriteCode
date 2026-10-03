@@ -28,6 +28,8 @@ export interface Settings {
   suggestions: boolean;
   /** Colour matching bracket pairs. */
   bracketColors: boolean;
+  /** The AI assistant and everything that asks it (Ask AI, Fix with AI, Explain this step...). */
+  ai: boolean;
   layout: {
     sidebarOpen: boolean;
     bottomOpen: boolean;
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoClose: true,
   suggestions: true,
   bracketColors: false,
+  ai: true,
   layout: {
     sidebarOpen: true,
     bottomOpen: true,
@@ -86,7 +89,7 @@ interface SettingsState extends Settings {
 }
 
 /** Every setting except the layout, which has its own reset. */
-export const PREFERENCE_KEYS = ["theme", "fontSize", "codeFont", "tabSize", "wordWrap", "minimap", "recordHistory", "autoImport", "autoClose", "suggestions", "bracketColors"] as const;
+export const PREFERENCE_KEYS = ["theme", "fontSize", "codeFont", "tabSize", "wordWrap", "minimap", "recordHistory", "autoImport", "autoClose", "suggestions", "bracketColors", "ai"] as const;
 
 function persist(s: Settings) {
   const saved = Object.fromEntries([...PREFERENCE_KEYS, "layout" as const].map((k) => [k, s[k]]));

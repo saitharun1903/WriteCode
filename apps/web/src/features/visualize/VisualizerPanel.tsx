@@ -29,6 +29,7 @@ import { cn } from "@/lib/cn";
 import { diffSteps, timeline, type Change, type StepDiff, type Tone } from "./model";
 import { BASE_STEP_MS, SPEEDS, stepLocation, useVisualize } from "./store";
 import { ConceptView } from "./ConceptView";
+import { useSettings } from "@/features/settings/store";
 
 function reducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -70,6 +71,7 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
   const top = step.frames[step.frames.length - 1];
   const shown = diff.changes.slice(0, 3);
   const hidden = diff.changes.length - shown.length;
+  const aiOn = useSettings((s) => s.ai);
   return (
     <div
       aria-live="polite"
@@ -98,13 +100,13 @@ function Narration({ trace, stepIndex, diff }: { trace: Trace; stepIndex: number
         )}
         {hidden > 0 && <span className="shrink-0 text-xs text-fg-subtle">+{hidden} more</span>}
       </motion.div>
-      <button
+      {aiOn && <button
         type="button"
         onClick={() => runCommand("assistant.explainStep")}
         className="ml-auto flex shrink-0 items-center gap-1 rounded-full border border-[#8a7cf5]/60 px-2 py-0.5 text-[11.5px] text-fg hover:bg-[#8a7cf5]/15"
       >
         <Sparkles className="size-3 text-[#8a7cf5]" /> Explain this step
-      </button>
+      </button>}
       {top?.file && (
         <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-subtle @max-[640px]/viz:hidden">
           {step.event === "line" ? "Next" : "At"}

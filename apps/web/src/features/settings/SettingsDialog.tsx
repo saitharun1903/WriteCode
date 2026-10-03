@@ -307,8 +307,14 @@ export function SettingsDialog() {
               <Row label="Close brackets and quotes" hint="Typing ( [ { or a quote adds the closing one.">
                 <Switch label="Close brackets and quotes" checked={s.autoClose} onChange={(autoClose) => s.update({ autoClose })} />
               </Row>
-              <Row label="Suggestions while typing" hint="Show completions and snippets such as sout and fori as you type. Ctrl+Space always shows them.">
+              <Row
+                label="Suggestions while typing"
+                hint="Keywords, built-in functions, the members of Math, fmt, std and the rest, and snippets such as sout and fori, in every language, as you type. Ctrl+Space always shows them."
+              >
                 <Switch label="Suggestions while typing" checked={s.suggestions} onChange={(suggestions) => s.update({ suggestions })} />
+              </Row>
+              <Row label="AI assistant" hint="Ask AI, Fix with AI, Explain this step and the AI quick fixes in the editor. Off, they are gone everywhere and nothing is sent to the AI.">
+                <Switch label="AI assistant" checked={s.ai} onChange={(ai) => s.update({ ai })} />
               </Row>
             </Group>
           )}

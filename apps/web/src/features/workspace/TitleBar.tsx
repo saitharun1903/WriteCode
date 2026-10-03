@@ -67,7 +67,10 @@ function InterviewButton() {
 function AssistantButton() {
   const open = useSettings((s) => s.layout.assistantOpen);
   const interview = useLive((s) => !!s.interview);
+  const ai = useSettings((s) => s.ai);
   if (interview) return <InterviewButton />;
+  // Turned off in Settings.
+  if (!ai) return null;
   return (
     <Tooltip content="AI Assistant" shortcut="Mod+Shift+A">
       <button

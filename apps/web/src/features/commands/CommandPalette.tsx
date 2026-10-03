@@ -8,6 +8,7 @@ import { getLanguage } from "@cw/shared";
 import { Kbd } from "@/components/ui/kbd";
 import { FileIcon } from "@/features/explorer/file-icon";
 import { useWorkspace } from "@/features/projects/store";
+import { useSettings } from "@/features/settings/store";
 import { useUI, type PaletteMode } from "@/features/workspace/ui-store";
 import { COMMANDS, isEnabled } from "./registry";
 
@@ -25,6 +26,8 @@ export function CommandPalette() {
   const closePalette = useUI((s) => s.closePalette);
   const openPalette = useUI((s) => s.openPalette);
   const project = useWorkspace((s) => s.project);
+  // With the assistant turned off in Settings, its commands are not listed.
+  const aiOn = useSettings((s) => s.ai);
   const projects = useWorkspace((s) => s.projects);
   const [search, setSearch] = useState("");
 
@@ -70,7 +73,7 @@ export function CommandPalette() {
               <Cmdk.Empty className="px-3 py-6 text-center text-sm text-fg-subtle">No matches.</Cmdk.Empty>
 
               {mode === "commands" &&
-                (["Run", "Debug", "Test", "AI", "File", "Edit", "Go", "View", "Project", "Preferences"] as const).map((category) => (
+                (["Run", "Debug", "Test", "AI", "File", "Edit", "Go", "View", "Project", "Preferences"] as const).filter((category) => category !== "AI" || aiOn).map((category) => (
                   <Cmdk.Group
                     key={category}
                     heading={category}

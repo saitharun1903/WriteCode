@@ -85,6 +85,8 @@ export function openAssistant() {
 
 /** Opens the assistant and asks `prompt` about the current project. */
 export function askAssistant(prompt: string, display?: string) {
+  // The assistant is turned off in Settings.
+  if (!useSettings.getState().ai) return;
   openAssistant();
   void useAssistant.getState().ask(prompt, display);
 }
@@ -577,6 +579,8 @@ export function getCommand(id: string): Command | undefined {
 export function isEnabled(cmd: Command): boolean {
   // Interview candidates have the editor and Run only.
   if (blockedForCandidate(cmd.id)) return false;
+  // With the assistant turned off in Settings, nothing asks it.
+  if (cmd.category === "AI" && !useSettings.getState().ai) return false;
   return cmd.enabled ? cmd.enabled() : true;
 }
 
