@@ -98,6 +98,17 @@ function persist(s: Settings) {
   } catch {}
 }
 
+/** Puts a theme on the page, with every transition held for that frame so nothing lags behind. */
+export function applyTheme(theme: "dark" | "light") {
+  const root = document.documentElement;
+  if (root.dataset.theme === theme) return;
+  root.setAttribute("data-theme-switching", "");
+  root.dataset.theme = theme;
+  // Styles are worked out now, with transitions off; they come back two frames later.
+  void root.offsetHeight;
+  requestAnimationFrame(() => requestAnimationFrame(() => root.removeAttribute("data-theme-switching")));
+}
+
 export function resolveTheme(pref: ThemePreference): "dark" | "light" {
   if (pref !== "system") return pref;
   return typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";

@@ -9,7 +9,7 @@ import { Spinner } from "@/components/ui/primitives";
 import { FileIcon } from "@/features/explorer/file-icon";
 import { projectRepo } from "@/features/projects/db";
 import { LanguageMark } from "@/features/projects/StartScreen";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { applyTheme, resolveTheme, useSettings } from "@/features/settings/store";
 import { Brand } from "@/features/workspace/Logo";
 import { cn } from "@/lib/cn";
 import { highlight, languageOf } from "@/lib/highlight";
@@ -28,7 +28,7 @@ function useAppTheme() {
     useSettings.getState().hydrate();
   }, []);
   useEffect(() => {
-    document.documentElement.dataset.theme = resolveTheme(theme);
+    applyTheme(resolveTheme(theme));
   }, [theme]);
 }
 

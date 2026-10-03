@@ -80,7 +80,7 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 /** A small picture of the IDE in each theme. */
 function ThemeCard({ value, label, current, onPick }: { value: ThemePreference; label: string; current: ThemePreference; onPick: (v: ThemePreference) => void }) {
   const pane = (dark: boolean) => (
-    <div className={cn("flex h-full flex-1 flex-col gap-1 p-2", dark ? "bg-[#0b0d13]" : "bg-[#f7f8fa]")}>
+    <div className={cn("flex h-full flex-1 flex-col gap-1 p-2", dark ? "bg-[#0e1119]" : "bg-[#f7f8fa]")}>
       <div className={cn("h-1.5 w-8 rounded-full", dark ? "bg-[#c296ff]" : "bg-[#0033b3]")} />
       <div className={cn("h-1.5 w-12 rounded-full", dark ? "bg-[#8fd694]" : "bg-[#067d17]")} />
       <div className={cn("h-1.5 w-6 rounded-full", dark ? "bg-[#7cc4ff]" : "bg-[#00627a]")} />

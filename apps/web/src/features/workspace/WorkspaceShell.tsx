@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useLayoutEffect } from "react";
 import dynamic from "next/dynamic";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster, toast } from "@/components/ui/toast";
@@ -10,7 +10,7 @@ import { useGlobalKeybindings } from "@/features/commands/keybindings";
 import { useExecution } from "@/features/execution/store";
 import { StartScreen } from "@/features/projects/StartScreen";
 import { useWorkspace } from "@/features/projects/store";
-import { resolveTheme, useSettings } from "@/features/settings/store";
+import { applyTheme, resolveTheme, useSettings } from "@/features/settings/store";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
@@ -104,10 +104,10 @@ export function WorkspaceShell({ live = false }: { live?: boolean }) {
     void import("@/features/editor/monaco-setup").then((m) => m.preloadMonaco());
   }, [moved]);
 
-  // Apply theme, following the OS when set to "system".
-  useEffect(() => {
+  // Apply theme, following the OS when set to "system". Before paint, so nothing shows a frame of the old one.
+  useLayoutEffect(() => {
     const apply = () => {
-      document.documentElement.dataset.theme = resolveTheme(theme);
+      applyTheme(resolveTheme(theme));
     };
     apply();
     if (theme !== "system") return;
