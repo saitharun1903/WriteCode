@@ -70,8 +70,13 @@ export const projectRepo = {
 };
 
 export const historyRepo = {
-  /** Newest first. */
-  async list(limit = 200): Promise<HistoryEntry[]> {
+  /** Every run of one project, newest first. */
+  async listByProject(projectId: string): Promise<HistoryEntry[]> {
+    const all = await (await db()).getAllFromIndex("history", "projectId", projectId);
+    return all.sort((a, b) => b.createdAt - a.createdAt);
+  },
+  /** Newest first, across projects. */
+  async list(limit = 2000): Promise<HistoryEntry[]> {
     const d = await db();
     const out: HistoryEntry[] = [];
     let cursor = await d.transaction("history").store.index("createdAt").openCursor(null, "prev");

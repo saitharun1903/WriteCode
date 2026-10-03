@@ -86,7 +86,7 @@ describe("validateAssistantRequest", () => {
         tests: { total: 2, passed: 1, failures: [{ name: "Test 2", input: "3\n", expected: "9\n", actual: "6\n", verdict: "failed" }] },
       }),
     );
-    const context = p.systemInstruction.parts[2]!.text;
+    const context = p.systemInstruction.parts.at(-1)!.text;
     expect(context).toContain("The debugger is paused (breakpoint) at line 2 of main.py");
     expect(context).toContain("xs = []  (list)");
     expect(context).toContain("len(xs) = 0");

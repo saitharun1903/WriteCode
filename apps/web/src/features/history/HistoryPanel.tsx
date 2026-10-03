@@ -71,18 +71,20 @@ function RunHistory() {
   const [onlyThisProject, setOnlyThisProject] = useState(true);
   const [selected, setSelected] = useState<RunVersion | null>(null);
 
+  const scoped = !!currentProjectId && onlyThisProject;
+  const read = useCallback(() => (scoped ? historyRepo.listByProject(currentProjectId!) : historyRepo.list()), [scoped, currentProjectId]);
   const load = useCallback(async () => {
     try {
-      setEntries(await historyRepo.list());
+      setEntries(await read());
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not read history.");
     }
-  }, []);
+  }, [read]);
 
   useEffect(() => {
     let cancelled = false;
-    historyRepo.list().then(
+    read().then(
       (list) => {
         if (cancelled) return;
         setEntries(list);
@@ -93,12 +95,11 @@ function RunHistory() {
     return () => {
       cancelled = true;
     };
-  }, [version]);
+  }, [version, read]);
 
   // One row per version of the code: running the same code again only moves it to the top.
   const all = useMemo(() => versions(entries ?? []), [entries]);
   const changed = useMemo(() => changes(all), [all]);
-  const scoped = !!currentProjectId && onlyThisProject;
   const visible = useMemo(() => all.filter((v) => !scoped || v.entry.projectId === currentProjectId), [all, scoped, currentProjectId]);
 
   if (error) return <EmptyState title="History unavailable" description={error} action={<Button size="sm" onClick={load}>Retry</Button>} />;
