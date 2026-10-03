@@ -274,7 +274,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
             trigger={
               <button
                 aria-label={`Project: ${project.name}`}
-                className="flex h-8 min-w-24 max-w-[28vw] shrink items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active [[data-touch]_&]:h-10"
+                className="flex h-8 min-w-0 max-w-[28vw] sm:min-w-24 shrink items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active [[data-touch]_&]:h-10"
               >
                 <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
                 <span className="truncate">{project.name}</span>

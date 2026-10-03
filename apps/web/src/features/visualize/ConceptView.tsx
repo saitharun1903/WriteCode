@@ -1142,9 +1142,9 @@ export function ConceptView({ trace, stepIndex, diff }: { trace: Trace; stepInde
   const structures = useStructures(trace, stepIndex);
   const keys = cardKeys(structures);
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col @max-[640px]/viz:flex-none">
       <Context step={step} diff={diff} />
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className="min-h-0 flex-1 overflow-auto p-4 @max-[640px]/viz:flex-none @max-[640px]/viz:overflow-visible">
         {structures.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-fg-subtle">
             <Share2 className="size-4" />

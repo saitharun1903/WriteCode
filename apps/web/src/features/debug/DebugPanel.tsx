@@ -575,7 +575,7 @@ export function DebugToolWindow() {
         {/* No pill while idle: the empty view already says how to start. */}
         {tone !== "idle" && <span
           className={cn(
-            "ml-auto flex items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px]",
+            "ml-auto flex items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px] @max-[420px]/dbg:hidden",
             tone === "paused" && "bg-warning-soft text-fg",
             tone === "running" && "bg-success-soft text-fg",
             tone === "starting" && "bg-accent-soft/60 text-fg",
@@ -621,8 +621,8 @@ export function DebugToolWindow() {
           ) : !paused ? (
             <StartingView running={phase === "running"} />
           ) : (
-            <div className="flex min-h-0 flex-1">
-              <div className="w-[38%] min-w-52 max-w-[26rem] border-r border-line">
+            <div className="flex min-h-0 flex-1 @max-[640px]/dbg:flex-col">
+              <div className="w-[38%] min-w-52 max-w-[26rem] border-r border-line @max-[640px]/dbg:max-h-[34%] @max-[640px]/dbg:min-h-[5.5rem] @max-[640px]/dbg:w-full @max-[640px]/dbg:max-w-none @max-[640px]/dbg:shrink-0 @max-[640px]/dbg:overflow-auto @max-[640px]/dbg:border-b @max-[640px]/dbg:border-r-0">
                 <Frames stop={stop} />
               </div>
               <div className="min-w-0 flex-1">

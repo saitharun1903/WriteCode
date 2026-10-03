@@ -141,6 +141,43 @@ test.describe("phone", () => {
     await expect(page.getByRole("log", { name: "Program output" })).toContainText("Hello World", { timeout: 120_000 });
     await expect(dock(page).getByRole("button", { name: "Run" })).toHaveAttribute("aria-pressed", "true");
   });
+
+  for (const size of [{ width: 390, height: 844 }, { width: 360, height: 640 }]) {
+    test(`debugging on a ${size.width}x${size.height} phone: the paused line is in view above the sheet, with the call stack above the variables`, async ({ page }) => {
+      test.skip(!process.env.E2E_EXECUTION, "needs the API, worker and Docker");
+      await page.setViewportSize(size);
+      await freshPython(page);
+      const code = ["def total(nums):", "    s = 0", "    for n in nums:", "        s += n", "    return s", "", "", "", "", "", "", "", "print(total([4, 8, 15]))", ""].join("\n");
+      await page.evaluate((text) => {
+        const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+        m.editor.getEditors()[0]!.getModel().setValue(text);
+      }, code);
+      await page.locator(".monaco-editor .view-lines").first().click();
+      await page.evaluate(() => {
+        const ed = (window as unknown as { monaco: { editor: { getEditors(): { setPosition(p: { lineNumber: number; column: number }): void; focus(): void }[] } } }).monaco.editor.getEditors()[0]!;
+        ed.focus();
+        ed.setPosition({ lineNumber: 4, column: 1 });
+      });
+      await page.keyboard.press("F9");
+      await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+      await page.getByRole("button", { name: "Debug program" }).click();
+      const debug = page.getByRole("complementary", { name: "Debugger" });
+      await expect(debug.getByText("Paused in")).toBeVisible({ timeout: 120_000 });
+      // The line it is paused on is above the sheet, not under it.
+      const line = page.locator(".monaco-editor .cw-debug-line").first();
+      await expect(line).toBeVisible();
+      const sheetTop = (await page.locator(".cw-sheet").boundingBox())!.y;
+      const lineBox = (await line.boundingBox())!;
+      expect(lineBox.y + lineBox.height).toBeLessThanOrEqual(sheetTop);
+      expect(lineBox.y).toBeGreaterThan((await page.locator(".monaco-editor").first().boundingBox())!.y - 1);
+      // The call stack is above the variables, each the panel's full width.
+      const stack = (await debug.getByRole("list", { name: "Call stack" }).boundingBox())!;
+      const vars = (await debug.getByRole("tree", { name: "Variables" }).boundingBox())!;
+      expect(vars.y).toBeGreaterThan(stack.y);
+      expect(Math.abs(vars.x - stack.x)).toBeLessThan(24);
+      await expect(debug.getByRole("treeitem", { name: /^n = 4/ })).toBeVisible();
+    });
+  }
 });
 
 const PORTRAIT_TABLET = { viewport: { width: 768, height: 1024 }, isMobile: true, hasTouch: true };
@@ -154,8 +191,12 @@ for (const [device, size] of [
 
     test(`${device}: the New Project dialog fits the screen, with every language and the Create button in it`, async ({ page }) => {
       await page.goto("/");
-      await page.getByRole("button", { name: "Custom…" }).click();
       const dialog = page.getByRole("dialog", { name: "New Project" });
+      // The button is on the page before the app has started; tap again until it answers.
+      await expect(async () => {
+        await page.getByRole("button", { name: "Custom…" }).click();
+        await expect(dialog).toBeVisible({ timeout: 2_000 });
+      }).toPass({ timeout: 30_000 });
       const box = (await dialog.boundingBox())!;
       const { width, height } = page.viewportSize()!;
       expect(box.x).toBeGreaterThanOrEqual(0);

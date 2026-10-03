@@ -17,11 +17,35 @@ interface CursorState {
 
 export const useCursor = create<CursorState>(() => ({ line: 1, column: 1 }));
 
+/** Pixels at the bottom of the editor hidden under a panel (a sheet on a phone); the editor leaves that much room after its last line. */
+export const useCoveredBelow = create<{ px: number }>(() => ({ px: 0 }));
+
 let instance: editor.IStandaloneCodeEditor | null = null;
 let monacoInstance: Monaco | null = null;
 /** `focus: false` scrolls to the line without moving the cursor or taking focus. */
 let pendingReveal: { line: number; column: number; focus: boolean } | null = null;
 const attachListeners = new Set<(ed: editor.IStandaloneCodeEditor, monaco: Monaco) => void>();
+
+/** Pixels at the bottom of the editor hidden under a panel, and the line last scrolled to. */
+let coveredBelow = 0;
+let lastShown: number | null = null;
+
+/** Brings `line` into the part of the editor that can be seen, centred there when it was out of it. */
+function scrollToLine(line: number) {
+  if (!instance) return;
+  lastShown = line;
+  if (!coveredBelow || !monacoInstance) {
+    instance.revealLineInCenterIfOutsideViewport(line);
+    return;
+  }
+  const lineHeight = instance.getOption(monacoInstance.editor.EditorOption.lineHeight);
+  // A line of room above the panel's edge, so the line is not half under it.
+  const height = Math.max(instance.getLayoutInfo().height - coveredBelow - lineHeight, lineHeight);
+  const top = instance.getTopForLineNumber(line);
+  const scrolled = instance.getScrollTop();
+  if (top >= scrolled && top + lineHeight <= scrolled + height) return;
+  instance.setScrollTop(Math.max(0, top - (height - lineHeight) / 2));
+}
 
 export const editorBridge = {
   attach(ed: editor.IStandaloneCodeEditor, monaco: Monaco) {
@@ -47,12 +71,27 @@ export const editorBridge = {
   reveal(line: number, column = 1) {
     if (!instance) return;
     instance.setPosition({ lineNumber: line, column });
-    instance.revealLineInCenterIfOutsideViewport(line);
+    scrollToLine(line);
     instance.focus();
   },
   /** Scrolls `line` into view without moving the cursor or taking focus. */
   showLine(line: number) {
-    instance?.revealLineInCenterIfOutsideViewport(line);
+    scrollToLine(line);
+  },
+  /**
+   * How much of the editor's bottom a panel covers (a sheet on a phone), in
+   * pixels: lines are then shown in the part above it. The last line shown is
+   * brought into that part straight away.
+   */
+  setCoveredBelow(px: number) {
+    if (px === coveredBelow) return;
+    coveredBelow = px;
+    useCoveredBelow.setState({ px: Math.round(px) });
+    if (px > 0 && lastShown) {
+      const line = lastShown;
+      // After the editor has taken its new padding.
+      setTimeout(() => scrollToLine(line), 50);
+    }
   },
   /** Reveal after the next model switch (used when navigating to another file). */
   revealAfterSwitch(line: number, column = 1, focus = true) {

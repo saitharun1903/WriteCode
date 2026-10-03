@@ -175,9 +175,9 @@ function Output({ trace, stepIndex, printed }: { trace: Trace; stepIndex: number
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [text]);
   return (
-    <div className="flex w-[min(19rem,28%)] shrink-0 flex-col border-l border-line @max-[640px]/viz:h-[30%] @max-[640px]/viz:w-full @max-[640px]/viz:border-l-0 @max-[640px]/viz:border-t">
-      <span className="px-3 pt-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">Output</span>
-      <pre ref={box} aria-label="Output so far" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[12.5px] text-fg">
+    <div className="flex w-[min(19rem,28%)] shrink-0 flex-col border-l border-line @max-[640px]/viz:h-auto @max-[640px]/viz:w-full @max-[640px]/viz:border-l-0 @max-[640px]/viz:border-t">
+      <span className="shrink-0 px-3 pt-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle @max-[640px]/viz:pt-2">Output</span>
+      <pre ref={box} aria-label="Output so far" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[12.5px] text-fg @max-[640px]/viz:max-h-48 @max-[640px]/viz:min-h-10">
         {text ? (
           <>
             {text.slice(0, text.length - fresh.length)}
@@ -380,12 +380,15 @@ export function VisualizerPanel() {
             </span>
           )}
         </div>
-        <Narration trace={trace} stepIndex={stepIndex} diff={diff} />
-        <div className="flex min-h-0 flex-1 @max-[640px]/viz:flex-col">
-          <LayoutGroup>
-            <ConceptView trace={trace} stepIndex={stepIndex} diff={diff} />
-          </LayoutGroup>
-          <Output trace={trace} stepIndex={stepIndex} printed={diff.printed} />
+        {/* On a narrow panel (a phone) all of this is one column that scrolls, so each part keeps its full height. */}
+        <div className="flex min-h-0 flex-1 flex-col @max-[640px]/viz:overflow-y-auto">
+          <Narration trace={trace} stepIndex={stepIndex} diff={diff} />
+          <div className="flex min-h-0 flex-1 @max-[640px]/viz:flex-none @max-[640px]/viz:flex-col">
+            <LayoutGroup>
+              <ConceptView trace={trace} stepIndex={stepIndex} diff={diff} />
+            </LayoutGroup>
+            <Output trace={trace} stepIndex={stepIndex} printed={diff.printed} />
+          </div>
         </div>
       </div>
     </MotionConfig>

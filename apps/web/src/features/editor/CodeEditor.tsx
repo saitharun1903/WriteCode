@@ -17,7 +17,7 @@ import { installAiQuickFix } from "@/features/assistant/editor-actions";
 import { defineThemes, modelUri } from "./monaco-setup";
 import { installAutoImport } from "./auto-import-editor";
 import { installSnippets } from "./snippets";
-import { editorBridge } from "./bridge";
+import { editorBridge, useCoveredBelow } from "./bridge";
 import { installBreakpointGutter, renderDebugDecorations } from "./debug-decorations";
 import { COMPACT_QUERY, useMediaQuery } from "@/lib/use-media";
 import { liveHistory } from "@/features/live/store";
@@ -32,6 +32,8 @@ export function CodeEditor() {
   const resolvedTheme = useResolvedTheme();
   const { fontSize, codeFont: codeFontId, tabSize, wordWrap, minimap, autoClose, suggestions, bracketColors } = useSettings();
   const compact = useMediaQuery(COMPACT_QUERY);
+  // Room after the last line for what a panel covers, so even a short file can scroll a line up above it.
+  const coveredBelow = useCoveredBelow((s) => s.px);
   const readOnly = useWorkspace((s) => s.readOnly);
   // An interview candidate writes the code alone: nothing is suggested, completed or looked up.
   const restricted = useRestriction((s) => s.restricted);
@@ -268,9 +270,10 @@ export function CodeEditor() {
         pasteAs: { enabled: !restricted },
         links: !restricted,
         // Phones and tablets: the last lines can scroll up from under the floating dock.
-        padding: { top: 6, bottom: compact ? 28 : 6 },
+        padding: { top: 6, bottom: (compact ? 28 : 6) + coveredBelow },
         lineDecorationsWidth: compact ? 10 : 18,
-        stickyScroll: { enabled: true },
+        // Over a phone sheet the code in view is a few lines: pinned headers would take them.
+        stickyScroll: { enabled: coveredBelow === 0 },
         folding: true,
         glyphMargin: debuggable,
         lineNumbersMinChars: 3,

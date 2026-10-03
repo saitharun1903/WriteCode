@@ -9,6 +9,7 @@ import { getLanguage } from "@cw/shared";
 import { usePreview } from "@/features/preview/store";
 import { useWorkspace } from "@/features/projects/store";
 import { EditorArea } from "@/features/editor/EditorArea";
+import { editorBridge } from "@/features/editor/bridge";
 import { FileExplorer } from "@/features/explorer/FileExplorer";
 import { DatabasePanel } from "@/features/sql/DatabasePanel";
 import { isRunning, useExecution } from "@/features/execution/store";
@@ -247,6 +248,13 @@ const TABS: ({ label: string; icon: React.ReactNode } & ({ kind: "side"; id: Sid
   { kind: "ai", id: "ai", label: "AI", icon: <Sparkles /> },
 ];
 
+/**
+ * The debugger's and visualizer's sheet on a phone: most of the screen's lower part, but never so
+ * little that its variables cannot be seen on a short phone. `followSheetHeight` is the same in pixels.
+ */
+const FOLLOW_SHEET = "max(min(62%, 560px), min(380px, 78%))";
+const followSheetHeight = (h: number) => Math.max(Math.min(h * 0.62, 560), Math.min(380, h * 0.78));
+
 /** Whether the on-screen keyboard is up; the tab bar steps aside while it is. */
 function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
@@ -350,6 +358,22 @@ function CompactWorkbench() {
   /** The keyboard is up for the code: the panel under it steps aside. */
   const [typingCode, setTypingCode] = useState(false);
   const close = () => setDrawer("none");
+  // Debugging and visualizing on a phone are about the line that runs: their sheet leaves more of the
+  // code in view, barely dimmed, and the editor keeps that line in the part above the sheet.
+  const followsCode = !tablet && drawer === "bottom" && !restricted && (bottomTab === "debug" || bottomTab === "visualize");
+  const codeArea = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = codeArea.current;
+    if (!followsCode || !el) return;
+    const measure = () => editorBridge.setCoveredBelow(followSheetHeight(el.clientHeight));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      editorBridge.setCoveredBelow(0);
+    };
+  }, [followsCode]);
 
   const running = !!run && isRunning(run);
   // An interview candidate has two things besides the code: the problem and the tests.
@@ -421,7 +445,7 @@ function CompactWorkbench() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div ref={codeArea} className="relative min-h-0 flex-1 overflow-hidden">
         <EditorArea />
         <AnimatePresence>
           {drawer !== "none" && (
@@ -432,7 +456,7 @@ function CompactWorkbench() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="absolute inset-0 z-20 bg-black/45"
+              className={cn("absolute inset-0 z-20", followsCode ? "bg-black/15" : "bg-black/45")}
               onClick={close}
             />
           )}
@@ -442,7 +466,7 @@ function CompactWorkbench() {
             </Sheet>
           )}
           {drawer === "bottom" && (
-            <Sheet key="bottom" onClose={close} height="min(78%, 640px)">
+            <Sheet key="bottom" onClose={close} height={followsCode ? FOLLOW_SHEET : "min(78%, 640px)"}>
               {bottom}
             </Sheet>
           )}
