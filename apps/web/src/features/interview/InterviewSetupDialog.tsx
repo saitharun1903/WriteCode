@@ -109,10 +109,10 @@ function Writer({ disabled, onDone }: { disabled: boolean; onDone: (p: Awaited<R
 
   return (
     <section aria-label="Write the problem from a topic" className="rounded-xl border border-accent/30 bg-accent/[0.06] p-3.5">
-      <div className="flex items-center gap-2">
-        <PenLine className="size-4 text-accent-ink" />
-        <h3 className="text-[13px] font-semibold text-fg">Write it for me</h3>
-        <span className="text-xs text-fg-subtle">Type a topic; the statement and tests are filled in, every answer checked by running it.</span>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <PenLine className="size-4 shrink-0 text-accent-ink" />
+        <h3 className="shrink-0 text-[13px] font-semibold text-fg">Write it for me</h3>
+        <span className="min-w-0 text-xs text-fg-subtle max-sm:basis-full">Type a topic; the statement and tests are filled in, every answer checked by running it.</span>
       </div>
       <form
         className="mt-2.5 flex flex-wrap gap-2"
@@ -314,7 +314,7 @@ function SetupForm({ mode }: { mode: "create" | "edit" }) {
           </details>
         )}
         {error && <p className="text-xs text-danger">{error}</p>}
-        <div className="sticky bottom-0 -mx-4 -mb-4 flex justify-end gap-2 rounded-b-lg border-t border-line bg-overlay px-4 py-3">
+        <div className="sticky -bottom-4 -mx-4 -mb-4 flex justify-end gap-2 rounded-b-lg border-t border-line bg-overlay px-4 py-3">
           <Button variant="ghost" onClick={() => useInterviewUI.getState().closeSetup()}>
             Cancel
           </Button>

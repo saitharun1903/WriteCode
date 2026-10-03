@@ -56,7 +56,7 @@ export function LiveButton() {
           className="flex h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-3 text-[13px] font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg"
         >
           <Users className="size-3.5" />
-          <span className="hidden md:inline">Share</span>
+          <span className="hidden lg:inline">Share</span>
         </button>
       </Tooltip>
     );

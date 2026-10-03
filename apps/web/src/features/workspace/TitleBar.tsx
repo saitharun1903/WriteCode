@@ -274,7 +274,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
             trigger={
               <button
                 aria-label={`Project: ${project.name}`}
-                className="flex h-8 min-w-0 max-w-[28vw] shrink items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active [[data-touch]_&]:h-10"
+                className="flex h-8 min-w-24 max-w-[28vw] shrink items-center gap-2 rounded-[8px] px-1.5 text-[13.5px] font-semibold text-fg transition-colors hover:bg-hover data-[state=open]:bg-active [[data-touch]_&]:h-10"
               >
                 <ProjectBadge name={project.name} className="size-6 rounded-[5px] text-[11px]" />
                 <span className="truncate">{project.name}</span>
@@ -337,12 +337,12 @@ export function TitleBar({ compact }: { compact: boolean }) {
             aria-label="Interview mode"
             onClick={() => runCommand("interview.start")}
             className={cn(
-              "mr-1 h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-3 text-[13px] font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg",
+              "mr-1 h-[30px] items-center gap-1.5 rounded-full border border-line-strong/80 px-2.5 text-[13px] lg:px-3 font-medium text-fg-muted transition-colors hover:border-accent/60 hover:text-fg",
               compact && project ? "hidden sm:flex" : "flex",
             )}
           >
             <ClipboardList className="size-3.5 text-accent-ink" />
-            <span className={cn(compact && "hidden sm:inline")}>Interview</span>
+            <span className={cn("hidden lg:inline", compact && "sm:inline")}>Interview</span>
           </button>
         )}
         {/* Where the centred search box does not fit. */}

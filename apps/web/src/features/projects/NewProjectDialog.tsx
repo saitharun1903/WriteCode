@@ -47,8 +47,13 @@ export function NewProjectDialog() {
         </>
       }
     >
-      <div className="flex min-h-64 overflow-hidden rounded-[6px] border border-line-strong">
-        <div role="radiogroup" aria-label="Language" className="w-44 shrink-0 border-r border-line-strong bg-canvas p-1">
+      {/* Side by side when there is room; on a phone the languages are a short scrolling grid above the settings. */}
+      <div className="flex flex-col overflow-hidden rounded-[6px] border border-line-strong sm:min-h-64 sm:flex-row">
+        <div
+          role="radiogroup"
+          aria-label="Language"
+          className="grid max-h-44 shrink-0 grid-cols-2 overflow-y-auto border-b border-line-strong bg-canvas p-1 sm:block sm:max-h-none sm:w-44 sm:border-b-0 sm:border-r"
+        >
           {LANGUAGES.map((l) => (
             <button
               type="button"
@@ -57,12 +62,12 @@ export function NewProjectDialog() {
               key={l.id}
               onClick={() => setLanguage(l.id)}
               className={cn(
-                "flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-sm text-fg",
+                "flex h-9 w-full min-w-0 items-center gap-2 rounded-[4px] px-2 text-left text-sm text-fg sm:h-7",
                 language === l.id ? "bg-accent-soft" : "hover:bg-hover",
               )}
             >
               <FileIcon name={l.entryFile} />
-              <span className="flex-1">{l.name}</span>
+              <span className="min-w-0 flex-1 truncate">{l.name}</span>
               {l.supportLevel === "beta" && <span className="text-xs text-fg-subtle">Beta</span>}
             </button>
           ))}
@@ -72,21 +77,21 @@ export function NewProjectDialog() {
             e.preventDefault();
             void submit();
           }}
-          className="flex-1 space-y-4 bg-surface-2 p-4"
+          className="min-w-0 flex-1 space-y-4 bg-surface-2 p-4"
         >
-          <label className="grid grid-cols-[88px_1fr] items-center gap-3">
+          <label className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
             <span className="text-sm text-fg">Name:</span>
             <Input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder={`${lang.name} project`} aria-label="Project name" />
           </label>
-          <div className="grid grid-cols-[88px_1fr] items-center gap-3 text-sm">
+          <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3 text-sm">
             <span className="text-fg">Toolchain:</span>
             <span className="text-fg-muted">{lang.version}</span>
           </div>
-          <div className="grid grid-cols-[88px_1fr] items-center gap-3 text-sm">
+          <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3 text-sm">
             <span className="text-fg">Entry file:</span>
-            <span className="font-mono text-fg-muted">{lang.entryFile}</span>
+            <span className="truncate font-mono text-fg-muted">{lang.entryFile}</span>
           </div>
-          <div className="grid grid-cols-[88px_1fr] items-center gap-3 text-sm">
+          <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3 text-sm">
             <span className="text-fg">Debugger:</span>
             <span className="text-fg-muted">{lang.debugger && lang.debugger.supportLevel !== "planned" ? "Available" : "Not available yet"}</span>
           </div>

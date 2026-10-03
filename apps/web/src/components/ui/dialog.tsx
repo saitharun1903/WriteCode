@@ -22,11 +22,12 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 animate-fade" />
         <DialogPrimitive.Content
           className={cn(
-            "fixed left-1/2 top-[16vh] z-50 w-[calc(100vw-32px)] max-w-md -translate-x-1/2 rounded-lg bg-overlay shadow-float animate-pop",
+            // On a small screen it stays inside the screen; what does not fit scrolls inside it.
+            "fixed left-1/2 top-[max(16px,min(16vh,calc(50dvh-240px)))] z-50 flex max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-md -translate-x-1/2 flex-col rounded-lg bg-overlay shadow-float animate-pop",
             className,
           )}
         >
-          <div className="flex items-start justify-between gap-4 px-4 pb-2 pt-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-4 pb-2 pt-4">
             <div>
               <DialogPrimitive.Title className="text-base font-semibold text-fg">{title}</DialogPrimitive.Title>
               {description ? (
@@ -42,8 +43,8 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               <X className="size-4" />
             </DialogPrimitive.Close>
           </div>
-          <div className="px-4 pb-4">{children}</div>
-          {footer && <div className="flex justify-end gap-2 px-4 pb-4 pt-1">{footer}</div>}
+          <div className="min-h-0 overflow-y-auto px-4 pb-4">{children}</div>
+          {footer && <div className="flex shrink-0 justify-end gap-2 px-4 pb-4 pt-1">{footer}</div>}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

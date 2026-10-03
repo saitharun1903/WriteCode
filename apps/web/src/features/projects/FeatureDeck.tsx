@@ -5,17 +5,18 @@ import { cn } from "@/lib/cn";
 
 /**
  * What the product does, as a deck of cards: each one stays put near the top
- * while the next slides over it, so scrolling turns them over one at a time.
- * (On phones they are a plain list.) Each card shows the thing it talks about,
- * drawn small, rather than describing it.
+ * while the next slides over it, so scrolling turns them over one at a time,
+ * on phones and tablets as on a computer. Each card shows the thing it talks
+ * about, drawn small, rather than describing it.
  */
 /** `top`: room kept above the cards for what stays at the top of the page while it scrolls. */
 export function FeatureDeck({ top = 0 }: { top?: number }) {
   return (
     <ol className="mt-5">
       {HOME_FEATURES.map((f, i) => (
-        <li key={f.slug} className="mb-4 sm:sticky" style={{ top: top + 12 + i * 14 }}>
-          <article className="grid overflow-hidden rounded-2xl border border-line-strong bg-surface sm:h-[310px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+        <li key={f.slug} className="sticky mb-4" style={{ top: top + 12 + i * 10 }}>
+          {/* A card fits the screen below what stays at the top, so all of it is seen before the next covers it. */}
+          <article className="grid h-[min(510px,calc(100dvh-170px))] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_-6px_16px_-12px_rgb(0_0_0/0.25)] max-sm:[@media(max-height:640px)]:h-[300px] sm:h-[350px] lg:h-[310px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] sm:grid-rows-1">
             <div className="flex flex-col p-5 sm:p-7">
               <p className="font-mono text-xs text-fg-subtle">
                 <span className="text-accent-ink">{String(i + 1).padStart(2, "0")}</span> / {String(HOME_FEATURES.length).padStart(2, "0")} · {f.title}
@@ -27,7 +28,7 @@ export function FeatureDeck({ top = 0 }: { top?: number }) {
                 <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
               </a>
             </div>
-            <div className="min-h-0 p-4 pt-0 sm:p-5 sm:pl-0">{DEMOS[f.slug]}</div>
+            <div className="min-h-0 p-4 pt-0 max-sm:[@media(max-height:640px)]:hidden sm:p-5 sm:pl-0">{DEMOS[f.slug]}</div>
           </article>
         </li>
       ))}

@@ -143,6 +143,65 @@ test.describe("phone", () => {
   });
 });
 
+const PORTRAIT_TABLET = { viewport: { width: 768, height: 1024 }, isMobile: true, hasTouch: true };
+
+for (const [device, size] of [
+  ["phone", PHONE],
+  ["portrait tablet", PORTRAIT_TABLET],
+] as const) {
+  test.describe(`${device} layout`, () => {
+    test.use(size);
+
+    test(`${device}: the New Project dialog fits the screen, with every language and the Create button in it`, async ({ page }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: "Custom…" }).click();
+      const dialog = page.getByRole("dialog", { name: "New Project" });
+      const box = (await dialog.boundingBox())!;
+      const { width, height } = page.viewportSize()!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+      // Each language sits inside the dialog, none cut at its sides.
+      for (const radio of await dialog.getByRole("radio").all()) {
+        const r = (await radio.boundingBox())!;
+        expect(r.x).toBeGreaterThanOrEqual(box.x);
+        expect(r.x + r.width).toBeLessThanOrEqual(box.x + box.width);
+      }
+      await dialog.getByRole("radio", { name: /Rust/ }).scrollIntoViewIfNeeded();
+      await dialog.getByRole("radio", { name: /Rust/ }).click();
+      await expect(dialog.getByRole("textbox", { name: "Project name" })).toHaveAttribute("placeholder", "Rust project");
+      await expect(dialog.getByRole("button", { name: "Create" })).toBeInViewport();
+    });
+
+    test(`${device}: the cards on the home page stay at the top while the next one slides over them`, async ({ page }) => {
+      await page.goto("/");
+      const cards = page.locator("#about > ol > li");
+      await expect(cards).toHaveCount(5);
+      await cards.nth(0).scrollIntoViewIfNeeded();
+      const scroller = page.locator("#about").locator("xpath=ancestor::div[contains(@class,'overflow-y-auto')][1]");
+      const tops = async () => Promise.all([0, 1].map(async (i) => Math.round((await cards.nth(i).boundingBox())!.y)));
+      await scroller.evaluate((el) => (el.scrollTop += document.getElementById("about")!.getBoundingClientRect().top));
+      await scroller.evaluate((el) => (el.scrollTop += 300));
+      const [first] = await tops();
+      await scroller.evaluate((el) => (el.scrollTop += 300));
+      const [still, second] = await tops();
+      // The first card has not moved; the second has come up over it.
+      expect(still).toBe(first);
+      expect(second).toBeLessThan(first + 200);
+      // A whole card fits under what stays at the top of the page.
+      const card = (await cards.nth(0).locator("article").boundingBox())!;
+      expect(card.y + card.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    });
+
+    test(`${device}: the project's name can be read in the title bar`, async ({ page }) => {
+      await freshPython(page);
+      await fitsWidth(page);
+      const name = page.getByRole("button", { name: "Project: Python project" });
+      expect((await name.boundingBox())!.width).toBeGreaterThan(device === "phone" ? 60 : 90);
+    });
+  });
+}
+
 test.describe("tablet", () => {
   test.use(TABLET);
 

@@ -241,7 +241,7 @@ export function SettingsDialog() {
       open={open}
       onOpenChange={setOpen}
       title="Settings"
-      className={cn("top-[10vh] max-w-3xl", compact && "top-[5vh]", phone && "left-0 top-0 flex h-dvh w-screen max-w-none translate-x-0 flex-col rounded-none [&>div:nth-child(2)]:min-h-0 [&>div:nth-child(2)]:flex-1")}
+      className={cn("top-[10vh] max-w-3xl", compact && "top-[5vh]", phone && "left-0 top-0 flex h-dvh max-h-none w-screen max-w-none translate-x-0 flex-col rounded-none [&>div:nth-child(2)]:min-h-0 [&>div:nth-child(2)]:flex-1")}
       footer={
         <>
           <Button variant="ghost" className="mr-auto" onClick={restore}>
