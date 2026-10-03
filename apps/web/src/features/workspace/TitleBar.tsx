@@ -82,12 +82,13 @@ function AssistantButton() {
       >
         <span
           className={cn(
-            "flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors",
+            "flex h-[30px] items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium transition-colors lg:px-3",
             open ? "bg-accent-soft text-fg" : "bg-canvas text-fg-muted group-hover:text-fg",
           )}
         >
           <Sparkles className="size-3.5 text-accent-ink" />
-          Ask AI
+          {/* Narrower than a laptop, the mark alone, as the buttons beside it. */}
+          <span className="hidden whitespace-nowrap lg:inline">Ask AI</span>
         </span>
       </button>
     </Tooltip>
