@@ -363,6 +363,9 @@ const rust: LanguageDefinition = {
 /** The .NET SDK with the C# compiler called directly (sandbox-images/dotnet): no project file, a build in about a second. */
 export const DOTNET_IMAGE = "writecode/dotnet:8.0";
 
+/** The .NET 8 SDK on Ubuntu with the same compiler wrapper as DOTNET_IMAGE, netcoredbg and Python (sandbox-images/dotnet-dbg), for debugging and visualizing C#. */
+export const DOTNET_DBG_IMAGE = "writecode/dotnet-dbg:8.0";
+
 const csharp: LanguageDefinition = {
   id: "csharp",
   name: "C#",
@@ -398,6 +401,9 @@ class Program
     image: DOTNET_IMAGE,
     command: ["dotnet", "out/main.dll"],
   },
+  // The program is compiled the same way (portable symbols, no optimisation), so the debugger needs no compile of its own.
+  debugger: { protocol: "netcoredbg", supportLevel: "beta", image: DOTNET_DBG_IMAGE },
+  visualizer: { supportLevel: "beta" },
 };
 
 /** php:8.4-cli-alpine with Xdebug (not loaded in normal runs) and Python (sandbox-images/php-xdebug), for debugging and visualizing PHP. */

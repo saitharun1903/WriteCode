@@ -67,6 +67,7 @@ const rubyProject = (page: Page, code: string) => newProject(page, "Ruby", code)
 const rustProject = (page: Page, code: string) => newProject(page, "Rust", code);
 const goProject = (page: Page, code: string) => newProject(page, "Go", code);
 const phpProject = (page: Page, code: string) => newProject(page, "PHP", code);
+const csharpProject = (page: Page, code: string) => newProject(page, "C#", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -631,6 +632,101 @@ test("PHP: an exception stops the program where it is thrown, with its class and
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("Uncaught OutOfRangeException");
+});
+
+const CSHARP_PROGRAM = `class Point
+{
+    public int X;
+    public int Y;
+}
+
+class Program
+{
+    static int Square(int x)
+    {
+        int r = x * x;
+        return r;
+    }
+
+    static void Main()
+    {
+        var nums = new List<int> { 3, 1, 2 };
+        var origin = new Point { X = 0, Y = 5 };
+        int total = 0;
+        foreach (var n in nums)
+        {
+            total += Square(n);
+        }
+        Console.WriteLine($"total {total} {origin.X}");
+    }
+}
+`;
+
+test("C#: breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await csharpProject(page, CSHARP_PROGRAM);
+  await cursorTo(page, 22);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("22:1");
+  const stack = panel.getByRole("list", { name: "Call stack" });
+  await expect(stack.getByRole("button", { name: "Main:22, Program" })).toBeVisible();
+
+  // A List is shown as its items, not as .NET's internal fields.
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = [3, 1, 2]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: /^_items/ })).toHaveCount(0);
+  await vars.getByRole("treeitem", { name: "origin = Point {X: 0, Y: 5}" }).click();
+  await expect(vars.getByRole("treeitem", { name: "Y = 5" })).toBeVisible();
+
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n * 10 + total + origin.Y");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n * 10 + total + origin.Y").locator("..")).toContainText("35");
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("Square(2)");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("Square(2)").locator("..")).toContainText("Watches do not call methods");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(stack.getByRole("button", { name: "Square:11, Program" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
+
+  await page.keyboard.press("Shift+F11");
+  await expect(stack.getByRole("button", { name: /^Square:/ })).toHaveCount(0);
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint Program.cs:22" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total 14 0", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("C#: an exception stops the program where it is thrown, with its type and message, after typed input", async ({ page }) => {
+  await csharpProject(page, "class Program\n{\n    static void Main()\n    {\n        int n = int.Parse(Console.ReadLine());\n        int[] items = { 1, 2 };\n        Console.WriteLine(items[n]);\n    }\n}\n");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeVisible({ timeout: 120_000 });
+  await input.fill("5");
+  await page.keyboard.press("Enter");
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole("alert")).toContainText("IndexOutOfRangeException: Index was outside the bounds of the array.");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("7:1");
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: "n = 5" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(output(page)).toContainText("IndexOutOfRangeException");
 });
 
 const LINKED_LIST = `import java.util.Scanner;

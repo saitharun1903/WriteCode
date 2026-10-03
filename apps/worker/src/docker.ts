@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import Docker from "dockerode";
-import { DOTNET_IMAGE, GDB_IMAGE, GO_DLV_IMAGE, GO_IMAGE, KOTLIN_IMAGE, LANGUAGES, PHP_XDEBUG_IMAGE, RUST_GDB_IMAGE } from "@cw/shared";
+import { DOTNET_DBG_IMAGE, DOTNET_IMAGE, GDB_IMAGE, GO_DLV_IMAGE, GO_IMAGE, KOTLIN_IMAGE, LANGUAGES, PHP_XDEBUG_IMAGE, RUST_GDB_IMAGE } from "@cw/shared";
 import type { Logger } from "./logger.js";
 import { SANDBOX_LABEL } from "./sandbox/sandbox.js";
 
@@ -49,7 +49,7 @@ export async function readyLanguages(docker: Docker): Promise<string[]> {
  * Images the worker builds itself: a pulled image plus tools (gdb for C/C++
  * debugging and visualizing), from a Dockerfile shipped in sandbox-images/.
  */
-const BUILT_IMAGES: Record<string, string> = { [GDB_IMAGE]: "gcc-gdb", [RUST_GDB_IMAGE]: "rust-gdb", [GO_IMAGE]: "golang", [GO_DLV_IMAGE]: "golang-dlv", [PHP_XDEBUG_IMAGE]: "php-xdebug", [DOTNET_IMAGE]: "dotnet", [KOTLIN_IMAGE]: "kotlin" };
+const BUILT_IMAGES: Record<string, string> = { [GDB_IMAGE]: "gcc-gdb", [RUST_GDB_IMAGE]: "rust-gdb", [GO_IMAGE]: "golang", [GO_DLV_IMAGE]: "golang-dlv", [PHP_XDEBUG_IMAGE]: "php-xdebug", [DOTNET_DBG_IMAGE]: "dotnet-dbg", [DOTNET_IMAGE]: "dotnet", [KOTLIN_IMAGE]: "kotlin" };
 const IMAGES_DIR = new URL("../sandbox-images/", import.meta.url);
 
 async function build(docker: Docker, image: string, folder: string): Promise<void> {

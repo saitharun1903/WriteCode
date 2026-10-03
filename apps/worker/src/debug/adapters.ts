@@ -44,6 +44,12 @@ const DBGP_MODULE_URL = new URL("../../debug-adapters/dbgp/cw_dbgp.py", import.m
 let dbgpAdapterSource: Promise<string> | null = null;
 let dbgpModuleSource: Promise<string> | null = null;
 export const dbgpModule = () => source(DBGP_MODULE_URL, dbgpModuleSource, (p) => (dbgpModuleSource = p));
+const NETCOREDBG_ADAPTER_URL = new URL("../../debug-adapters/netcoredbg/cw_netcoredbg_adapter.py", import.meta.url);
+/** Starting netcoredbg and reading C# values: shared by the C# debugger and tracer. */
+const NETCOREDBG_MODULE_URL = new URL("../../debug-adapters/netcoredbg/cw_netcoredbg.py", import.meta.url);
+let netcoredbgAdapterSource: Promise<string> | null = null;
+let netcoredbgModuleSource: Promise<string> | null = null;
+export const netcoredbgModule = () => source(NETCOREDBG_MODULE_URL, netcoredbgModuleSource, (p) => (netcoredbgModuleSource = p));
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
@@ -145,6 +151,18 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         // Delve runs the program as its child, reading its stdin as in a normal run.
         argv: ["python3", "/tmp/cwdbg/cw_dlv_adapter.py"],
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main" },
+        setup: [],
+        monitorInput: true,
+      };
+    case "netcoredbg":
+      return {
+        files: [
+          { path: "/tmp/cwdbg/cw_netcoredbg_adapter.py", content: await source(NETCOREDBG_ADAPTER_URL, netcoredbgAdapterSource, (p) => (netcoredbgAdapterSource = p)) },
+          { path: "/tmp/cwdbg/cw_netcoredbg.py", content: await netcoredbgModule() },
+        ],
+        // The program runs under netcoredbg, reading its stdin as in a normal run.
+        argv: ["python3", "/tmp/cwdbg/cw_netcoredbg_adapter.py"],
+        launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main.dll" },
         setup: [],
         monitorInput: true,
       };

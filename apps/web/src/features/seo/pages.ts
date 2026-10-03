@@ -402,8 +402,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "(.NET 8, C# 12)",
     label: "C# compiler",
     sample: { file: "Program.cs", code: CSHARP },
-    debugs: false,
-    intro: "Write and run C# 12 on .NET 8 in your browser. Classes with a Main method and top-level statements both work, with LINQ, generics, async and the rest of the base class library. Console.ReadLine reads from the console as the program runs.",
+    debugs: true,
+    intro: "Write and run C# 12 on .NET 8 in your browser. Classes with a Main method and top-level statements both work, with LINQ, generics, async and the rest of the base class library. Console.ReadLine reads from the console as the program runs. Debug it with breakpoints, or watch it run step by step in the visualizer, with List, Dictionary and your own objects drawn as they change.",
     extraFaqs: [
       { q: "Which C# and .NET version?", a: "C# 12 on .NET 8." },
       { q: "Do top-level statements work?", a: "Yes. A file can start with statements directly; the usual namespaces (System, System.Linq, System.Collections.Generic) are already imported." },

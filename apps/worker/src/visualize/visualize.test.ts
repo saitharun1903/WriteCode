@@ -589,6 +589,81 @@ public class Main {
     expect(at4.stdoutLength).toBe(6);
   });
 
+  it("C#: frames, List, Dictionary and arrays as their elements, objects by identity, return values and output, across files", { timeout: 180_000 }, async () => {
+    const program = [
+      "class Program",
+      "{",
+      "    static int Square(int x)",
+      "    {",
+      "        int r = x * x;",
+      "        return r;",
+      "    }",
+      "",
+      "    static void Main()",
+      "    {",
+      "        var nums = new List<int> { 3, 1, 2 };",
+      '        var ages = new Dictionary<string, int> { ["ada"] = 36 };',
+      "        int[] pair = { 7, 8 };",
+      "        var head = new Node(1);",
+      "        head.Next = new Node(2);",
+      "        var cur = head;",
+      "        int total = 0;",
+      "        foreach (var n in nums)",
+      "        {",
+      "            total += Square(n);",
+      "        }",
+      '        Console.WriteLine($"total {total}");',
+      "    }",
+      "}",
+      "",
+    ].join("\n");
+    const node = "class Node\n{\n    public int Value;\n    public Node Next;\n\n    public Node(int value)\n    {\n        Value = value;\n    }\n}\n";
+    const { result, trace } = await visualize("csharp", { "Program.cs": program, "Node.cs": node });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("total 14\n");
+    expect(trace.language).toBe("csharp");
+    expect(trace.stdout).toBe("total 14\n");
+    expect(top(trace.steps[0]!)).toMatchObject({ name: "Program.Main", file: "Program.cs", line: 11 });
+    // A constructor is Node.Node, in its own file; braces are not steps.
+    expect(trace.steps.some((s) => top(s).name === "Node.Node" && top(s).file === "Node.cs" && top(s).line === 8)).toBe(true);
+    expect(trace.steps.some((s) => ["{", "}"].includes(program.split("\n")[top(s).line - 1]!.trim()) && top(s).file === "Program.cs" && s.event === "line")).toBe(false);
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "Program.Square")!;
+    expect(top(ret).returnValue).toEqual({ kind: "value", text: "9", type: "int" });
+    // Locals appear once their declaration has run.
+    const early = trace.steps.find((s) => top(s).name === "Program.Main" && top(s).line === 13)!;
+    expect(top(early).locals.map(([n]) => n)).toEqual(["nums", "ages"]);
+    const end = trace.steps.findLast((s) => top(s).name === "Program.Main" && top(s).line === 22)!;
+    const ref = (name: string) => end.heap[(local(end, name) as { id: string }).id]!;
+    expect(ref("nums")).toMatchObject({ kind: "sequence", type: "List<int>", items: [{ text: "3" }, { text: "1" }, { text: "2" }] });
+    expect(ref("ages")).toMatchObject({ kind: "map", type: "Dictionary<string, int>", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    expect(ref("pair")).toMatchObject({ kind: "sequence", type: "int[]", items: [{ text: "7" }, { text: "8" }] });
+    // cur is head: one object, whose Next is the second node, whose Next is null.
+    expect(local(end, "cur")).toEqual(local(end, "head"));
+    const head = ref("head");
+    expect(head).toMatchObject({ kind: "object", type: "Node", fields: [["Value", { text: "1" }], ["Next", { kind: "ref" }]] });
+    expect(end.heap[(head.fields![1]![1] as { id: string }).id]).toMatchObject({ kind: "object", type: "Node", fields: [["Value", { text: "2" }], ["Next", { kind: "value", text: "null" }]] });
+    expect(text(local(end, "total"))).toBe("14");
+  });
+
+  it("C#: an exception is recorded where it is thrown, then reported like a normal run; typed input reaches the program", { timeout: 180_000 }, async () => {
+    const { result, trace } = await visualize("csharp", { "Program.cs": 'class Program\n{\n    static int At(int[] xs, int i)\n    {\n        return xs[i];\n    }\n\n    static void Main()\n    {\n        int[] xs = { 1, 2 };\n        Console.WriteLine(At(xs, 0));\n        Console.WriteLine(At(xs, 5));\n    }\n}\n' });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.stdout).toBe("1\n");
+    expect(result.stderr).toContain("System.IndexOutOfRangeException: Index was outside the bounds of the array.");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("IndexOutOfRangeException: Index was outside the bounds of the array.");
+    expect(top(ex)).toMatchObject({ name: "Program.At", line: 5 });
+    expect(text(local(ex, "i"))).toBe("5");
+
+    const typed = await visualize("csharp", { "Program.cs": 'Console.Write("name? ");\nstring name = Console.ReadLine();\nConsole.WriteLine($"hi {name}");\n' }, { typed: ["Ada\n"] });
+    expect(typed.result.status).toBe("SUCCESS");
+    expect(typed.result.stdout).toBe("name? hi Ada\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const at3 = typed.trace.steps.find((s) => top(s).line === 3)!;
+    expect(text(local(at3, "name"))).toBe('"Ada"');
+    expect(at3.stdoutLength).toBe(6);
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":
