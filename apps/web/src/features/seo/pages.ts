@@ -372,8 +372,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "1.25",
     label: "Go compiler",
     sample: { file: "main.go", code: GO },
-    debugs: false,
-    intro: "Write and run Go 1.25 in your browser with the real Go compiler. Read input with fmt.Scan or bufio, split a program over several files, check it against test cases and share it with a link. Nothing to install.",
+    debugs: true,
+    intro: "Write and run Go 1.25 in your browser with the real Go compiler. Read input with fmt.Scan or bufio, split a program over several files, debug it with breakpoints (Delve underneath), and watch it run step by step in the visualizer: slices, maps and structs linked by pointers drawn as they change. Nothing to install.",
     extraFaqs: [
       { q: "Which Go version is used?", a: "Go 1.25, with the whole standard library." },
       { q: "Can I use several files?", a: "Yes. Every .go file of the project that belongs to package main is built into the program." },

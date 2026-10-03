@@ -459,6 +459,72 @@ public class Main {
     expect(local(ex, "i")).toMatchObject({ text: "5" });
   });
 
+  it("Go: frames, slices, maps, structs linked by pointers, return values and output, across files", { timeout: 180_000 }, async () => {
+    const main = [
+      "package main",
+      "",
+      'import "fmt"',
+      "",
+      "func square(x int) int {",
+      "\tr := x * x",
+      "\treturn r",
+      "}",
+      "",
+      "func main() {",
+      "\tnums := []int{3, 1, 2}",
+      '\tages := map[string]int{"ada": 36}',
+      "\thead := &Node{Value: 1}",
+      "\thead.Next = &Node{Value: 2}",
+      "\tp := Point{1, 2}",
+      "\ttotal := 0",
+      "\tfor _, n := range nums {",
+      "\t\ttotal += square(n)",
+      "\t}",
+      '\tfmt.Println("total", total, len(ages), p.X)',
+      "}",
+      "",
+    ].join("\n");
+    const types = "package main\n\ntype Node struct {\n\tValue int\n\tNext  *Node\n}\n\ntype Point struct{ X, Y int }\n";
+    const { result, trace } = await visualize("go", { "main.go": main, "types.go": types });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("total 14 1 1\n");
+    expect(trace.language).toBe("go");
+    expect(trace.stdout).toBe("total 14 1 1\n");
+    expect(top(trace.steps[0]!)).toMatchObject({ name: "main", file: "main.go", line: 11 });
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "square")!;
+    expect(top(ret).returnValue).toEqual({ kind: "value", text: "9", type: "int" });
+    const end = trace.steps.findLast((s) => top(s).name === "main" && top(s).line === 20)!;
+    const ref = (name: string) => end.heap[(local(end, name) as { id: string }).id]!;
+    expect(ref("nums")).toMatchObject({ kind: "sequence", type: "[]int", items: [{ text: "3" }, { text: "1" }, { text: "2" }] });
+    expect(ref("ages")).toMatchObject({ kind: "map", type: "map[string]int", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    expect(ref("p")).toMatchObject({ kind: "object", type: "Point", fields: [["X", { text: "1" }], ["Y", { text: "2" }]] });
+    // head is a pointer: it refers to the node itself, whose Next is the second node, whose Next is nil.
+    const head = ref("head");
+    expect(head).toMatchObject({ kind: "object", type: "Node", fields: [["Value", { text: "1" }], ["Next", { kind: "ref" }]] });
+    expect(end.heap[(head.fields![1]![1] as { id: string }).id]).toMatchObject({ kind: "object", type: "Node", fields: [["Value", { text: "2" }], ["Next", { kind: "value", text: "nil" }]] });
+    expect(text(local(end, "total"))).toBe("14");
+  });
+
+  it("Go: a panic is recorded where the program's code panicked; typed input reaches the program", { timeout: 180_000 }, async () => {
+    const { result, trace } = await visualize("go", { "main.go": 'package main\n\nimport "fmt"\n\nfunc at(xs []int, i int) int {\n\treturn xs[i]\n}\n\nfunc main() {\n\txs := []int{1, 2}\n\tfmt.Println(at(xs, 0))\n\tfmt.Println(at(xs, 5))\n}\n' });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toBe("1\n");
+    expect(result.stderr).toContain("panic: runtime error: index out of range [5] with length 2");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("panic: runtime error: index out of range [5] with length 2");
+    expect(top(ex)).toMatchObject({ name: "at", line: 6 });
+    expect(text(local(ex, "i"))).toBe("5");
+
+    const typed = await visualize("go", { "main.go": 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar name string\n\tfmt.Print("name? ")\n\tfmt.Scan(&name)\n\tfmt.Println("hi", name)\n}\n' }, { typed: ["Ada\n"] });
+    expect(typed.result.status).toBe("SUCCESS");
+    expect(typed.result.stdout).toBe("name? hi Ada\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const at9 = typed.trace.steps.find((s) => top(s).line === 9)!;
+    expect(text(local(at9, "name"))).toBe('"Ada"');
+    expect(at9.stdoutLength).toBe(6);
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":

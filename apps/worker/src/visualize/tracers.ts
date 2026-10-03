@@ -3,7 +3,7 @@ import type Docker from "dockerode";
 import { SANDBOX_WORKDIR, TRACE_LIMITS, expandCommand, requireLanguage, type ExecutionLimits, type ExecutionRequest } from "@cw/shared";
 import type { SandboxFile } from "../sandbox/files.js";
 import { ADAPTER_DIR, javaAdapterClasses } from "../debug/java-adapter.js";
-import { classpathOf, gdbRust } from "../debug/adapters.js";
+import { classpathOf, dlvModule, gdbRust } from "../debug/adapters.js";
 
 /** How to run a program under a language's tracer inside the sandbox. */
 export interface Tracer {
@@ -34,10 +34,12 @@ const JS_TRACER_WORKER_URL = new URL("../../tracers/javascript/cw_trace_worker.c
 
 const GDB_TRACER_URL = new URL("../../tracers/gdb/cw_trace_gdb.py", import.meta.url);
 const RUBY_TRACER_URL = new URL("../../tracers/ruby/cw_trace.rb", import.meta.url);
+const DLV_TRACER_URL = new URL("../../tracers/dlv/cw_trace_dlv.py", import.meta.url);
 
 let pythonSource: Promise<string> | null = null;
 let gdbSource: Promise<string> | null = null;
 let rubySource: Promise<string> | null = null;
+let dlvSource: Promise<string> | null = null;
 let jsSources: Promise<[string, string]> | null = null;
 
 /** Tracing single-steps every line, so allow more time than a normal run. */
@@ -130,6 +132,26 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         outPath: OUT_PATH,
         limits: slower,
         // The program reads its stdin itself (redirected by gdb), as in a normal run.
+        ownsStdin: false,
+      };
+    }
+    case "delve": {
+      dlvSource ??= readFile(DLV_TRACER_URL, "utf8").catch((e: unknown) => {
+        dlvSource = null;
+        throw e;
+      });
+      const config = { root: SANDBOX_WORKDIR, files, out: OUT_PATH, program: "out/main", stdin: stdinPath, module: `${TRACE_DIR}/cw_dlv.py`, limits: TRACE_LIMITS };
+      return {
+        files: [
+          { path: `${TRACE_DIR}/cw_trace_dlv.py`, content: await dlvSource },
+          { path: `${TRACE_DIR}/cw_dlv.py`, content: await dlvModule() },
+          { path: `${TRACE_DIR}/config.json`, content: JSON.stringify(config) },
+        ],
+        argv: ["python3", `${TRACE_DIR}/cw_trace_dlv.py`, `${TRACE_DIR}/config.json`],
+        setup: [],
+        outPath: OUT_PATH,
+        limits: slower,
+        // Delve runs the program, which reads its stdin itself, as in a normal run.
         ownsStdin: false,
       };
     }

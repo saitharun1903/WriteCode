@@ -8,7 +8,7 @@
 
 - Online compiler: real toolchains (Java 21, Python 3.13, GCC 14 for C and C++, Node.js 22 for JavaScript and TypeScript, Kotlin 2.2, Go 1.25, Rust 1.90, C# 12 on .NET 8, PHP 8.4, Ruby 3.4, SQLite for SQL, Bash 5). Programs can read typed input while they run.
 - HTML, CSS and JavaScript editor: a web page with its stylesheet and script, shown in a live preview that updates as it is typed, with a console.
-- Online debugger: breakpoints, stepping, variables, watches and the call stack, for Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Ruby and Rust.
+- Online debugger: breakpoints, stepping, variables, watches and the call stack, for Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Go, Rust and Ruby.
 - Code visualizer: arrays, linked lists, trees and recursion drawn step by step as the program runs.
 - Test cases: inputs with expected outputs, checked in one click.
 - Code together: a shared link to edit the same files live, and coding interviews with hidden tests, a timer and a report.

@@ -271,6 +271,9 @@ const kotlin: LanguageDefinition = {
 /** golang with its standard library already compiled (sandbox-images/golang), so a build takes a second, not ten. */
 export const GO_IMAGE = "writecode/golang:1.25";
 
+/** Go with Delve and Python (sandbox-images/golang-dlv), for debugging and visualizing Go. */
+export const GO_DLV_IMAGE = "writecode/golang-dlv:1.25";
+
 const go: LanguageDefinition = {
   id: "go",
   name: "Go",
@@ -304,6 +307,14 @@ func main() {
     image: GO_IMAGE,
     command: ["./out/main"],
   },
+  debugger: {
+    protocol: "delve",
+    supportLevel: "beta",
+    image: GO_DLV_IMAGE,
+    // Optimisations off for the program's own package, so every line and variable is there; the standard library stays as compiled in the image.
+    compiler: ["go", "build", "-gcflags=-N -l", "-o", "out/main", "{sources}"],
+  },
+  visualizer: { supportLevel: "beta" },
 };
 
 /** rust:1.90-slim with gdb and the toolchain's gdb printers (sandbox-images/rust-gdb), for debugging and visualizing Rust. */

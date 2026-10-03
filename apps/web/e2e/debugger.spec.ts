@@ -65,6 +65,7 @@ const javaProject = (page: Page, code: string) => newProject(page, "Java", code)
 const pythonProject = (page: Page, code: string) => newProject(page, "Python", code);
 const rubyProject = (page: Page, code: string) => newProject(page, "Ruby", code);
 const rustProject = (page: Page, code: string) => newProject(page, "Rust", code);
+const goProject = (page: Page, code: string) => newProject(page, "Go", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -453,6 +454,92 @@ test("Rust: a panic stops the program where its code panicked, with the message,
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("index out of bounds");
+});
+
+const GO_PROGRAM = `package main
+
+import "fmt"
+
+type Point struct {
+	X, Y int
+}
+
+func square(x int) int {
+	r := x * x
+	return r
+}
+
+func main() {
+	nums := []int{3, 1, 2}
+	origin := Point{0, 5}
+	total := 0
+	for _, n := range nums {
+		total += square(n)
+	}
+	fmt.Println("total", total, origin.X)
+}
+`;
+
+test("Go: breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await goProject(page, GO_PROGRAM);
+  await cursorTo(page, 19);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("19:1");
+  const stack = panel.getByRole("list", { name: "Call stack" });
+  await expect(stack.getByRole("button", { name: "main:19, main.go" })).toBeVisible();
+
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = [3, 1, 2]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "origin = {X: 0, Y: 5}" }).click();
+  await expect(vars.getByRole("treeitem", { name: "Y = 5" })).toBeVisible();
+
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n*10 + total + origin.Y");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n*10 + total + origin.Y").locator("..")).toContainText("35");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(stack.getByRole("button", { name: "square:10, main.go" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
+
+  await page.keyboard.press("Shift+F11");
+  await expect(stack.getByRole("button", { name: /^square:/ })).toHaveCount(0);
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint main.go:19" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total 14 0", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("Go: a panic stops the program where its code panicked, with the message, after typed input", async ({ page }) => {
+  await goProject(page, 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\titems := []int{1, 2}\n\tfmt.Println(items[n])\n}\n');
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeVisible({ timeout: 120_000 });
+  await input.fill("5");
+  await page.keyboard.press("Enter");
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole("alert")).toContainText("panic: runtime error: index out of range [5] with length 2");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("9:1");
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: "n = 5" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(output(page)).toContainText("index out of range");
 });
 
 const LINKED_LIST = `import java.util.Scanner;

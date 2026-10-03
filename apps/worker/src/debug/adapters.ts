@@ -32,6 +32,12 @@ const GDB_ADAPTER_PATH = "/tmp/cwdbg/cw_gdb_adapter.py";
 export const GDB_RUST_URL = new URL("../../debug-adapters/gdb/cw_gdb_rust.py", import.meta.url);
 let gdbRustSource: Promise<string> | null = null;
 export const gdbRust = () => source(GDB_RUST_URL, gdbRustSource, (p) => (gdbRustSource = p));
+const DLV_ADAPTER_URL = new URL("../../debug-adapters/dlv/cw_dlv_adapter.py", import.meta.url);
+/** Starting Delve and reading Go values: shared by the Go debugger and tracer. */
+const DLV_MODULE_URL = new URL("../../debug-adapters/dlv/cw_dlv.py", import.meta.url);
+let dlvAdapterSource: Promise<string> | null = null;
+let dlvModuleSource: Promise<string> | null = null;
+export const dlvModule = () => source(DLV_MODULE_URL, dlvModuleSource, (p) => (dlvModuleSource = p));
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
@@ -121,6 +127,18 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         // gdb runs the adapter; the program is gdb's child, reading its stdin as in a normal run.
         argv: ["gdb", "-q", "-nx", "-batch", "-x", GDB_ADAPTER_PATH],
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main", language: request.language },
+        setup: [],
+        monitorInput: true,
+      };
+    case "delve":
+      return {
+        files: [
+          { path: "/tmp/cwdbg/cw_dlv_adapter.py", content: await source(DLV_ADAPTER_URL, dlvAdapterSource, (p) => (dlvAdapterSource = p)) },
+          { path: "/tmp/cwdbg/cw_dlv.py", content: await dlvModule() },
+        ],
+        // Delve runs the program as its child, reading its stdin as in a normal run.
+        argv: ["python3", "/tmp/cwdbg/cw_dlv_adapter.py"],
+        launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main" },
         setup: [],
         monitorInput: true,
       };

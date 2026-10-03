@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust" | "Go") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -499,6 +499,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
   ["Ruby", "total = 0\n# add them up\n\n(1..3).each { |i| total += i }\nputs total\n", 2, 4],
+  ["Go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\ttotal := 0\n\t// add them up\n\n\tfor i := 1; i <= 3; i++ {\n\t\ttotal += i\n\t}\n\tfmt.Println(total)\n}\n", 7, 9],
   ["Rust", "fn main() {\n    let mut total = 0;\n    // add them up\n\n    for i in 1..=3 {\n        total += i;\n    }\n    println!(\"{}\", total);\n}\n", 3, 5],
 ];
 
@@ -706,6 +707,12 @@ test("visualizer: a linked list built by hand is already there; the steps start 
       "class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun main() {\n    val head = Node(1)\n    val second = Node(2)\n    val third = Node(3)\n    head.next = second\n    second.next = third\n    var cur: Node? = head\n    var total = 0\n    while (cur != null) {\n        total += cur.value\n        cur = cur.next\n    }\n    println(total)\n}\n",
       13,
       "Main.kt",
+    ],
+    [
+      "Go",
+      "package main\n\nimport \"fmt\"\n\ntype Node struct {\n\tVal  int\n\tNext *Node\n}\n\nfunc main() {\n\thead := &Node{Val: 1}\n\tsecond := &Node{Val: 2}\n\tthird := &Node{Val: 3}\n\thead.Next = second\n\tsecond.Next = third\n\tcur := head\n\ttotal := 0\n\tfor cur != nil {\n\t\ttotal += cur.Val\n\t\tcur = cur.Next\n\t}\n\tfmt.Println(total)\n}\n",
+      18,
+      "main.go",
     ],
     [
       "Rust",
