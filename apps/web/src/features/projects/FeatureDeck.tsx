@@ -16,7 +16,7 @@ export function FeatureDeck({ top = 0 }: { top?: number }) {
       {HOME_FEATURES.map((f, i) => (
         <li key={f.slug} className="sticky mb-4" style={{ top: top + 12 + i * 10 }}>
           {/* A card fits the screen below what stays at the top, so all of it is seen before the next covers it. */}
-          <article className="grid h-[min(510px,calc(100dvh-170px))] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_-6px_16px_-12px_rgb(0_0_0/0.25)] max-sm:[@media(max-height:640px)]:h-[300px] sm:h-[350px] lg:h-[310px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] sm:grid-rows-1">
+          <article className="cw-panel grid h-[min(510px,calc(100dvh-170px))] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-2xl border border-line-strong bg-surface shadow-[0_-6px_16px_-12px_rgb(0_0_0/0.25)] max-sm:[@media(max-height:640px)]:h-[300px] sm:h-[350px] lg:h-[310px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] sm:grid-rows-1">
             <div className="flex flex-col p-5 sm:p-7">
               <p className="font-mono text-xs text-fg-subtle">
                 <span className="text-accent-ink">{String(i + 1).padStart(2, "0")}</span> / {String(HOME_FEATURES.length).padStart(2, "0")} · {f.title}

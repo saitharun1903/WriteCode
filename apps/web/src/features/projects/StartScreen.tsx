@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { ChevronDown, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion, type Transition } from "motion/react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -85,6 +86,11 @@ const SHOWN = 6;
 /** The languages with the debugger and the visualizer, by name. */
 const withTools = LANGUAGES.filter((l) => l.debugger && l.visualizer).map((l) => l.name);
 
+/** How the page changes when Temporary is turned on or off. */
+const EASE: Transition = { duration: 0.42, ease: [0.22, 1, 0.36, 1] };
+/** Collapses to nothing and back: what Temporary hides. */
+const FOLD = { initial: { opacity: 0, height: 0 }, animate: { opacity: 1, height: "auto" }, exit: { opacity: 0, height: 0 } };
+
 /** Welcome screen shown when no project is open. */
 export function StartScreen() {
   const allProjects = useWorkspace((s) => s.projects);
@@ -100,12 +106,17 @@ export function StartScreen() {
   const filtered = projects.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   const temporary = useWorkspace((s) => s.temporaryMode);
+  const reduceMotion = useReducedMotion();
+  const ease: Transition = reduceMotion ? { duration: 0 } : EASE;
   const [more, setMore] = useState(false);
   const [allShown, setAllShown] = useState(false);
   const [allInterviews, setAllInterviews] = useState(false);
   // The part of the page in view, for the links that stay at its top.
   const scroller = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState<string>("new");
+  useEffect(() => {
+    if (temporary) scroller.current?.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+  }, [temporary, reduceMotion]);
   const spy = () => {
     const el = scroller.current;
     if (!el) return;
@@ -136,7 +147,7 @@ export function StartScreen() {
       disabled={!!busy}
       onClick={() => pick(lang.id)}
       className={cn(
-        "group flex items-center gap-3 rounded-xl border bg-surface p-3 text-left transition-[border-color,transform] duration-150 sm:p-3.5",
+        "cw-card group flex items-center gap-3 rounded-xl border bg-surface p-3 text-left transition-[border-color,transform,background-color] duration-150 sm:p-3.5",
         "hover:-translate-y-0.5 hover:border-accent disabled:opacity-60",
         temporary ? "border-dashed border-accent/60" : "border-line-strong",
       )}
@@ -151,21 +162,40 @@ export function StartScreen() {
   );
 
   return (
-    <div ref={scroller} onScroll={spy} className="h-full overflow-y-auto bg-surface-2">
+    <div ref={scroller} onScroll={spy} className={cn("cw-home h-full overflow-y-auto", temporary && "cw-home-temporary")}>
       <div className="mx-auto max-w-5xl px-4 pb-8 pt-8 sm:px-8 sm:pb-14 sm:pt-12">
-        <header>
-          <h1 className="text-[32px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[38px]" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
-            {PRODUCT.name}
-            <span aria-hidden className="cw-caret" />
-          </h1>
-          <p className="mt-3 max-w-2xl text-[15px] leading-snug text-fg-muted">
-            Free online compiler for {LANGUAGES.length} languages, with a debugger and visualizer for {withTools.slice(0, -1).join(", ")} and {withTools[withTools.length - 1]}, and a live preview for HTML and CSS.
-          </p>
-          <p className="mt-2 font-mono text-xs text-fg-subtle">no sign-up · nothing to install · saved in this browser</p>
-        </header>
+        {/* Temporary turns the page into one thing: pick a language. Off, everything comes back. */}
+        <AnimatePresence mode="wait" initial={false}>
+          {temporary ? (
+            <motion.header key="temporary" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10, transition: { duration: reduceMotion ? 0 : 0.16 } }} transition={ease}>
+              <div className="flex items-center gap-3.5">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-fg sm:size-12">
+                  <Hourglass className="size-5 sm:size-6" />
+                </span>
+                <h1 className="text-[30px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[36px]">Temporary project</h1>
+              </div>
+              <p className="mt-4 max-w-2xl text-[15px] leading-snug text-fg-muted">
+                Pick a language and start typing. Nothing is saved and no history is kept: the project is erased when you close it or leave the page. If you want it after all, keep it from the Temporary button at the top of the editor.
+              </p>
+            </motion.header>
+          ) : (
+            <motion.header key="home" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10, transition: { duration: reduceMotion ? 0 : 0.16 } }} transition={ease}>
+              <h1 className="text-[32px] font-bold leading-none tracking-[-0.03em] text-fg sm:text-[38px]" style={{ fontFamily: 'var(--font-code-jetbrains), "Cascadia Mono", Consolas, monospace' }}>
+                {PRODUCT.name}
+                <span aria-hidden className="cw-caret" />
+              </h1>
+              <p className="mt-3 max-w-2xl text-[15px] leading-snug text-fg-muted">
+                Free online compiler for {LANGUAGES.length} languages, with a debugger and visualizer for {withTools.slice(0, -1).join(", ")} and {withTools[withTools.length - 1]}, and a live preview for HTML and CSS.
+              </p>
+              <p className="mt-2 font-mono text-xs text-fg-subtle">no sign-up · nothing to install · saved in this browser</p>
+            </motion.header>
+          )}
+        </AnimatePresence>
 
         {/* Where everything on this page is: it stays in view while the page scrolls. */}
-        <nav aria-label="On this page" className="sticky top-0 z-20 -mx-4 mt-6 border-b border-line-strong/60 bg-surface-2 px-4 sm:-mx-8 sm:px-8">
+        <AnimatePresence initial={false}>
+        {!temporary && (
+        <motion.nav key="nav" {...FOLD} transition={ease} style={{ overflow: "clip" }} aria-label="On this page" className="cw-home-nav sticky top-0 z-20 -mx-4 mt-6 border-b border-line-strong/60 px-4 sm:-mx-8 sm:px-8">
           <ul className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
             {SECTIONS.map((sec) => (
               <li key={sec.id} className="shrink-0">
@@ -185,15 +215,17 @@ export function StartScreen() {
               </li>
             ))}
           </ul>
-        </nav>
+        </motion.nav>
+        )}
+        </AnimatePresence>
 
         <section id="new" aria-labelledby="new-heading" className="scroll-mt-16 pt-8">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
             <div>
               <h2 id="new-heading" className="text-xl font-semibold tracking-tight text-fg">
-                New project
+                {temporary ? "Choose a language" : "New project"}
               </h2>
-              <p className="mt-1 text-[13px] text-fg-subtle">Pick a language. The editor opens with a program you can run straight away.</p>
+              <p className="mt-1 text-[13px] text-fg-subtle">{temporary ? `All ${LANGUAGES.length} languages. The editor opens with a program you can run straight away.` : "Pick a language. The editor opens with a program you can run straight away."}</p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -214,25 +246,39 @@ export function StartScreen() {
                   <span className={cn("absolute left-0.5 top-0.5 size-5 rounded-full shadow-sm transition-transform duration-150", temporary ? "translate-x-4 bg-accent-fg" : "bg-fg-subtle")} />
                 </span>
               </button>
-              <Button variant="secondary" className="h-9 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
-                Custom…
-              </Button>
+              {!temporary && (
+                <Button variant="secondary" className="h-9 rounded-full px-3.5" icon={<Plus className="size-4" />} onClick={() => useUI.getState().setNewProjectOpen(true)}>
+                  Custom…
+                </Button>
+              )}
             </div>
           </div>
-          {temporary && (
-            <div role="status" className="mt-4 flex items-start gap-3 rounded-xl border border-dashed border-accent bg-accent-soft/40 px-4 py-3">
-              <Hourglass className="mt-0.5 size-4 shrink-0 text-accent-ink" />
-              <p className="text-[13px] leading-relaxed text-fg-muted">
-                <b className="font-semibold text-fg">Temporary is on.</b> Pick a language and start typing. Nothing is saved and no history is kept: the project is erased when you close it or leave the page. If you want it after all, keep it from the Temporary button at the top of the editor.
-              </p>
-            </div>
-          )}
-          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">{popular.map(tile)}</div>
-          {more && (
+          {/* In Temporary every language is in one grid; the rest arrive one after another. */}
+          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+            {popular.map(tile)}
+            <AnimatePresence initial={false}>
+              {temporary &&
+                others.map((l, i) => (
+                  <motion.div
+                    key={l.id}
+                    className="grid"
+                    initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1, transition: { ...ease, delay: reduceMotion ? 0 : 0.12 + i * 0.035 } }}
+                    exit={{ opacity: 0, scale: 0.97, transition: { duration: reduceMotion ? 0 : 0.15 } }}
+                  >
+                    {tile(l)}
+                  </motion.div>
+                ))}
+            </AnimatePresence>
+          </div>
+          {more && !temporary && (
             <div id="more-languages" className="mt-2.5 grid grid-cols-2 gap-2.5 sm:mt-3 sm:gap-3 lg:grid-cols-4">
               {others.map(tile)}
             </div>
           )}
+          <AnimatePresence initial={false}>
+          {!temporary && (
+          <motion.div key="more" {...FOLD} transition={ease} style={{ overflow: "clip" }}>
           <button
             type="button"
             aria-expanded={more}
@@ -250,6 +296,9 @@ export function StartScreen() {
             )}
             <ChevronDown className={cn("size-4 transition-transform", more && "rotate-180")} />
           </button>
+          </motion.div>
+          )}
+          </AnimatePresence>
         </section>
 
         <NameDialog key={naming ?? "none"} language={naming} taken={allProjects.map((p) => p.name)} busy={!!busy} onCancel={() => setNaming(null)} onCreate={(name) => void create(naming!, name)} />
@@ -260,6 +309,9 @@ export function StartScreen() {
           </p>
         )}
 
+        <AnimatePresence initial={false}>
+        {!temporary && (
+        <motion.div key="rest" {...FOLD} transition={ease} style={{ overflow: "clip" }}>
         {/* What is already here: projects on the left, interviews beside them. */}
         <div className="mt-12 grid gap-x-8 gap-y-12 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <section id="recent" aria-labelledby="recent-heading" className="scroll-mt-16">
@@ -333,7 +385,7 @@ export function StartScreen() {
           <h2 id="faq-heading" className="text-xl font-semibold tracking-tight text-fg">
             Questions and answers
           </h2>
-          <div className="mt-4 divide-y divide-line-strong/60 rounded-xl border border-line-strong bg-surface">
+          <div className="cw-panel mt-4 divide-y divide-line-strong/60 rounded-xl border border-line-strong bg-surface">
             {HOME_FAQS.map((f) => (
               <details key={f.q} className="group px-4 py-3.5">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
@@ -362,6 +414,9 @@ export function StartScreen() {
             </li>
           </ul>
         </nav>
+        </motion.div>
+        )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -439,7 +494,7 @@ function InterviewCard({ project }: { project: ProjectSummary }) {
   const v = iv.verdict;
   const score = v && v.total > 0 && v.status !== "compile-error" && v.status !== "error" ? ` · ${v.passed}/${v.total} tests` : "";
   return (
-    <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
+    <li className="cw-card group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
       <button onClick={() => void openProject(project.id)} className="flex w-full items-start gap-3 p-4 pr-12 text-left">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent-soft text-accent-ink">
           <ClipboardList className="size-5" />
@@ -515,7 +570,7 @@ function ProjectCard({ project }: { project: ProjectSummary }) {
   const lang = getLanguage(project.language);
 
   return (
-    <li className="group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
+    <li className="cw-card group relative rounded-xl border border-line-strong bg-surface transition-colors hover:border-fg-faint">
       {renaming ? (
         <form
           className="p-4"

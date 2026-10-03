@@ -81,7 +81,18 @@ test("a temporary project is not saved: closing it, or reloading, erases it; it 
   const toggle = page.getByRole("switch", { name: "Temporary project" });
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByRole("status").filter({ hasText: "Temporary is on." })).toBeVisible();
+  // The page becomes one thing: every language, nothing else.
+  await expect(page.getByRole("heading", { name: "Temporary project" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /New Bash project/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent projects" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "On this page" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "More languages" })).toHaveCount(0);
+  // Off again, the whole page comes back.
+  await toggle.click();
+  await expect(page.getByRole("heading", { name: "Recent projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Temporary project" })).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
   // No name is asked for: it opens at once.
   await page.getByRole("button", { name: /New Python project/ }).click();
   await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
@@ -121,10 +132,11 @@ test("a temporary project is not saved: closing it, or reloading, erases it; it 
   await page.getByRole("button", { name: /New Java project/ }).click();
   await expect(page.locator(".monaco-editor").first()).toContainText("Hello World");
   await page.getByRole("button", { name: "Home" }).click();
-  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  // Still in Temporary: the languages, ready for the next one.
+  await expect(page.getByRole("heading", { name: "Choose a language" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Recent projects" })).toHaveCount(0);
   await page.goForward();
-  await expect(page.getByRole("heading", { name: "New project" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose a language" })).toBeVisible();
   await expect(page.getByText("Project not found")).toHaveCount(0);
 
   // Kept, it is a project like any other.
