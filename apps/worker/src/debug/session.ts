@@ -20,8 +20,8 @@ import { debugAdapterFor, type DebugAdapter } from "./adapters.js";
 export const DEBUG_SESSION_LIMITS = {
   /** Hard cap on a session's total lifetime. */
   maxSessionMs: 15 * 60_000,
-  /** End the session when no command arrives for this long. */
-  idleMs: 10 * 60_000,
+  /** End the session when no command arrives for this long (a paused session keeps a sandbox from others). */
+  idleMs: 5 * 60_000,
   /** Cumulative time the program may run while not paused. */
   runBudgetMs: 30_000,
   /** The adapter must answer the launch request within this time. */
@@ -345,7 +345,7 @@ async function drive(
     } else if (now - started > DEBUG_SESSION_LIMITS.maxSessionMs) {
       end("TIME_LIMIT", `Debug sessions are limited to ${DEBUG_SESSION_LIMITS.maxSessionMs / 60_000} minutes.`);
     } else if (now - lastActivity > DEBUG_SESSION_LIMITS.idleMs) {
-      end("CANCELLED", "The debug session ended after being idle.");
+      end("CANCELLED", `The debug session ended after ${DEBUG_SESSION_LIMITS.idleMs / 60_000} minutes without a step, so its sandbox is free for others. Press Debug to start again.`);
     }
     void ctx.isCancelled().then((c) => c && end("CANCELLED", "Debug session stopped."));
   }, 500);

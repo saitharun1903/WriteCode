@@ -143,8 +143,8 @@ export type ExecutionStreamEvent =
 
 /** Interactive runs: typed-input waits do not count toward `timeoutMs`, within these caps. */
 export const INTERACTIVE_LIMITS = {
-  /** Longest a program may wait for one piece of input. */
-  maxInputWaitMs: 5 * 60_000,
+  /** Longest a program may wait for one piece of input (a waiting program keeps a sandbox from others). */
+  maxInputWaitMs: 3 * 60_000,
   /** Longest an interactive run may last in total. */
   maxWallMs: 15 * 60_000,
 } as const;

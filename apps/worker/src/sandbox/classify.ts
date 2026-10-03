@@ -235,7 +235,7 @@ export function explainException(stderr: string, files: readonly ProjectSource[]
 
 /** Message for a run stopped by a time limit, by which limit fired. */
 export function timeLimitMessage(limit: "run" | "input" | "wall" | undefined, limits: { timeoutMs: number }, caps?: { maxInputWaitMs: number; maxWallMs: number }): string {
-  if (limit === "input" && caps) return `Stopped after waiting ${caps.maxInputWaitMs / 60_000} minutes for input.`;
+  if (limit === "input" && caps) return `Stopped after waiting ${caps.maxInputWaitMs / 60_000} minutes for input, so its sandbox is free for others. Run it again when you are ready to type.`;
   if (limit === "wall" && caps) return `Interactive runs are limited to ${caps.maxWallMs / 60_000} minutes in total.`;
   return `Stopped after ${limits.timeoutMs / 1000}s of running time. Check for infinite loops${caps ? "" : ", or input the program is waiting for"}.`;
 }
