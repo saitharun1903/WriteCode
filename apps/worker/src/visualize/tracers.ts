@@ -33,9 +33,11 @@ const JS_TRACER_URL = new URL("../../tracers/javascript/cw_trace.cjs", import.me
 const JS_TRACER_WORKER_URL = new URL("../../tracers/javascript/cw_trace_worker.cjs", import.meta.url);
 
 const GDB_TRACER_URL = new URL("../../tracers/gdb/cw_trace_gdb.py", import.meta.url);
+const RUBY_TRACER_URL = new URL("../../tracers/ruby/cw_trace.rb", import.meta.url);
 
 let pythonSource: Promise<string> | null = null;
 let gdbSource: Promise<string> | null = null;
+let rubySource: Promise<string> | null = null;
 let jsSources: Promise<[string, string]> | null = null;
 
 /** Tracing single-steps every line, so allow more time than a normal run. */
@@ -125,6 +127,25 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         limits: slower,
         // The program reads its stdin itself (redirected by gdb), as in a normal run.
         ownsStdin: false,
+      };
+    }
+    case "tracepoint": {
+      rubySource ??= readFile(RUBY_TRACER_URL, "utf8").catch((e: unknown) => {
+        rubySource = null;
+        throw e;
+      });
+      const config = { entry: request.entry, root: SANDBOX_WORKDIR, files, out: OUT_PATH, limits: TRACE_LIMITS };
+      return {
+        files: [
+          { path: `${TRACE_DIR}/cw_trace.rb`, content: await rubySource },
+          { path: `${TRACE_DIR}/config.json`, content: JSON.stringify(config) },
+        ],
+        argv: ["ruby", `${TRACE_DIR}/cw_trace.rb`, `${TRACE_DIR}/config.json`],
+        setup: [],
+        outPath: OUT_PATH,
+        limits: slower,
+        // The program runs in the tracer's interpreter and reads its stdin.
+        ownsStdin: true,
       };
     }
     default:

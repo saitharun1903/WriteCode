@@ -1,3 +1,5 @@
+import { LANGUAGES } from "@cw/shared";
+
 /**
  * Public landing pages: one per thing people search for ("java online
  * compiler", "online debugger"…). Each is static HTML with real content and
@@ -15,6 +17,14 @@ export interface Faq {
   q: string;
   a: string;
 }
+
+/** Names joined as a sentence reads them: "A, B and C". */
+function sentence(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+}
+
+/** The languages with the debugger and the visualizer, from the registry, so the copy follows what is shipped. */
+const DEBUGGABLE = sentence(LANGUAGES.filter((l) => l.debugger && l.visualizer).map((l) => l.name));
 
 export interface LandingPage {
   slug: string;
@@ -422,8 +432,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "3.4",
     label: "Ruby runner",
     sample: { file: "main.rb", code: RUBY },
-    debugs: false,
-    intro: "Run Ruby 3.4 online. Read input with gets, split a program over several files with require_relative, and get errors that link to the line they happened on.",
+    debugs: true,
+    intro: "Run Ruby 3.4 online. Read input with gets, split a program over several files with require_relative, debug it with breakpoints, and watch it run step by step in the visualizer: arrays, hashes, objects and linked nodes drawn as they change.",
     extraFaqs: [
       { q: "Which Ruby version is used?", a: "Ruby 3.4." },
       { q: "Does gets work?", a: "Yes. The console asks for the input while the program runs, like a terminal." },
@@ -506,7 +516,7 @@ export const LANDING_PAGES: LandingPage[] = [
     steps: ["Choose a language on the start screen.", "Write your code; it saves automatically.", "Press Run, debug, or add test cases.", "Share a live link to code together."],
     faqs: [
       { q: "Which languages are supported?", a: "Java, Python, C, C++, JavaScript, TypeScript, Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash, and HTML with CSS and JavaScript in a live preview." },
-      { q: "Which languages have the debugger and the visualizer?", a: "Java, Python, C, C++, JavaScript, TypeScript and Kotlin. The other languages run, read input and can be checked with test cases." },
+      { q: "Which languages have the debugger and the visualizer?", a: `${DEBUGGABLE}. The other languages run, read input and can be checked with test cases.` },
       ...COMMON_FAQS,
     ],
   },
@@ -533,7 +543,7 @@ export const LANDING_PAGES: LandingPage[] = [
     ],
     steps: ["Open the debugger and write or paste your program.", "Click in the margin next to a line to add a breakpoint.", "Press Debug (F5).", "Step with F10 / F11 and watch the variables change."],
     faqs: [
-      { q: "Which languages can I debug?", a: "Java, Python, C, C++, JavaScript, TypeScript and Kotlin." },
+      { q: "Which languages can I debug?", a: `${DEBUGGABLE}.` },
       ...COMMON_FAQS,
     ],
   },
@@ -646,7 +656,7 @@ export const HOME_FEATURES: { title: string; head: string; text: string; more: s
   {
     title: "Online debugger",
     head: "Stop on any line",
-    text: "Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in Java, Python, C, C++, JavaScript, TypeScript and Kotlin.",
+    text: `Click beside a line number to put a breakpoint there, then press Debug. The program stops on that line and you move one step at a time while the variables update next to the code. It works the same way in ${DEBUGGABLE}.`,
     more: "About the online debugger",
     slug: "online-debugger",
   },

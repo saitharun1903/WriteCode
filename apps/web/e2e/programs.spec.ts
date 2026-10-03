@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -498,6 +498,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["JavaScript", "let total = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
+  ["Ruby", "total = 0\n# add them up\n\n(1..3).each { |i| total += i }\nputs total\n", 2, 4],
 ];
 
 for (const [language, code, set, stops] of NO_CODE) {
@@ -704,6 +705,13 @@ test("visualizer: a linked list built by hand is already there; the steps start 
       "class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun main() {\n    val head = Node(1)\n    val second = Node(2)\n    val third = Node(3)\n    head.next = second\n    second.next = third\n    var cur: Node? = head\n    var total = 0\n    while (cur != null) {\n        total += cur.value\n        cur = cur.next\n    }\n    println(total)\n}\n",
       13,
       "Main.kt",
+    ],
+    [
+      "Ruby",
+      "class Node\n  attr_accessor :val, :next\n\n  def initialize(val)\n    @val = val\n    @next = nil\n  end\nend\n\nhead = Node.new(1)\nsecond = Node.new(2)\nthird = Node.new(3)\nhead.next = second\nsecond.next = third\ncur = head\ntotal = 0\nwhile cur\n  total += cur.val\n  cur = cur.next\nend\nputs total\n",
+      // Ruby reports a while line once, then the lines of its body on each pass: the walk starts at the first of them.
+      18,
+      "main.rb",
     ],
     [
       "JavaScript",

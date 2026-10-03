@@ -30,10 +30,13 @@ const GDB_ADAPTER_URL = new URL("../../debug-adapters/gdb/cw_gdb_adapter.py", im
 const GDB_ADAPTER_PATH = "/tmp/cwdbg/cw_gdb_adapter.py";
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
+const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
+const RUBY_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.rb";
 
 let pythonSource: Promise<string> | null = null;
 let nodeSource: Promise<string> | null = null;
 let gdbSource: Promise<string> | null = null;
+let rubySource: Promise<string> | null = null;
 
 /** Reads an adapter's source once; a failed read is retried next time. */
 function source(url: URL, cached: Promise<string> | null, set: (p: Promise<string> | null) => void): Promise<string> {
@@ -113,6 +116,15 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main", language: request.language },
         setup: [],
         monitorInput: true,
+      };
+    case "tracepoint":
+      return {
+        files: [{ path: RUBY_ADAPTER_PATH, content: await source(RUBY_ADAPTER_URL, rubySource, (p) => (rubySource = p)) }],
+        argv: ["ruby", RUBY_ADAPTER_PATH],
+        launch: { ...common, entry: request.entry, root: SANDBOX_WORKDIR },
+        setup: [],
+        // The adapter's own command reader also blocks on a pipe, so it reports input waits itself.
+        monitorInput: false,
       };
     default:
       throw new Error(`no debug adapter for ${request.language}`);

@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { basename, getLanguage, type DebugFrame, type DebugVariable } from "@cw/shared";
+import { LANGUAGES, basename, getLanguage, type DebugFrame, type DebugVariable } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
@@ -35,8 +35,15 @@ import { frameKey, useDebug, type StopInfo } from "./store";
 const INDENT = 16;
 
 /** Colours values like the editor does: numbers, strings, keywords. */
+
+/** The languages that can be debugged, as a sentence reads them. */
+const withDebugger = sentence(LANGUAGES.filter((l) => l.debugger).map((l) => l.name));
+
+function sentence(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+}
 export function valueColor(value: string): string {
-  if (value === "null" || value === "None" || value === "true" || value === "false" || value === "True" || value === "False") return "var(--viz-kw)";
+  if (value === "null" || value === "None" || value === "nil" || value === "true" || value === "false" || value === "True" || value === "False") return "var(--viz-kw)";
   if (value.startsWith('"') || value.startsWith("'")) return "var(--viz-str)";
   if (/^-?\d/.test(value)) return "var(--viz-num)";
   return "var(--fg-muted)";
@@ -587,7 +594,7 @@ export function DebugToolWindow() {
       </div>
 
       {!supported ? (
-        <p className="p-3 text-sm text-fg-subtle">Debugging is not available for {language?.name ?? "this language"}. It supports Java, Kotlin, Python, C, C++, JavaScript and TypeScript.</p>
+        <p className="p-3 text-sm text-fg-subtle">Debugging is not available for {language?.name ?? "this language"}. It works in {withDebugger}.</p>
       ) : tab === "console" ? (
         <div className="min-h-0 flex-1">
           <ConsoleView />

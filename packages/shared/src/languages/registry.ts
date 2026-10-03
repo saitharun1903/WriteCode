@@ -426,6 +426,8 @@ const ruby: LanguageDefinition = {
     // What is printed shows at once (a prompt before its answer is typed), as in a terminal; the file still runs as the program ($0).
     command: ["ruby", "-e", "$stdout.sync = $stderr.sync = true; $0 = ARGV.shift; load $0", "{entry}"],
   },
+  debugger: { protocol: "tracepoint", supportLevel: "beta" },
+  visualizer: { supportLevel: "beta" },
 };
 
 const bash: LanguageDefinition = {

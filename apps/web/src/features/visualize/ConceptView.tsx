@@ -13,7 +13,7 @@ const SPRING = { type: "spring", stiffness: 260, damping: 30, mass: 0.9 } as con
 const NUMBER_TYPES =
   /^(int|float|complex|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|BigInteger|BigDecimal|number|bigint|unsigned( int| long| long long| short| char)?|long (long|int|double)|long long int|short int|size_t|u?int(8|16|32|64)_t)$/;
 const STRING_TYPES = /^(str|String|char|Character|bytes|string)$/;
-const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined", "nullptr", "NULL"]);
+const KEYWORDS = new Set(["None", "null", "True", "False", "true", "false", "undefined", "nullptr", "NULL", "nil"]);
 
 function color(v: TraceValue | null | undefined): string {
   if (!v || v.kind !== "value") return "var(--fg)";

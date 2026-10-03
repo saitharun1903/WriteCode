@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { LayoutGroup, MotionConfig, motion } from "motion/react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { getLanguage, type Trace } from "@cw/shared";
+import { LANGUAGES, getLanguage, type Trace } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConsoleView } from "@/features/execution/OutputPanel";
 import { runCommand } from "@/features/commands/registry";
@@ -249,6 +249,13 @@ function Recording({ waiting }: { waiting: boolean }) {
 }
 
 /** Visualizer tool window: play or step through a recorded run and watch its frames and objects change. */
+
+/** The languages the visualizer records, as a sentence reads them. */
+const withVisualizer = sentence(LANGUAGES.filter((l) => l.visualizer).map((l) => l.name));
+
+function sentence(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+}
 export function VisualizerPanel() {
   const trace = useVisualize((s) => s.trace);
   const stepIndex = useVisualize((s) => s.step);
@@ -282,7 +289,7 @@ export function VisualizerPanel() {
   }, [playing, stepIndex, speed, total, next, pause]);
 
   if (!supported) {
-    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for Java, Kotlin, Python, C, C++, JavaScript and TypeScript projects.</p>;
+    return <p className="p-3 text-sm text-fg-subtle">The visualizer is available for {withVisualizer} projects.</p>;
   }
   if (recording) return <Recording waiting={run?.status === "WAITING_FOR_INPUT"} />;
   if (!trace) {

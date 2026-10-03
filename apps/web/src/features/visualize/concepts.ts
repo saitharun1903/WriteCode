@@ -92,7 +92,7 @@ export type Structure =
 // -- Values
 
 const isNull = (v: TraceValue | undefined) =>
-  !v || (v.kind === "value" && (v.text === "null" || v.text === "None" || v.text === "undefined" || v.text === "nullptr" || v.text === "NULL"));
+  !v || (v.kind === "value" && (v.text === "null" || v.text === "None" || v.text === "undefined" || v.text === "nullptr" || v.text === "NULL" || v.text === "nil"));
 const refId = (v: TraceValue | undefined) => (v?.kind === "ref" ? v.id : null);
 const NUMERIC =
   /^(int|float|long|double|short|byte|Integer|Long|Double|Float|Short|Byte|char|Character|BigInteger|bool|boolean|Boolean|number|unsigned( int| long| long long| short| char)?|long (long|int|double)|long long int|short int|signed char|size_t|u?int(8|16|32|64)_t|ll)$/;

@@ -300,6 +300,79 @@ public class Main {
     expect(text(local(at7, "doubled"))).toBe("50");
   });
 
+  it("Ruby: frames, blocks, objects by reference, return values, required files and output", { timeout: T }, async () => {
+    const main = [
+      'require_relative "node"',
+      "",
+      "def total(head)",
+      "  sum = 0",
+      "  cur = head",
+      "  while cur",
+      "    sum += cur.value",
+      "    cur = cur.next_node",
+      "  end",
+      "  sum",
+      "end",
+      "",
+      "head = Node.new(1)",
+      "head.next_node = Node.new(2)",
+      "doubled = [3, 1].map { |x| x * 2 }",
+      'scores = { "asha" => 91, ravi: [7, 8] }',
+      'puts "total=#{total(head)}"',
+      "",
+    ].join("\n");
+    const node = "class Node\n  attr_accessor :value, :next_node\n\n  def initialize(value)\n    @value = value\n    @next_node = nil\n  end\nend\n";
+    const { result, trace } = await visualize("ruby", { "main.rb": main, "node.rb": node });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("total=3\n");
+    expect(trace.language).toBe("ruby");
+    expect(trace.stdout).toBe("total=3\n");
+    // The required file runs as its own frame above the line that required it.
+    expect(trace.steps[1]!.frames.map((f) => [f.name, f.file, f.line])).toEqual([
+      ["<main>", "main.rb", 1],
+      ["<top (required)>", "node.rb", 1],
+    ]);
+    expect(top(trace.steps[2]!)).toMatchObject({ name: "<class:Node>", file: "node.rb", line: 2 });
+    // A constructor is Node#initialize, with self; its fields are read without @.
+    const init = trace.steps.find((s) => top(s).name === "Node#initialize" && top(s).line === 6)!;
+    expect(local(init, "self")).toMatchObject({ kind: "ref" });
+    expect(text(local(init, "value"))).toBe("1");
+    // A block is a frame of its own, with only its own variables.
+    const block = trace.steps.find((s) => top(s).name === "block in <main>")!;
+    expect(top(block).locals.map(([n]) => n)).toEqual(["x"]);
+    expect(top(trace.steps.find((s) => s.event === "return" && top(s).name === "block in <main>")!).returnValue).toEqual({ kind: "value", text: "6", type: "Integer" });
+    // The linked list: head and cur are the same object; next_node points to the second node.
+    const loop = trace.steps.find((s) => top(s).name === "total" && top(s).line === 7)!;
+    const head = local(loop, "head") as { kind: "ref"; id: string };
+    expect(local(loop, "cur")).toEqual(head);
+    expect(loop.heap[head.id]).toMatchObject({ kind: "object", type: "Node", fields: [["value", { text: "1" }], ["next_node", { kind: "ref" }]] });
+    const after = trace.steps.find((s) => top(s).name === "<main>" && top(s).line === 17)!;
+    const scores = after.heap[(local(after, "scores") as { id: string }).id]!;
+    expect(scores).toMatchObject({ kind: "map", type: "Hash", entries: [[{ text: '"asha"' }, { text: "91" }], [{ text: ":ravi" }, { kind: "ref" }]] });
+    expect(after.heap[(local(after, "doubled") as { id: string }).id]).toMatchObject({ kind: "sequence", type: "Array", items: [{ text: "6" }, { text: "2" }] });
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "total")!;
+    expect(top(ret).returnValue).toEqual({ kind: "value", text: "3", type: "Integer" });
+  });
+
+  it("Ruby: an uncaught exception is recorded, then reported like a normal run; typed input reaches the program", { timeout: T }, async () => {
+    const { result, trace } = await visualize("ruby", { "main.rb": 'def half(n)\n  raise ArgumentError, "odd: #{n}" if n.odd?\n  n / 2\nend\n\nputs half(4)\nputs half(3)\n' });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.stdout).toBe("2\n");
+    expect(result.stderr).toContain("main.rb:2:in 'Object#half': odd: 3 (ArgumentError)");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("ArgumentError: odd: 3");
+    expect(top(ex)).toMatchObject({ name: "half", line: 2 });
+    expect(text(local(ex, "n"))).toBe("3");
+
+    const typed = await visualize("ruby", { "main.rb": 'print "name? "\nname = gets.chomp\nputs "hi #{name}"\n' }, { typed: ["Ada\n"] });
+    expect(typed.result.status).toBe("SUCCESS");
+    expect(typed.result.stdout).toBe("name? hi Ada\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const at3 = typed.trace.steps.find((s) => top(s).line === 3)!;
+    expect(text(local(at3, "name"))).toBe('"Ada"');
+    expect(at3.stdoutLength).toBe(6);
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":

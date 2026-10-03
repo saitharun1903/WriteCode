@@ -65,7 +65,8 @@ export interface RuntimeConfig {
 }
 
 export interface DebuggerConfig {
-  protocol: "jdwp" | "dap" | "settrace" | "inspector" | "gdb";
+  /** `tracepoint`: Ruby, debugged and traced in its own interpreter with TracePoint. */
+  protocol: "jdwp" | "dap" | "settrace" | "inspector" | "gdb" | "tracepoint";
   supportLevel: SupportLevel;
   /** Image with the debugger's tools, when the runtime image lacks them. Used by the visualizer too. */
   image?: string;

@@ -35,7 +35,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function newProject(page: Page, language: "Java" | "Python", code: string) {
+async function newProject(page: Page, language: string, code: string) {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -63,6 +63,7 @@ async function newProject(page: Page, language: "Java" | "Python", code: string)
 
 const javaProject = (page: Page, code: string) => newProject(page, "Java", code);
 const pythonProject = (page: Page, code: string) => newProject(page, "Python", code);
+const rubyProject = (page: Page, code: string) => newProject(page, "Ruby", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -254,6 +255,115 @@ test("Python: stops on uncaught exceptions", async ({ page }) => {
   await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 90_000 });
   await expect(panel.getByRole("alert")).toContainText("IndexError: list index out of range");
   await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("2:1");
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(output(page)).toContainText("IndexError");
+});
+
+const RUBY_PROGRAM = `class Point
+  attr_reader :x, :y
+
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+end
+
+def square(x)
+  r = x * x
+  r
+end
+
+def main
+  nums = [3, 1, 2]
+  origin = Point.new(0, 5)
+  total = 0
+  nums.each do |n|
+    total += square(n)
+  end
+  puts "total=#{total}"
+end
+
+main
+`;
+
+test("Ruby: breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await rubyProject(page, RUBY_PROGRAM);
+  await cursorTo(page, 20);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("20:1");
+  // A block is a frame of its own, inside the method that wrote it.
+  const stack = panel.getByRole("list", { name: "Call stack" });
+  await expect(stack.getByRole("button", { name: "block in main:20, main.rb" })).toBeVisible();
+  await expect(stack.getByRole("button", { name: "main:19, main.rb" })).toBeVisible();
+
+  // The block sees its own n and the method's variables around it.
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = [3, 1, 2]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "origin = #<Point @x=0, @y=5>" }).click();
+  await expect(vars.getByRole("treeitem", { name: "@y = 5" })).toBeVisible();
+
+  // Watches are read without running the program's methods: origin.y is the field, not the reader.
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n * 10 + total + origin.y");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n * 10 + total + origin.y").locator("..")).toContainText("35");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(stack.getByRole("button", { name: "square:11, main.rb" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "x = 3" })).toBeVisible();
+
+  // Out of square: the block's next pass, with what the last one added.
+  await page.keyboard.press("Shift+F11");
+  await expect(stack.getByRole("button", { name: /^square:/ })).toHaveCount(0);
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 1" })).toBeVisible();
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 10" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint main.rb:20" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("Ruby: pause a running program, read what the program typed in, and stop on an uncaught exception", async ({ page }) => {
+  await rubyProject(page, "i = 0\nloop do\n  i += 1\nend\n");
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Running", { exact: true })).toBeVisible({ timeout: 90_000 });
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Pause" }).click();
+  await expect(panel.getByText("Paused", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: /^i = \d+$/ })).toBeVisible();
+  await page.getByRole("toolbar", { name: "Debug controls" }).getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("Stopped", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+  await page.evaluate((text) => {
+    const m = (window as unknown as { monaco: { editor: { getEditors(): { getModel(): { setValue(v: string): void } }[] } } }).monaco;
+    m.editor.getEditors()[0]!.getModel().setValue(text);
+  }, 'print "how many? "\nn = gets.to_i\nitems = [1, 2]\nputs items.fetch(n)\n');
+  await waitSaved(page);
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeVisible({ timeout: 90_000 });
+  await input.fill("5");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole("alert")).toContainText("IndexError: index 5 outside of array bounds: -2...2");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("4:1");
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: "n = 5" })).toBeVisible();
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("IndexError");
