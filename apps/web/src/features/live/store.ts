@@ -22,7 +22,7 @@ import { useRestriction } from "@/features/interview/restrict";
 import { useSettings } from "@/features/settings/store";
 import { useTests } from "@/features/tests/store";
 import { toast } from "@/components/ui/toast";
-import { API_URL } from "@/features/execution/api";
+import { API_URL, browserId } from "@/features/execution/api";
 import { useExecution, watchedInput } from "@/features/execution/store";
 import { useWorkspace } from "@/features/projects/store";
 import { createId } from "@/lib/id";
@@ -444,7 +444,7 @@ export const useLive = create<LiveState>((set, get) => {
     set({ status: "starting", error: null, name: clean });
     let created: { id: string; ownerToken: string };
     try {
-      const res = await fetch(`${API_URL}/api/v1/live`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const res = await fetch(`${API_URL}/api/v1/live`, { method: "POST", headers: { "content-type": "application/json", "x-client-id": browserId() }, body: JSON.stringify(body) });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(data.message ?? `Request failed (${res.status})`);

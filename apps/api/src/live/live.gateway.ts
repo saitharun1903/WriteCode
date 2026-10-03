@@ -37,6 +37,7 @@ export class LiveService implements OnApplicationShutdown {
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
       },
+      config.liveMaxRoomsPerNetwork,
     );
   }
 

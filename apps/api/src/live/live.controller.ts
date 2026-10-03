@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCod
 import type { Request } from "express";
 import type { Redis } from "ioredis";
 import { cleanInterviewSetup } from "@cw/shared";
-import { clientHash } from "../common/request-context.js";
+import { clientHash, clientKeys } from "../common/request-context.js";
 import { config } from "../config.js";
 import { emailAvailable, inviteEmail, sendEmail } from "../email/resend.js";
 import { REDIS } from "../infra/infra.module.js";
@@ -36,7 +36,8 @@ export class LiveController {
     const interview = raw === undefined ? null : cleanInterviewSetup(raw);
     if (raw !== undefined && !interview) throw new BadRequestException("Invalid interview setup.");
     try {
-      return await this.live.rooms.create(clientHash(req.ip), interview);
+      const keys = clientKeys(req.ip, req.headers["x-client-id"]);
+      return await this.live.rooms.create(keys.browser, interview, keys.ip);
     } catch (e) {
       if (e instanceof LiveError && e.code === "rate") throw new HttpException(e.message, 429);
       throw e;

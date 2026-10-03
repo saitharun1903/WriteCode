@@ -40,7 +40,10 @@ import {
 export interface RoomMeta {
   id: string;
   ownerTokenHash: string;
+  /** Rate-limit key of the browser that started it. */
   client: string;
+  /** And of its network address, when that is a different key. */
+  network?: string;
   createdAt: number;
   defaultRole: LiveJoinRole;
   /** Roles the owner gave particular people, by their browser key. */
@@ -464,6 +467,7 @@ class Room {
       }
       // Still in use: keeps counting toward its owner's limit of open sessions.
       await this.store.addRoom(this.meta.client, this.meta.id);
+      if (this.meta.network) await this.store.addRoom(this.meta.network, this.meta.id);
     } catch (e) {
       this.onError(`could not save live session: ${String(e)}`);
     }
@@ -499,16 +503,20 @@ export class LiveRooms {
     private readonly maxRoomsPerClient: number = LIVE_LIMITS.maxRoomsPerClient,
     /** Runs an interview submission against its tests. Without it, submissions are not checked. */
     private readonly judgeRun?: JudgeRun,
+    private readonly maxRoomsPerNetwork: number = LIVE_LIMITS.maxRoomsPerClient * 6,
   ) {}
 
   /** Starts a session. The owner token is returned once and only its hash is kept. */
-  async create(client: string, interview?: InterviewSetup | null): Promise<{ id: string; ownerToken: string }> {
+  async create(client: string, interview?: InterviewSetup | null, network: string = client): Promise<{ id: string; ownerToken: string }> {
     if ((await this.store.openRooms(client)) >= this.maxRoomsPerClient) {
-      throw new LiveError("rate", `You can have ${this.maxRoomsPerClient} live sessions going at once. End one to start another.`);
+      throw new LiveError("rate", `You can have ${this.maxRoomsPerClient} live sessions going at once. End one to start another, or wait: a session nobody uses stops counting after two hours.`);
+    }
+    if (network !== client && (await this.store.openRooms(network)) >= this.maxRoomsPerNetwork) {
+      throw new LiveError("rate", "Many live sessions are open from your network right now. End one, or try again later.");
     }
     const id = randomBytes(18).toString("base64url");
     const ownerToken = randomBytes(24).toString("base64url");
-    const meta: RoomMeta = { id, ownerTokenHash: sha256(ownerToken).toString("hex"), client, createdAt: Date.now(), defaultRole: "editor", roles: {}, removed: [] };
+    const meta: RoomMeta = { id, ownerTokenHash: sha256(ownerToken).toString("hex"), client, ...(network !== client ? { network } : {}), createdAt: Date.now(), defaultRole: "editor", roles: {}, removed: [] };
     if (interview) {
       meta.interview = {
         public: {
@@ -524,6 +532,7 @@ export class LiveRooms {
     }
     await this.store.putMeta(meta);
     await this.store.addRoom(client, id);
+    if (network !== client) await this.store.addRoom(network, id);
     return { id, ownerToken };
   }
 
@@ -543,6 +552,7 @@ export class LiveRooms {
           await this.store.putMeta(meta);
           await this.store.deleteDoc(id);
           await this.store.removeRoom(meta.client, id);
+          if (meta.network) await this.store.removeRoom(meta.network, id);
           return null;
         }
         const room = new Room(meta, this.store, this.log, this.judgeRun);
@@ -691,6 +701,7 @@ export class LiveRooms {
     await this.store.putMeta(room.meta);
     await this.store.deleteDoc(room.meta.id);
     await this.store.removeRoom(room.meta.client, room.meta.id);
+    if (room.meta.network) await this.store.removeRoom(room.meta.network, room.meta.id);
   }
 
   /** The session's details when `token` is its owner token (for owner-only HTTP requests), else null. */

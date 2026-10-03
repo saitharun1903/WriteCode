@@ -288,6 +288,21 @@ describe("live rooms", () => {
     await expect(rooms.create("busy")).rejects.toMatchObject({ code: "rate" });
   });
 
+  it("people on one network (a classroom) each have their own limit, within a wider one for the network", async () => {
+    const store = new MemoryStore();
+    const rooms = new LiveRooms(store, undefined, undefined, 2, undefined, 5);
+    // Three students behind one address: each may open their own sessions.
+    for (const student of ["s1", "s2"]) for (let i = 0; i < 2; i++) await rooms.create(student, null, "school");
+    await expect(rooms.create("s1", null, "school")).rejects.toMatchObject({ code: "rate" });
+    await rooms.create("s3", null, "school");
+    // The address as a whole is full.
+    await expect(rooms.create("s4", null, "school")).rejects.toMatchObject({ code: "rate", message: expect.stringContaining("your network") });
+    // Someone on another network is not affected.
+    const { id, ownerToken } = await rooms.create("s5", null, "home");
+    expect(id).toBeTruthy();
+    expect(ownerToken).toBeTruthy();
+  });
+
   it("people who can edit may type input into an announced interactive run; viewers may not", async () => {
     const store = new MemoryStore();
     const sent: [string, string, boolean][] = [];

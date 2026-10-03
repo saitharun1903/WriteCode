@@ -27,7 +27,7 @@ export class ApiError extends Error {
  * An anonymous id for this browser, so run limits are per person even when many share a network
  * (a classroom). Random, kept in this browser only, and tied to nothing else.
  */
-function browserId(): string {
+export function browserId(): string {
   try {
     let id = localStorage.getItem("cw:client-id");
     if (!id || !/^[A-Za-z0-9_-]{16,64}$/.test(id)) {
