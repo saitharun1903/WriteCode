@@ -50,6 +50,15 @@ const NETCOREDBG_MODULE_URL = new URL("../../debug-adapters/netcoredbg/cw_netcor
 let netcoredbgAdapterSource: Promise<string> | null = null;
 let netcoredbgModuleSource: Promise<string> | null = null;
 export const netcoredbgModule = () => source(NETCOREDBG_MODULE_URL, netcoredbgModuleSource, (p) => (netcoredbgModuleSource = p));
+const BASH_ADAPTER_URL = new URL("../../debug-adapters/bash/cw_bash_adapter.py", import.meta.url);
+/** The prelude that runs a script under a DEBUG trap, and reading what it reports: shared by the Bash debugger and tracer. */
+const BASH_MODULE_URL = new URL("../../debug-adapters/bash/cw_bash.py", import.meta.url);
+const BASH_PRELUDE_URL = new URL("../../debug-adapters/bash/cw_bash_prelude.sh", import.meta.url);
+let bashAdapterSource: Promise<string> | null = null;
+let bashModuleSource: Promise<string> | null = null;
+let bashPreludeSource: Promise<string> | null = null;
+export const bashModule = () => source(BASH_MODULE_URL, bashModuleSource, (p) => (bashModuleSource = p));
+export const bashPrelude = () => source(BASH_PRELUDE_URL, bashPreludeSource, (p) => (bashPreludeSource = p));
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
@@ -151,6 +160,19 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         // Delve runs the program as its child, reading its stdin as in a normal run.
         argv: ["python3", "/tmp/cwdbg/cw_dlv_adapter.py"],
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main" },
+        setup: [],
+        monitorInput: true,
+      };
+    case "bashtrap":
+      return {
+        files: [
+          { path: "/tmp/cwdbg/cw_bash_adapter.py", content: await source(BASH_ADAPTER_URL, bashAdapterSource, (p) => (bashAdapterSource = p)) },
+          { path: "/tmp/cwdbg/cw_bash.py", content: await bashModule() },
+          { path: "/tmp/cwdbg/cw_bash_prelude.sh", content: await bashPrelude() },
+        ],
+        // Bash runs as the adapter's child, reading its stdin as in a normal run.
+        argv: ["python3", "/tmp/cwdbg/cw_bash_adapter.py"],
+        launch: { ...common, entry: request.entry, root: SANDBOX_WORKDIR },
         setup: [],
         monitorInput: true,
       };

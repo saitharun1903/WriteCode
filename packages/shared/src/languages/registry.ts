@@ -487,6 +487,9 @@ echo "Hello World"
     image: "python:3.13-slim",
     command: ["bash", "{entry}"],
   },
+  // A DEBUG trap reports every command; Python in the same image drives it.
+  debugger: { protocol: "bashtrap", supportLevel: "beta" },
+  visualizer: { supportLevel: "beta" },
 };
 
 const sql: LanguageDefinition = {

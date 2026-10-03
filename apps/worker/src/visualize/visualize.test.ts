@@ -664,6 +664,60 @@ public class Main {
     expect(at3.stdoutLength).toBe(6);
   });
 
+  it("Bash: commands, functions called in $( ), arrays and associative arrays, the script's $? and output, across files", { timeout: 180_000 }, async () => {
+    const main = [
+      "#!/bin/bash",
+      "source ./lib.sh",
+      "",
+      "nums=(3 1 2)",
+      "declare -A ages=([ada]=36)",
+      'name="Ada Lovelace"',
+      "total=0",
+      'for n in "${nums[@]}"; do',
+      '  total=$((total + $(square "$n")))',
+      "done",
+      "false",
+      'echo "status $? total $total"',
+      "",
+    ].join("\n");
+    const lib = 'square() {\n  local x=$1\n  echo $((x * x))\n}\n';
+    const { result, trace } = await visualize("bash", { "main.sh": main, "lib.sh": lib });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("status 1 total 14\n");
+    expect(trace.language).toBe("bash");
+    expect(trace.stdout).toBe("status 1 total 14\n");
+    // A function called in $( ) is a frame of its own, in its file (not on its header line).
+    const inSquare = trace.steps.find((s) => top(s).name === "square")!;
+    expect(inSquare.frames.map((f) => [f.name, f.file])).toEqual([["main", "main.sh"], ["square", "lib.sh"]]);
+    expect(top(inSquare).line).toBe(2);
+    const at3 = trace.steps.find((s) => top(s).name === "square" && top(s).line === 3)!;
+    expect(local(at3, "x")).toEqual({ kind: "value", text: "3", type: "integer" });
+    // The script's variables in its own frame, in the order it wrote them.
+    const end = trace.steps.findLast((s) => top(s).name === "main" && top(s).line === 12)!;
+    expect(top(end).locals.map(([n]) => n)).toEqual(["nums", "ages", "name", "total", "n"]);
+    expect(end.heap[(local(end, "nums") as { id: string }).id]).toMatchObject({ kind: "sequence", items: [{ text: "3" }, { text: "1" }, { text: "2" }] });
+    expect(end.heap[(local(end, "ages") as { id: string }).id]).toMatchObject({ kind: "map", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    expect(local(end, "name")).toEqual({ kind: "value", text: '"Ada Lovelace"', type: "string" });
+    expect(text(local(end, "total"))).toBe("14");
+  });
+
+  it("Bash: a command that is not found is recorded where it happened; typed input reaches the script", { timeout: 180_000 }, async () => {
+    const { result, trace } = await visualize("bash", { "main.sh": 'echo start\nnosuchcommand --flag\necho after\n' });
+    expect(result.stdout).toBe("start\nafter\n");
+    expect(result.stderr).toContain("main.sh: line 2: nosuchcommand: command not found");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("command not found: nosuchcommand");
+    expect(top(ex).line).toBe(2);
+
+    const typed = await visualize("bash", { "main.sh": 'echo -n "name? "\nread -r name\necho "hi $name"\n' }, { typed: ["Ada\n"] });
+    expect(typed.result.status).toBe("SUCCESS");
+    expect(typed.result.stdout).toBe("name? hi Ada\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const at3 = typed.trace.steps.find((s) => top(s).line === 3)!;
+    expect(text(local(at3, "name"))).toBe('"Ada"');
+    expect(at3.stdoutLength).toBe(6);
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":

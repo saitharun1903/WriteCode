@@ -3,7 +3,7 @@ import type Docker from "dockerode";
 import { SANDBOX_WORKDIR, TRACE_LIMITS, expandCommand, requireLanguage, type ExecutionLimits, type ExecutionRequest } from "@cw/shared";
 import type { SandboxFile } from "../sandbox/files.js";
 import { ADAPTER_DIR, javaAdapterClasses } from "../debug/java-adapter.js";
-import { classpathOf, dbgpModule, dlvModule, gdbRust, netcoredbgModule } from "../debug/adapters.js";
+import { bashModule, bashPrelude, classpathOf, dbgpModule, dlvModule, gdbRust, netcoredbgModule } from "../debug/adapters.js";
 
 /** How to run a program under a language's tracer inside the sandbox. */
 export interface Tracer {
@@ -37,6 +37,7 @@ const RUBY_TRACER_URL = new URL("../../tracers/ruby/cw_trace.rb", import.meta.ur
 const DLV_TRACER_URL = new URL("../../tracers/dlv/cw_trace_dlv.py", import.meta.url);
 const DBGP_TRACER_URL = new URL("../../tracers/dbgp/cw_trace_dbgp.py", import.meta.url);
 const NETCOREDBG_TRACER_URL = new URL("../../tracers/netcoredbg/cw_trace_netcoredbg.py", import.meta.url);
+const BASH_TRACER_URL = new URL("../../tracers/bash/cw_trace_bash.py", import.meta.url);
 
 let pythonSource: Promise<string> | null = null;
 let gdbSource: Promise<string> | null = null;
@@ -44,6 +45,7 @@ let rubySource: Promise<string> | null = null;
 let dlvSource: Promise<string> | null = null;
 let dbgpSource: Promise<string> | null = null;
 let netcoredbgSource: Promise<string> | null = null;
+let bashSource: Promise<string> | null = null;
 let jsSources: Promise<[string, string]> | null = null;
 
 /** Tracing single-steps every line, so allow more time than a normal run. */
@@ -156,6 +158,27 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         outPath: OUT_PATH,
         limits: slower,
         // Delve runs the program, which reads its stdin itself, as in a normal run.
+        ownsStdin: false,
+      };
+    }
+    case "bashtrap": {
+      bashSource ??= readFile(BASH_TRACER_URL, "utf8").catch((e: unknown) => {
+        bashSource = null;
+        throw e;
+      });
+      const config = { root: SANDBOX_WORKDIR, files, entry: request.entry, out: OUT_PATH, stdin: stdinPath, module: `${TRACE_DIR}/cw_bash.py`, prelude: `${TRACE_DIR}/cw_bash_prelude.sh`, limits: TRACE_LIMITS };
+      return {
+        files: [
+          { path: `${TRACE_DIR}/cw_trace_bash.py`, content: await bashSource },
+          { path: `${TRACE_DIR}/cw_bash.py`, content: await bashModule() },
+          { path: `${TRACE_DIR}/cw_bash_prelude.sh`, content: await bashPrelude() },
+          { path: `${TRACE_DIR}/config.json`, content: JSON.stringify(config) },
+        ],
+        argv: ["python3", `${TRACE_DIR}/cw_trace_bash.py`, `${TRACE_DIR}/config.json`],
+        setup: [],
+        outPath: OUT_PATH,
+        limits: slower,
+        // Bash runs as the tracer's child and reads its stdin itself, as in a normal run.
         ownsStdin: false,
       };
     }

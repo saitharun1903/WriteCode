@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust" | "Go" | "PHP" | "C#") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust" | "Go" | "PHP" | "C#" | "Bash") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -499,6 +499,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
   ["Ruby", "total = 0\n# add them up\n\n(1..3).each { |i| total += i }\nputs total\n", 2, 4],
+  ["Bash", "total=0\n# add them up\n\nfor i in 1 2 3; do total=$((total + i)); done\necho $total\n", 2, 4],
   ["C#", "class Program\n{\n    static void Main()\n    {\n        int total = 0;\n        // add them up\n\n        for (int i = 1; i <= 3; i++) total += i;\n        Console.WriteLine(total);\n    }\n}\n", 6, 8],
   ["PHP", "<?php\n$total = 0;\n// add them up\n\nfor ($i = 1; $i <= 3; $i++) {\n    $total += $i;\n}\necho $total;\n", 3, 5],
   ["Go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\ttotal := 0\n\t// add them up\n\n\tfor i := 1; i <= 3; i++ {\n\t\ttotal += i\n\t}\n\tfmt.Println(total)\n}\n", 7, 9],

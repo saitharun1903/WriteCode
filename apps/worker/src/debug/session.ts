@@ -121,11 +121,16 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
       if (failed) return finish(failed.status, { compileTime, message: failed.message, exitCode: compile.step.exitCode ?? undefined });
     }
 
+    // A program paused in the debugger is not waiting for input, whatever its processes are blocked on
+    // (a shell waiting for a $( ) that is paused, an adapter reading its commands): waits count only while it runs.
+    const pause = { paused: false };
     const channel = interactive
       ? await InputChannel.start(
           sandbox,
           {
-            onWaiting: (waiting) => events.status(waiting ? "WAITING_FOR_INPUT" : "RUNNING"),
+            onWaiting: (waiting) => {
+              if (!pause.paused) events.status(waiting ? "WAITING_FOR_INPUT" : "RUNNING");
+            },
             onEcho: (text) => events.chunk("stdin", text),
           },
           { monitor: adapter.monitorInput },
@@ -133,7 +138,7 @@ export async function runDebugSession(ctx: DebugContext): Promise<ExecutionResul
       : null;
 
     events.status("RUNNING");
-    return await drive(ctx, sandbox, adapter, channel, limits, compileTime, {
+    return await drive(ctx, sandbox, adapter, channel, pause, limits, compileTime, {
       onStdout: (c) => (stdout += c),
       onStderr: (c) => (stderr += c),
       account: (n) => (outputBytes += n) <= limits.maxOutputBytes,
@@ -153,6 +158,7 @@ async function drive(
   sandbox: Sandbox,
   debugAdapter: DebugAdapter,
   channel: InputChannel | null,
+  pause: { paused: boolean },
   limits: ExecutionLimits,
   compileTime: number | undefined,
   out: {
@@ -213,6 +219,7 @@ async function drive(
         }
         case "stopped":
           paused = true;
+          pause.paused = true;
           stopRunning();
           events.debug({
             kind: "stopped",
@@ -224,8 +231,11 @@ async function drive(
           return;
         case "continued":
           paused = false;
+          pause.paused = false;
           startRunning();
           events.debug({ kind: "continued" });
+          // What the monitor saw while it was paused is not what the program does now: say it again.
+          if (channel?.waiting) events.status("WAITING_FOR_INPUT");
           return;
         case "breakpoints":
           events.debug({ kind: "breakpoints", file: String(msg.file), breakpoints: (msg.breakpoints as never) ?? [] });

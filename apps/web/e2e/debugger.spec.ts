@@ -68,6 +68,7 @@ const rustProject = (page: Page, code: string) => newProject(page, "Rust", code)
 const goProject = (page: Page, code: string) => newProject(page, "Go", code);
 const phpProject = (page: Page, code: string) => newProject(page, "PHP", code);
 const csharpProject = (page: Page, code: string) => newProject(page, "C#", code);
+const bashProject = (page: Page, code: string) => newProject(page, "Bash", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -727,6 +728,84 @@ test("C#: an exception stops the program where it is thrown, with its type and m
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("IndexOutOfRangeException");
+});
+
+const BASH_PROGRAM = `#!/bin/bash
+square() {
+  local x=$1
+  local r=$((x * x))
+  echo "$r"
+}
+
+nums=(3 1 2)
+total=0
+for n in "\${nums[@]}"; do
+  total=$((total + $(square "$n")))
+done
+echo "total=$total"
+`;
+
+test("Bash: breakpoints, variables, watches, stepping into a function called in $( ) and continue", async ({ page }) => {
+  await bashProject(page, BASH_PROGRAM);
+  await cursorTo(page, 11);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("11:1");
+  const stack = panel.getByRole("list", { name: "Call stack" });
+  await expect(stack.getByRole("button", { name: "main:11, main.sh" })).toBeVisible();
+
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "nums = (3 1 2)" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+
+  // Watches are read from the variables, without running anything in the script.
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("n * 10 + total");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("n * 10 + total").locator("..")).toContainText("30");
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("${nums[2]}");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("${nums[2]}").locator("..")).toContainText("2");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(stack.getByRole("button", { name: "square:3, main.sh" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "n = 3" })).toBeVisible();
+
+  await page.keyboard.press("Shift+F11");
+  await expect(stack.getByRole("button", { name: /^square:/ })).toHaveCount(0);
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "total = 9" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint main.sh:11" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("Bash: a command that is not found stops the script there, after typed input", async ({ page }) => {
+  await bashProject(page, 'read -r name\necho "hi $name"\nnosuchtool --version\necho done\n');
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeVisible({ timeout: 120_000 });
+  await input.fill("Ada");
+  await page.keyboard.press("Enter");
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole("alert")).toContainText("command not found: nosuchtool");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("3:1");
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: 'name = "Ada"' })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("done", { timeout: 15_000 });
 });
 
 const LINKED_LIST = `import java.util.Scanner;
