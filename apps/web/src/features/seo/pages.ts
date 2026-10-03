@@ -387,8 +387,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "1.90",
     label: "Rust compiler",
     sample: { file: "main.rs", code: RUST },
-    debugs: false,
-    intro: "Compile and run Rust 1.90 online with rustc (2021 edition). The compiler's errors link to the exact line and column, a panic shows where it happened, and programs read input from the console as they run.",
+    debugs: true,
+    intro: "Compile and run Rust 1.90 online with rustc (2021 edition). The compiler's errors link to the exact line and column, a panic stops in the debugger where it happened, and you can step through the program with breakpoints or watch it run in the visualizer: Vec, HashMap, structs and Option<Box<..>> lists drawn as they change.",
     extraFaqs: [
       { q: "Which Rust version and edition?", a: "Rust 1.90, 2021 edition, with the standard library." },
       { q: "Can I split code into modules?", a: "Yes. Add a file such as util.rs and declare it with `mod util;` in main.rs." },

@@ -3,7 +3,7 @@ import type Docker from "dockerode";
 import { SANDBOX_WORKDIR, TRACE_LIMITS, expandCommand, requireLanguage, type ExecutionLimits, type ExecutionRequest } from "@cw/shared";
 import type { SandboxFile } from "../sandbox/files.js";
 import { ADAPTER_DIR, javaAdapterClasses } from "../debug/java-adapter.js";
-import { classpathOf } from "../debug/adapters.js";
+import { classpathOf, gdbRust } from "../debug/adapters.js";
 
 /** How to run a program under a language's tracer inside the sandbox. */
 export interface Tracer {
@@ -114,11 +114,15 @@ export async function tracerFor(docker: Docker, request: ExecutionRequest, stdin
         gdbSource = null;
         throw e;
       });
-      const config = { root: SANDBOX_WORKDIR, files, out: OUT_PATH, language: request.language, program: "out/main", stdin: stdinPath, limits: TRACE_LIMITS };
+      const rust = request.language === "rust";
+      // A Rust program starts in `<crate>::main`, the crate named after its file; C and C++ in `main`.
+      const start = rust ? `${request.entry.replace(/^.*\//, "").replace(/\.rs$/, "").replace(/[^A-Za-z0-9_]/g, "_")}::main` : "main";
+      const config = { root: SANDBOX_WORKDIR, files, out: OUT_PATH, language: request.language, program: "out/main", stdin: stdinPath, start, limits: TRACE_LIMITS };
       return {
         files: [
           { path: `${TRACE_DIR}/cw_trace_gdb.py`, content: await gdbSource },
           { path: `${TRACE_DIR}/config.json`, content: JSON.stringify(config) },
+          ...(rust ? [{ path: `${TRACE_DIR}/cw_gdb_rust.py`, content: await gdbRust() }] : []),
         ],
         // gdb runs the compiled program as its child, one line at a time (config at /tmp/cwviz/config.json).
         argv: ["gdb", "-q", "-nx", "-batch", "-x", `${TRACE_DIR}/cw_trace_gdb.py`],

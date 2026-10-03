@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -499,6 +499,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
   ["Ruby", "total = 0\n# add them up\n\n(1..3).each { |i| total += i }\nputs total\n", 2, 4],
+  ["Rust", "fn main() {\n    let mut total = 0;\n    // add them up\n\n    for i in 1..=3 {\n        total += i;\n    }\n    println!(\"{}\", total);\n}\n", 3, 5],
 ];
 
 for (const [language, code, set, stops] of NO_CODE) {
@@ -705,6 +706,12 @@ test("visualizer: a linked list built by hand is already there; the steps start 
       "class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun main() {\n    val head = Node(1)\n    val second = Node(2)\n    val third = Node(3)\n    head.next = second\n    second.next = third\n    var cur: Node? = head\n    var total = 0\n    while (cur != null) {\n        total += cur.value\n        cur = cur.next\n    }\n    println(total)\n}\n",
       13,
       "Main.kt",
+    ],
+    [
+      "Rust",
+      "struct Node {\n    val: i32,\n    next: Option<Box<Node>>,\n}\n\nfn main() {\n    let mut head = Node { val: 1, next: None };\n    head.next = Some(Box::new(Node { val: 2, next: Some(Box::new(Node { val: 3, next: None })) }));\n    let mut cur = Some(&head);\n    let mut total = 0;\n    while let Some(node) = cur {\n        total += node.val;\n        cur = node.next.as_deref();\n    }\n    println!(\"{}\", total);\n}\n",
+      11,
+      "main.rs",
     ],
     [
       "Ruby",

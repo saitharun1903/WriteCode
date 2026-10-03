@@ -28,6 +28,10 @@ const PYTHON_ADAPTER_URL = new URL("../../debug-adapters/python/cw_debug_adapter
 const PYTHON_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.py";
 const GDB_ADAPTER_URL = new URL("../../debug-adapters/gdb/cw_gdb_adapter.py", import.meta.url);
 const GDB_ADAPTER_PATH = "/tmp/cwdbg/cw_gdb_adapter.py";
+/** What the gdb adapter and tracer need to know about Rust, written next to them for a Rust program. */
+export const GDB_RUST_URL = new URL("../../debug-adapters/gdb/cw_gdb_rust.py", import.meta.url);
+let gdbRustSource: Promise<string> | null = null;
+export const gdbRust = () => source(GDB_RUST_URL, gdbRustSource, (p) => (gdbRustSource = p));
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
@@ -110,7 +114,10 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
     }
     case "gdb":
       return {
-        files: [{ path: GDB_ADAPTER_PATH, content: await source(GDB_ADAPTER_URL, gdbSource, (p) => (gdbSource = p)) }],
+        files: [
+          { path: GDB_ADAPTER_PATH, content: await source(GDB_ADAPTER_URL, gdbSource, (p) => (gdbSource = p)) },
+          ...(request.language === "rust" ? [{ path: "/tmp/cwdbg/cw_gdb_rust.py", content: await gdbRust() }] : []),
+        ],
         // gdb runs the adapter; the program is gdb's child, reading its stdin as in a normal run.
         argv: ["gdb", "-q", "-nx", "-batch", "-x", GDB_ADAPTER_PATH],
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main", language: request.language },

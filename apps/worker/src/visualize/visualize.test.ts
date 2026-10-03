@@ -373,6 +373,92 @@ public class Main {
     expect(at3.stdoutLength).toBe(6);
   });
 
+  it("Rust: frames named as written, Vec, String, HashMap, structs linked through Option<Box<..>>, enums, tuples and return values", { timeout: 180_000 }, async () => {
+    const main = [
+      "use std::collections::HashMap;",
+      "",
+      "struct Node {",
+      "    value: i32,",
+      "    next: Option<Box<Node>>,",
+      "}",
+      "",
+      "impl Node {",
+      "    fn new(value: i32) -> Node {",
+      "        Node { value, next: None }",
+      "    }",
+      "}",
+      "",
+      "enum Shape {",
+      "    Circle(f64),",
+      "    Dot,",
+      "}",
+      "",
+      "fn square(x: i32) -> i32 {",
+      "    let r = x * x;",
+      "    r",
+      "}",
+      "",
+      "fn main() {",
+      "    let nums = vec![3, 1, 2];",
+      '    let name = String::from("ada");',
+      "    let mut total = 0;",
+      "    for n in &nums {",
+      "        total += square(*n);",
+      "    }",
+      "    let mut head = Node::new(1);",
+      "    head.next = Some(Box::new(Node::new(2)));",
+      "    let mut ages = HashMap::new();",
+      '    ages.insert("ada", 36);',
+      "    let pair = (7, 'x');",
+      "    let shape = Shape::Circle(1.5);",
+      "    let dot = Shape::Dot;",
+      "    let found: Option<i32> = None;",
+      '    println!("{} {} {}", total, name, head.value);',
+      "}",
+      "",
+    ].join("\n");
+    const { result, trace } = await visualize("rust", { "main.rs": main });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("14 ada 1\n");
+    expect(trace.stdout).toBe("14 ada 1\n");
+    expect(top(trace.steps[0]!)).toMatchObject({ name: "main", file: "main.rs", line: 25 });
+    // The loop's own iterator is not one of the program's variables; n is the number it refers to.
+    const inLoop = trace.steps.find((s) => top(s).name === "main" && top(s).line === 29)!;
+    expect(top(inLoop).locals.map(([n]) => n)).not.toContain("iter");
+    expect(local(inLoop, "n")).toEqual({ kind: "value", text: "3", type: "&i32" });
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "square")!;
+    expect(top(ret).returnValue).toEqual({ kind: "value", text: "9", type: "i32" });
+    expect(trace.steps.some((s) => top(s).name === "Node::new")).toBe(true);
+
+    const end = trace.steps.findLast((s) => top(s).name === "main" && top(s).line === 39)!;
+    const heap = end.heap;
+    const ref = (name: string) => heap[(local(end, name) as { id: string }).id]!;
+    expect(ref("nums")).toMatchObject({ kind: "sequence", type: "Vec<i32>", items: [{ text: "3" }, { text: "1" }, { text: "2" }] });
+    expect(local(end, "name")).toMatchObject({ kind: "value", text: '"ada"' });
+    // The list: head's next is the second node itself (Some(Box) unwrapped); the second's next is None.
+    const head = ref("head");
+    expect(head).toMatchObject({ kind: "object", type: "Node", fields: [["value", { text: "1" }], ["next", { kind: "ref" }]] });
+    const second = heap[(head.fields![1]![1] as { id: string }).id]!;
+    expect(second).toMatchObject({ kind: "object", type: "Node", fields: [["value", { text: "2" }], ["next", { kind: "value", text: "None" }]] });
+    expect(ref("ages")).toMatchObject({ kind: "map", type: "HashMap<&str, i32>", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    expect(ref("pair")).toMatchObject({ kind: "sequence", type: "(i32, char)", items: [{ text: "7" }, { text: "'x'" }] });
+    expect(ref("shape")).toMatchObject({ kind: "object", type: "Shape::Circle", fields: [["0", { text: "1.5" }]] });
+    expect(local(end, "dot")).toMatchObject({ kind: "value", text: "Shape::Dot" });
+    expect(local(end, "found")).toMatchObject({ kind: "value", text: "None" });
+  });
+
+  it("Rust: a panic is recorded where the program's code panicked, then reported like a normal run", { timeout: 180_000 }, async () => {
+    const { result, trace } = await visualize("rust", { "main.rs": "fn take(xs: &Vec<i32>, i: usize) -> i32 {\n    xs[i]\n}\n\nfn main() {\n    let xs = vec![1, 2];\n    println!(\"{}\", take(&xs, 0));\n    println!(\"{}\", take(&xs, 5));\n}\n" });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.exitCode).toBe(101);
+    expect(result.stdout).toBe("1\n");
+    expect(result.stderr).toContain("index out of bounds: the len is 2 but the index is 5");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("panic: index out of bounds: the len is 2 but the index is 5");
+    expect(top(ex)).toMatchObject({ name: "take", line: 2 });
+    expect(local(ex, "i")).toMatchObject({ text: "5" });
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":

@@ -1,4 +1,4 @@
-"""Code Workspace C / C++ debug adapter.
+"""Code Workspace C / C++ / Rust debug adapter.
 
 Runs inside gdb in the sandbox (gdb -q -nx -batch -x cw_gdb_adapter.py) and
 speaks newline-delimited JSON on gdb's stdin/stdout, the same protocol as the
@@ -25,6 +25,7 @@ import re
 import signal
 import sys
 import threading
+import time
 
 import gdb
 
@@ -36,6 +37,8 @@ THREAD = "main"
 OUT_FIFO = "/tmp/cw-out"
 # How a null pointer reads in the program's language (C: NULL, C++: nullptr).
 NULL = ["nullptr"]
+# Rust's printers, names and values (cw_gdb_rust.py), loaded when the program is Rust.
+rust = None
 ERR_FIFO = "/tmp/cw-err"
 
 proto_out = os.fdopen(os.dup(1), "w", encoding="utf-8", newline="\n")
@@ -94,6 +97,8 @@ def type_name(t):
         s = str(t)
     except gdb.error:
         return "?"
+    if rust:
+        return rust.type_name(s)
     s = s.replace("std::__cxx11::", "std::")
     s = re.sub(r"std::basic_string<char(, std::char_traits<char>)?(, std::allocator<char>)?\s*>", "std::string", s)
     s = _drop_default_args(s)
@@ -201,6 +206,10 @@ def preview(v, depth=0):
     """Short text: `3`, `[1, 2, 3]`, `{val: 1, next: →}`, `"abc"`."""
     try:
         v = deref(v)
+        if rust:
+            shown = rust_preview(v, depth)
+            if shown is not None:
+                return shown
         p = printer_of(v)
         if p is not None:
             hint = hint_of(p)
@@ -252,6 +261,58 @@ def preview(v, depth=0):
         return "<unreadable>"
 
 
+def rust_preview(v, depth):
+    """Rust values gdb has no printer for: `Some(5)`, `None`, `Shape::Circle(1.5)`, `(7, 'x')`, a char, a reference to a number."""
+    t = v.type.strip_typedefs()
+    if rust.is_char(t):
+        return rust.char_text(v)
+    if rust.is_enum(t):
+        name, inner = rust.variant(v)
+        # A Box in a variant reads as what it holds: `Some({value: 2, next: None})`.
+        fields = [(n, boxed(x)) for n, x in rust.variant_fields(inner)] if inner is not None else []
+        label = name if rust.is_option(t) else f"{re.sub(r'<.*$', '', type_name(v.type))}::{name}"
+        if not fields:
+            return label
+        if depth > 1:
+            return label + "(…)"
+        if all(re.fullmatch(r"\d+", n) for n, _ in fields):
+            return label + "(" + ", ".join(preview(x, depth + 1) for _, x in fields) + ")"
+        return label + " {" + ", ".join(f"{n}: {preview(x, depth + 1)}" for n, x in fields) + "}"
+    if rust.is_tuple(t):
+        return "(" + ", ".join(preview(x, depth + 1) for _, x in rust.variant_fields(v)) + ")"
+    if t.code == gdb.TYPE_CODE_PTR and int(v) != 0 and rust.scalar_target(t):
+        return preview(v.dereference(), depth)
+    return None
+
+
+def boxed(v):
+    try:
+        t = v.type.strip_typedefs()
+        if t.code == gdb.TYPE_CODE_PTR and int(v) != 0 and t.target().strip_typedefs().code in (gdb.TYPE_CODE_STRUCT, gdb.TYPE_CODE_UNION):
+            return v.dereference()
+    except (gdb.error, gdb.MemoryError):
+        pass
+    return v
+
+
+def rust_unwrap(v):
+    """Rust: what an enum, a tuple or a reference holds, as (name, value) children; None when it is not one of those."""
+    t = v.type.strip_typedefs()
+    if rust.is_enum(t):
+        name, inner = rust.variant(v)
+        fields = rust.variant_fields(inner) if inner is not None else []
+        if rust.is_option(t) and name == "Some" and len(fields) == 1:
+            # Some(node): the node's own fields, as a pointer shows what it points at.
+            kids, _ = children(fields[0][1])
+            return kids or fields
+        return fields
+    if rust.is_tuple(t):
+        return rust.variant_fields(v)
+    if t.code == gdb.TYPE_CODE_PTR and int(v) != 0 and rust.scalar_target(t):
+        return []
+    return None
+
+
 def array_length(t):
     try:
         lo, hi = t.range()
@@ -263,6 +324,10 @@ def array_length(t):
 def children(v):
     """(name, value) pairs one level down, and the total when it is known."""
     v = deref(v)
+    if rust:
+        kids = rust_unwrap(v)
+        if kids is not None:
+            return kids[:MAX_CHILDREN], len(kids)
     p = printer_of(v)
     if p is not None and hasattr(p, "children"):
         hint = hint_of(p)
@@ -291,6 +356,13 @@ def children(v):
 def expandable(v):
     try:
         v = deref(v)
+        if rust:
+            t = v.type.strip_typedefs()
+            if rust.is_char(t):
+                return False
+            kids = rust_unwrap(v)
+            if kids is not None:
+                return len(kids) > 0 and not (rust.is_option(t) and len(kids) == 1 and not expandable(kids[0][1]) and kids[0][0] == "0")
         p = printer_of(v)
         if p is not None:
             return hasattr(p, "children") and hint_of(p) != "string" and len(printer_children(p, 1)) > 0
@@ -340,6 +412,8 @@ class Adapter:
         self.pumps = []
         self.stop_reason = None
         self.pause_requested = False
+        self.panic = None
+        self.errors = []
 
     # -- files
 
@@ -429,8 +503,19 @@ class Adapter:
             }
             return "exception", names.get(sig, f"The program received {sig}")
         if isinstance(ev, gdb.BreakpointEvent):
+            if self.panic is not None and self.panic in ev.breakpoints:
+                return "exception", self.panic_message()
             return "breakpoint", None
         return ("pause" if self.pause_requested else "step"), None
+
+    def panic_message(self):
+        """`panic: attempt to subtract with overflow`, from what the panic printed on stderr."""
+        for _ in range(25):
+            m = re.search(r"panicked at [^\n]*:\n(.*)", "".join(self.errors))
+            if m:
+                return f"panic: {m.group(1).strip()}"
+            time.sleep(0.02)
+        return "panic"
 
     def frame_name(self, f):
         try:
@@ -438,6 +523,8 @@ class Adapter:
             name = fn.print_name if fn is not None else (f.name() or "??")
         except (gdb.error, RuntimeError):
             name = f.name() or "??"
+        if rust:
+            return rust.frame_name(name, f)
         # `Stack<int>::push(int)` reads as `Stack<int>::push`.
         depth = 0
         for i, ch in enumerate(name):
@@ -458,7 +545,7 @@ class Adapter:
         for i, f in enumerate(self.stack):
             frames.append({
                 "id": i,
-                "name": self.frame_name(f).replace("::", "."),
+                "name": self.frame_name(f) if rust else self.frame_name(f).replace("::", "."),
                 "file": self.project_file(f),
                 "line": f.find_sal().line,
                 "localsRef": self.register(("frame", f)),
@@ -511,6 +598,8 @@ class Adapter:
             for sym in b:
                 if not (sym.is_variable or sym.is_argument) or sym.name in seen:
                     continue
+                if rust and rust.hidden(sym):
+                    continue
                 if sym.is_variable and not sym.is_argument and sym.line >= line:
                     continue  # its declaration has not run yet: the value would be garbage
                 if sym.addr_class == gdb.SYMBOL_LOC_STATIC:
@@ -550,7 +639,7 @@ class Adapter:
             return {"result": self.format(value)}
         except gdb.error as e:
             text = str(e)
-            if "may-call-functions" in text or "call" in text and "function" in text or "Cannot evaluate function" in text:
+            if "may-call-functions" in text or "call" in text and "function" in text or "Cannot evaluate function" in text or "Could not find function" in text:
                 text = "Watches do not call functions, because that would run program code."
             return {"error": text}
         except gdb.MemoryError as e:
@@ -648,6 +737,8 @@ class Adapter:
                 data = b""
             text = decoder.decode(data, final=not data)
             if text:
+                if stream == "stderr":
+                    self.errors.append(text)
                 event("output", stream=stream, text=text)
             if not data:
                 break
@@ -657,8 +748,15 @@ class Adapter:
 
     def launch(self, req):
         self.root = os.path.normpath(req.get("root") or os.getcwd())
+        global rust
         if req.get("language") == "c":
             NULL[0] = "NULL"
+        if req.get("language") == "rust":
+            NULL[0] = "None"
+            sys.path.insert(0, "/tmp/cwdbg")
+            import cw_gdb_rust
+
+            rust = cw_gdb_rust
         self.files = {str(f) for f in req.get("files") or []}
         os.chdir(self.root)
         for cmd in (
@@ -677,7 +775,7 @@ class Adapter:
                 gdb.execute(cmd, to_string=True)
             except gdb.error:
                 pass
-        for path in sorted(glob.glob("/usr/local/share/gcc-*/python")) + ["/usr/share/gcc/python"]:
+        for path in [] if rust else sorted(glob.glob("/usr/local/share/gcc-*/python")) + ["/usr/share/gcc/python"]:
             if os.path.isdir(os.path.join(path, "libstdcxx")):
                 sys.path.insert(0, path)
                 try:
@@ -687,6 +785,13 @@ class Adapter:
                     pass
                 break
         gdb.execute(f"file {req.get('program', 'out/main')}", to_string=True)
+        if rust:
+            rust.setup()
+            try:
+                # A panic stops the program where its own code panicked, with its message, as an exception does elsewhere.
+                self.panic = gdb.Breakpoint(rust.PANIC_SYMBOL, internal=True)
+            except gdb.error:
+                self.panic = None
         gdb.events.stop.connect(self.on_stop)
         gdb.events.exited.connect(self.on_exit)
         gdb.events.new_thread.connect(self.on_thread)

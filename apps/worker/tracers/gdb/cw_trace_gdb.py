@@ -1,4 +1,4 @@
-"""Code Workspace C / C++ tracer.
+"""Code Workspace C / C++ / Rust tracer.
 
 Runs inside gdb in the sandbox (gdb -q -nx -batch -x cw_trace_gdb.py
 config.json) and records every line the program runs: the call stack with
@@ -28,7 +28,12 @@ LIMITS = CONFIG["limits"]
 ROOT = os.path.normpath(CONFIG["root"])
 FILES = set(CONFIG["files"])
 LANGUAGE = CONFIG.get("language", "cpp")
-NULL = "NULL" if LANGUAGE == "c" else "nullptr"
+RUST = LANGUAGE == "rust"
+NULL = {"c": "NULL", "rust": "None"}.get(LANGUAGE, "nullptr")
+if RUST:
+    # Rust's printers, names and values (cw_gdb_rust.py, written next to this file).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(CONFIG.get("rustModule", "/tmp/cwviz/cw_gdb_rust.py"))))
+    import cw_gdb_rust as rust
 OUT_FIFO = "/tmp/cw-trace-out"
 ERR_FIFO = "/tmp/cw-trace-err"
 # Leave time for the program to finish and the trace to be written.
@@ -52,6 +57,7 @@ class Relay:
         self.fds = []
         self.printed = 0
         self.text = []
+        self.errors = []
         self.decoder = None
 
     def open(self):
@@ -78,6 +84,8 @@ class Relay:
                     text = self.decoder.decode(data)
                     self.text.append(text)
                     self.printed += len(text)
+                else:
+                    self.errors.append(data.decode("utf-8", "replace"))
 
 
 relay = Relay()
@@ -107,6 +115,15 @@ def _drop_default_args(s):
 
 
 def type_name(t):
+    if RUST:
+        try:
+            return rust.type_name(str(t))
+        except gdb.error:
+            return "?"
+    return c_type_name(t)
+
+
+def c_type_name(t):
     """`vector<int>`, `map<string, int>`, `Node`, `int[4]`: short and as written."""
     try:
         s = str(t.unqualified() if hasattr(t, "unqualified") else t)
@@ -188,6 +205,8 @@ def scalar(v):
     try:
         if t.code == gdb.TYPE_CODE_BOOL:
             return {"kind": "value", "text": "true" if bool(v) else "false", "type": "bool"}
+        if RUST and rust.is_char(t):
+            return {"kind": "value", "text": rust.char_text(v), "type": "char"}
         if is_char(t):
             n = int(v)
             text = f"'{chr(n)}'" if 32 <= n < 127 and n not in (39, 92) else {0: "'\\0'", 10: "'\\n'", 9: "'\\t'", 39: "'\\''", 92: "'\\\\'"}.get(n, str(n))
@@ -244,6 +263,10 @@ class Snapshot:
                         return {"kind": "value", "text": clip_str(text), "type": "string"}
                     return {"kind": "value", "text": text if text is not None else "?", "type": type_name(v.type)}
                 return self.container(v, p, hint, depth)
+            if RUST:
+                shown = self.rust_value(v, t, depth)
+                if shown is not None:
+                    return shown
             if t.code == gdb.TYPE_CODE_PTR:
                 if int(v) == 0:
                     return {"kind": "value", "text": NULL, "type": type_name(v.type)}
@@ -277,6 +300,29 @@ class Snapshot:
             return scalar(v)
         except (gdb.error, gdb.MemoryError, RuntimeError):
             return {"kind": "value", "text": "?", "type": "?"}
+
+    def rust_value(self, v, t, depth):
+        """Rust values gdb has no printer for: Option (its value, or None), enums, tuples, references to numbers."""
+        if rust.is_enum(t):
+            name, inner = rust.variant(v)
+            fields = rust.variant_fields(inner) if inner is not None else []
+            if rust.is_option(t):
+                if name == "Some" and fields:
+                    return self.value(fields[0][1], depth + 1)
+                return {"kind": "value", "text": "None", "type": type_name(v.type)}
+            enum = re.sub(r"<.*$", "", type_name(v.type))
+            label = f"{enum}::{name}" if name else enum
+            if not fields:
+                return {"kind": "value", "text": label, "type": type_name(v.type)}
+            oid = self.obj_id(v, label) or f"e{id(v)}:{label}"
+            return self._register(oid, lambda: {"kind": "object", "type": label, "fields": [[n, self.value(x, depth + 1)] for n, x in fields]}) or {"kind": "value", "text": label, "type": label}
+        if rust.is_tuple(t):
+            tname = type_name(v.type)
+            oid = self.obj_id(v, tname) or f"t{id(v)}:{tname}"
+            return self._register(oid, lambda: {"kind": "sequence", "type": tname, "items": [self.value(x, depth + 1) for _, x in rust.variant_fields(v)]}) or {"kind": "value", "text": "(…)", "type": tname}
+        if t.code == gdb.TYPE_CODE_PTR and int(v) != 0 and rust.scalar_target(t):
+            return {"kind": "value", "text": scalar(v.dereference())["text"], "type": type_name(v.type)}
+        return None
 
     def _register(self, oid, make):
         if oid in self.heap:
@@ -385,6 +431,8 @@ def frame_name(f):
         name = fn.print_name if fn is not None else (f.name() or "??")
     except (gdb.error, RuntimeError):
         name = f.name() or "??"
+    if RUST:
+        return rust.frame_name(name, f)
     depth = 0
     for i, ch in enumerate(name):
         if ch == "<":
@@ -415,6 +463,8 @@ def frame_symbols(frame):
     for b in reversed(blocks):
         for sym in b:
             if not (sym.is_variable or sym.is_argument) or sym.name in seen or sym.name.startswith("__"):
+                continue
+            if RUST and rust.hidden(sym):
                 continue
             if sym.is_variable and not sym.is_argument and sym.line >= line:
                 continue
@@ -567,6 +617,18 @@ def returns_without_calls(frame):
     return not any(m.group(0).split("(")[0].split("<")[0].strip() not in KEYWORDS_BEFORE_PAREN for m in CALL.finditer(code))
 
 
+def panic_message():
+    """`attempt to subtract with overflow`, from what the panic printed (`thread 'main' panicked at main.rs:4:5:`, then the message)."""
+    for _ in range(20):
+        relay.drain()
+        text = "".join(relay.errors)
+        m = re.search(r"panicked at [^\n]*:\n(.*)", text)
+        if m:
+            return f"panic: {m.group(1).strip()}"
+        time.sleep(0.02)
+    return "panic"
+
+
 held = [None]
 
 
@@ -622,7 +684,7 @@ def main():
             gdb.execute(cmd, to_string=True)
         except gdb.error:
             pass
-    for path in sorted(glob.glob("/usr/local/share/gcc-*/python")) + ["/usr/share/gcc/python"]:
+    for path in [] if RUST else sorted(glob.glob("/usr/local/share/gcc-*/python")) + ["/usr/share/gcc/python"]:
         if os.path.isdir(os.path.join(path, "libstdcxx")):
             sys.path.insert(0, path)
             try:
@@ -633,6 +695,13 @@ def main():
             break
     os.chdir(ROOT)
     gdb.execute(f"file {CONFIG.get('program', 'out/main')}", to_string=True)
+    panic = None
+    if RUST:
+        rust.setup()
+        try:
+            panic = gdb.Breakpoint(rust.PANIC_SYMBOL, internal=True)
+        except gdb.error:
+            panic = None
     gdb.events.stop.connect(on_stop)
     gdb.events.exited.connect(on_exit)
     for path in (OUT_FIFO, ERR_FIFO):
@@ -644,18 +713,24 @@ def main():
     gdb.execute("set exec-wrapper stdbuf -o0 -e0", to_string=True)
     # Stop at the first line of main, then step through every line of the program's own files.
     try:
-        gdb.execute("break main", to_string=True)
+        start = gdb.Breakpoint(CONFIG.get("start", "main"), internal=True)
     except gdb.error:
-        pass
+        start = None
     run(f"run < {stdin} > {OUT_FIFO} 2> {ERR_FIFO}")
-    try:
-        gdb.execute("delete", to_string=True)
-    except gdb.error:
-        pass
+    if start is not None and start.is_valid():
+        start.delete()
     started = time.monotonic()
     tracing = True
     while alive():
         ev = last_stop[0]
+        if panic is not None and isinstance(ev, gdb.BreakpointEvent) and panic in ev.breakpoints:
+            # A panic: its message is printed; the step is where the program's own code panicked.
+            if tracing:
+                flush()
+                record(snapshot("exception", exception=panic_message()))
+            tracing = False
+            run("continue")
+            continue
         if isinstance(ev, gdb.SignalEvent) and ev.stop_signal in SIGNALS:
             if tracing:
                 flush()

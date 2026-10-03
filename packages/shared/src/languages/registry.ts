@@ -306,6 +306,9 @@ func main() {
   },
 };
 
+/** rust:1.90-slim with gdb and the toolchain's gdb printers (sandbox-images/rust-gdb), for debugging and visualizing Rust. */
+export const RUST_GDB_IMAGE = "writecode/rust-gdb:1.90";
+
 const rust: LanguageDefinition = {
   id: "rust",
   name: "Rust",
@@ -328,7 +331,8 @@ const rust: LanguageDefinition = {
   ],
   compiler: {
     // rustc is given the file the program starts in and finds its modules (\`mod name;\`) itself.
-    command: ["rustc", "--edition", "2021", "-C", "opt-level=1", "-C", "debuginfo=0", "-o", "out/main", "{entry}"],
+    // Overflow is checked, as `cargo run` checks it: `attempt to add with overflow` rather than a wrong number.
+    command: ["rustc", "--edition", "2021", "-C", "opt-level=1", "-C", "debuginfo=0", "-C", "overflow-checks=on", "-o", "out/main", "{entry}"],
     sourceExtensions: [".rs"],
     builds: "program",
   },
@@ -336,6 +340,13 @@ const rust: LanguageDefinition = {
     image: "rust:1.90-slim",
     command: ["./out/main"],
   },
+  debugger: {
+    protocol: "gdb",
+    supportLevel: "beta",
+    image: RUST_GDB_IMAGE,
+    compiler: ["rustc", "--edition", "2021", "-C", "opt-level=0", "-C", "debuginfo=2", "-C", "overflow-checks=on", "-o", "out/main", "{entry}"],
+  },
+  visualizer: { supportLevel: "beta" },
 };
 
 /** The .NET SDK with the C# compiler called directly (sandbox-images/dotnet): no project file, a build in about a second. */
