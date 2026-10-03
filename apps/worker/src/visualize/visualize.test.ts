@@ -525,6 +525,70 @@ public class Main {
     expect(at9.stdoutLength).toBe(6);
   });
 
+  it("PHP: frames, arrays as lists and tables, objects by identity, return values and output, across files", { timeout: 180_000 }, async () => {
+    const main = [
+      "<?php",
+      'require_once "node.php";',
+      "",
+      "function square($x) {",
+      "    $r = $x * $x;",
+      "    return $r;",
+      "}",
+      "",
+      "$nums = [3, 1, 2];",
+      '$ages = ["ada" => 36];',
+      "$head = new Node(1);",
+      "$head->next = new Node(2);",
+      "$alias = $head;",
+      "$total = 0;",
+      "foreach ($nums as $n) {",
+      "    $total += square($n);",
+      "}",
+      'echo "total=$total\n";',
+      "",
+    ].join("\n");
+    const node = "<?php\nclass Node {\n    public $value;\n    public $next = null;\n\n    public function __construct($value) {\n        $this->value = $value;\n    }\n}\n";
+    const { result, trace } = await visualize("php", { "main.php": main, "node.php": node });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.stdout).toBe("total=14\n");
+    expect(trace.language).toBe("php");
+    expect(trace.stdout).toBe("total=14\n");
+    expect(top(trace.steps[0]!)).toMatchObject({ name: "<main>", file: "main.php", line: 2 });
+    expect(trace.steps.some((s) => top(s).name === "Node->__construct" && top(s).file === "node.php")).toBe(true);
+    const ret = trace.steps.find((s) => s.event === "return" && top(s).name === "square")!;
+    expect(top(ret).returnValue).toEqual({ kind: "value", text: "9", type: "int" });
+    const end = trace.steps.findLast((s) => top(s).line === 18)!;
+    // In the order they were written, not alphabetically.
+    expect(top(end).locals.map(([n]) => n)).toEqual(["nums", "ages", "head", "alias", "total", "n"]);
+    const ref = (name: string) => end.heap[(local(end, name) as { id: string }).id]!;
+    expect(ref("nums")).toMatchObject({ kind: "sequence", type: "array", items: [{ text: "3" }, { text: "1" }, { text: "2" }] });
+    expect(ref("ages")).toMatchObject({ kind: "map", type: "array", entries: [[{ text: '"ada"' }, { text: "36" }]] });
+    // $alias is $head: one object. Its next is the second node, whose next is null.
+    expect(local(end, "alias")).toEqual(local(end, "head"));
+    const head = ref("head");
+    expect(head).toMatchObject({ kind: "object", type: "Node", fields: [["value", { text: "1" }], ["next", { kind: "ref" }]] });
+    expect(end.heap[(head.fields![1]![1] as { id: string }).id]).toMatchObject({ kind: "object", type: "Node", fields: [["value", { text: "2" }], ["next", { kind: "value", text: "null" }]] });
+  });
+
+  it("PHP: an exception is recorded where it is thrown, then reported like a normal run; typed input reaches the program", { timeout: 180_000 }, async () => {
+    const { result, trace } = await visualize("php", { "main.php": '<?php\nfunction half($n) {\n    if ($n % 2) {\n        throw new InvalidArgumentException("odd: $n");\n    }\n    return intdiv($n, 2);\n}\n\necho half(4), "\\n";\necho half(3), "\\n";\n' });
+    expect(result.status).toBe("RUNTIME_ERROR");
+    expect(result.stdout).toBe("2\n");
+    expect(result.stderr).toContain("Uncaught InvalidArgumentException: odd: 3");
+    const ex = trace.steps.find((s) => s.event === "exception")!;
+    expect(ex.exception).toBe("InvalidArgumentException: odd: 3");
+    expect(top(ex)).toMatchObject({ name: "half", line: 4 });
+    expect(text(local(ex, "n"))).toBe("3");
+
+    const typed = await visualize("php", { "main.php": '<?php\necho "name? ";\n$name = trim(fgets(STDIN));\necho "hi $name\\n";\n' }, { typed: ["Ada\n"] });
+    expect(typed.result.status).toBe("SUCCESS");
+    expect(typed.result.stdout).toBe("name? hi Ada\n");
+    expect(typed.statuses).toContain("WAITING_FOR_INPUT");
+    const at4 = typed.trace.steps.find((s) => top(s).line === 4)!;
+    expect(text(local(at4, "name"))).toBe('"Ada"');
+    expect(at4.stdoutLength).toBe(6);
+  });
+
   it("Kotlin: recorded by the JVM tracer, with its own functions, classes and collections", { timeout: 180_000 }, async () => {
     const files = {
       "Main.kt":

@@ -397,15 +397,15 @@ export function withSourceTypeNames(trace: Trace): Trace {
 
 // -- Where the logic starts
 
-const CONSTRUCTOR = new Set(["__init__", "__new__", "__post_init__", "<init>", "<clinit>", "constructor", "initialize"]);
+const CONSTRUCTOR = new Set(["__init__", "__new__", "__post_init__", "<init>", "<clinit>", "constructor", "initialize", "__construct"]);
 
 /** A call that only makes an object: a constructor, an initializer, or a class being defined. */
 function makesAnObject(name: string, types: ReadonlySet<string>): boolean {
   // Ruby: a class body (`<class:Node>`), and a required file's top level, which defines things.
   if (/^<class:|^<module:|^<top \(required\)>$/.test(name)) return true;
-  const parts = name.split(/[.:#\s]+/).filter(Boolean);
+  const parts = name.split(/[.:#\s]+|->/).filter(Boolean);
   const last = parts[parts.length - 1] ?? "";
-  // `Node::Node`, `Node.__init__`, `Node.<init>`, `Node#initialize`; JavaScript names a constructor after its class.
+  // `Node::Node`, `Node.__init__`, `Node.<init>`, `Node#initialize`, `Node->__construct`; JavaScript names a constructor after its class.
   return CONSTRUCTOR.has(last) || (parts.length > 1 && last === parts[parts.length - 2]) || types.has(name) || types.has(last);
 }
 

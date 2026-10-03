@@ -66,6 +66,7 @@ const pythonProject = (page: Page, code: string) => newProject(page, "Python", c
 const rubyProject = (page: Page, code: string) => newProject(page, "Ruby", code);
 const rustProject = (page: Page, code: string) => newProject(page, "Rust", code);
 const goProject = (page: Page, code: string) => newProject(page, "Go", code);
+const phpProject = (page: Page, code: string) => newProject(page, "PHP", code);
 
 /** Places the cursor on a line through Monaco's API (no text changes). */
 async function cursorTo(page: Page, line: number) {
@@ -540,6 +541,96 @@ test("Go: a panic stops the program where its code panicked, with the message, a
   await page.keyboard.press("F5");
   await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(output(page)).toContainText("index out of range");
+});
+
+const PHP_PROGRAM = `<?php
+class Point {
+    public $x;
+    public $y;
+    public function __construct($x, $y) { $this->x = $x; $this->y = $y; }
+}
+
+function square($x) {
+    $r = $x * $x;
+    return $r;
+}
+
+$nums = [3, 1, 2];
+$origin = new Point(0, 5);
+$total = 0;
+foreach ($nums as $n) {
+    $total += square($n);
+}
+echo "total=$total\n";
+`;
+
+test("PHP: breakpoints, variables, watches, stepping and continue", async ({ page }) => {
+  await phpProject(page, PHP_PROGRAM);
+  await cursorTo(page, 17);
+  await page.keyboard.press("F9");
+  await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("17:1");
+  const stack = panel.getByRole("list", { name: "Call stack" });
+  await expect(stack.getByRole("button", { name: "<main>:17, main.php" })).toBeVisible();
+
+  const vars = panel.getByRole("tree", { name: "Variables" });
+  await expect(vars.getByRole("treeitem", { name: "$total = 0" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "$n = 3" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "$nums = [3, 1, 2]" }).click();
+  await expect(vars.getByRole("treeitem", { name: "[1] = 1" })).toBeVisible();
+  await vars.getByRole("treeitem", { name: "$origin = Point {x: 0, y: 5}" }).click();
+  await expect(vars.getByRole("treeitem", { name: "y = 5" })).toBeVisible();
+
+  // Watches read: a call to the program's own function is refused, arithmetic on its values is not.
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("$n * 10 + $total + $origin->y");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("$n * 10 + $total + $origin->y").locator("..")).toContainText("35");
+  await panel.getByRole("textbox", { name: "Add watch expression" }).fill("square(2)");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByText("square(2)").locator("..")).toContainText("Watches do not call functions");
+
+  await page.keyboard.press("F11");
+  await expect(panel.getByText("Paused after step")).toBeVisible();
+  await expect(stack.getByRole("button", { name: "square:9, main.php" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "$x = 3" })).toBeVisible();
+
+  // Out of square: PHP reports a foreach line once, so this is the loop's next pass, with what the last one added.
+  await page.keyboard.press("Shift+F11");
+  await expect(stack.getByRole("button", { name: /^square:/ })).toHaveCount(0);
+  await expect(vars.getByRole("treeitem", { name: "$total = 9" })).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "$n = 1" })).toBeVisible();
+
+  await page.keyboard.press("F5");
+  await expect(panel.getByText("Paused on breakpoint")).toBeVisible();
+  await expect(vars.getByRole("treeitem", { name: "$total = 10" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "View Breakpoints" }).click();
+  await page.getByRole("button", { name: "Remove breakpoint main.php:17" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.keyboard.press("F5");
+  await expect(output(page)).toContainText("total=14", { timeout: 30_000 });
+  await expect(page.getByText("Success", { exact: true })).toBeVisible();
+});
+
+test("PHP: an exception stops the program where it is thrown, with its class and message, after typed input", async ({ page }) => {
+  await phpProject(page, '<?php\n$n = (int) trim(fgets(STDIN));\n$items = [1, 2];\nif (!isset($items[$n])) {\n    throw new OutOfRangeException("no item $n");\n}\necho $items[$n];\n');
+  await page.getByRole("button", { name: "Debug program" }).click();
+  const input = page.getByRole("textbox", { name: "Program input" });
+  await expect(input).toBeVisible({ timeout: 120_000 });
+  await input.fill("5");
+  await page.keyboard.press("Enter");
+  const panel = debugPanel(page);
+  await expect(panel.getByText("Paused on exception")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole("alert")).toContainText("OutOfRangeException: no item 5");
+  await expect(page.getByRole("button", { name: "Go to line" })).toHaveText("5:1");
+  await expect(panel.getByRole("tree", { name: "Variables" }).getByRole("treeitem", { name: "$n = 5" })).toBeVisible();
+  await page.keyboard.press("F5");
+  await expect(page.getByText("Runtime error", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(output(page)).toContainText("Uncaught OutOfRangeException");
 });
 
 const LINKED_LIST = `import java.util.Scanner;

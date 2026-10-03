@@ -417,8 +417,8 @@ export const LANDING_PAGES: LandingPage[] = [
     version: "8.4",
     label: "PHP runner",
     sample: { file: "main.php", code: PHP },
-    debugs: false,
-    intro: "Run PHP 8.4 scripts online from the command line: read input from STDIN, include other files of the project, and see parse errors and exceptions with the line they are on.",
+    debugs: true,
+    intro: "Run PHP 8.4 scripts online from the command line: read input from STDIN, include other files of the project, see parse errors and exceptions with the line they are on, debug with breakpoints (Xdebug underneath), and watch arrays and objects change step by step in the visualizer.",
     extraFaqs: [
       { q: "Which PHP version is used?", a: "PHP 8.4, run as a command-line script." },
       { q: "Can I include other files?", a: "Yes. Add more .php files to the project and use require or include." },

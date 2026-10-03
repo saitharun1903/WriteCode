@@ -38,6 +38,12 @@ const DLV_MODULE_URL = new URL("../../debug-adapters/dlv/cw_dlv.py", import.meta
 let dlvAdapterSource: Promise<string> | null = null;
 let dlvModuleSource: Promise<string> | null = null;
 export const dlvModule = () => source(DLV_MODULE_URL, dlvModuleSource, (p) => (dlvModuleSource = p));
+const DBGP_ADAPTER_URL = new URL("../../debug-adapters/dbgp/cw_dbgp_adapter.py", import.meta.url);
+/** Starting PHP under Xdebug and reading PHP values: shared by the PHP debugger and tracer. */
+const DBGP_MODULE_URL = new URL("../../debug-adapters/dbgp/cw_dbgp.py", import.meta.url);
+let dbgpAdapterSource: Promise<string> | null = null;
+let dbgpModuleSource: Promise<string> | null = null;
+export const dbgpModule = () => source(DBGP_MODULE_URL, dbgpModuleSource, (p) => (dbgpModuleSource = p));
 const NODE_ADAPTER_URL = new URL("../../debug-adapters/javascript/cw_debug_adapter.cjs", import.meta.url);
 const NODE_ADAPTER_PATH = "/tmp/cwdbg/cw_debug_adapter.cjs";
 const RUBY_ADAPTER_URL = new URL("../../debug-adapters/ruby/cw_debug_adapter.rb", import.meta.url);
@@ -139,6 +145,18 @@ export async function debugAdapterFor(docker: Docker, request: ExecutionRequest,
         // Delve runs the program as its child, reading its stdin as in a normal run.
         argv: ["python3", "/tmp/cwdbg/cw_dlv_adapter.py"],
         launch: { ...common, root: SANDBOX_WORKDIR, program: "out/main" },
+        setup: [],
+        monitorInput: true,
+      };
+    case "dbgp":
+      return {
+        files: [
+          { path: "/tmp/cwdbg/cw_dbgp_adapter.py", content: await source(DBGP_ADAPTER_URL, dbgpAdapterSource, (p) => (dbgpAdapterSource = p)) },
+          { path: "/tmp/cwdbg/cw_dbgp.py", content: await dbgpModule() },
+        ],
+        // PHP runs as the adapter's child, reading its stdin as in a normal run.
+        argv: ["python3", "/tmp/cwdbg/cw_dbgp_adapter.py"],
+        launch: { ...common, entry: request.entry, root: SANDBOX_WORKDIR },
         setup: [],
         monitorInput: true,
       };

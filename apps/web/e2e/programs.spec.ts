@@ -21,7 +21,7 @@ async function waitSaved(page: Page) {
   await page.locator('footer[data-save-state="saved"]').waitFor({ state: "attached" });
 }
 
-async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust" | "Go") {
+async function freshProject(page: Page, language: "Java" | "Python" | "JavaScript" | "TypeScript" | "C" | "C++" | "Kotlin" | "Ruby" | "Rust" | "Go" | "PHP") {
   await page.goto("/");
   await page.evaluate(async () => {
     localStorage.clear();
@@ -499,6 +499,7 @@ const NO_CODE: [Parameters<typeof freshProject>[1], string, number, number][] = 
   ["TypeScript", "let total: number = 0;\n// add them up\n\nfor (let i = 1; i <= 3; i++) total += i;\nconsole.log(total);\n", 2, 4],
   ["Kotlin", "fun main() {\n    var total = 0\n    // add them up\n\n    for (i in 1..3) total += i\n    println(total)\n}\n", 3, 5],
   ["Ruby", "total = 0\n# add them up\n\n(1..3).each { |i| total += i }\nputs total\n", 2, 4],
+  ["PHP", "<?php\n$total = 0;\n// add them up\n\nfor ($i = 1; $i <= 3; $i++) {\n    $total += $i;\n}\necho $total;\n", 3, 5],
   ["Go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\ttotal := 0\n\t// add them up\n\n\tfor i := 1; i <= 3; i++ {\n\t\ttotal += i\n\t}\n\tfmt.Println(total)\n}\n", 7, 9],
   ["Rust", "fn main() {\n    let mut total = 0;\n    // add them up\n\n    for i in 1..=3 {\n        total += i;\n    }\n    println!(\"{}\", total);\n}\n", 3, 5],
 ];
@@ -513,7 +514,8 @@ for (const [language, code, set, stops] of NO_CODE) {
     await expect(debugPanel(page).getByText("Paused on breakpoint")).toBeVisible({ timeout: 90_000 });
     await expect(debugPanel(page).getByRole("list", { name: "Debugger progress" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Go to line" })).toHaveText(`${stops}:1`);
-    await expect(variables(page).getByRole("treeitem", { name: "total = 0" })).toBeVisible();
+    // (PHP's variables are named with their $.)
+    await expect(variables(page).getByRole("treeitem", { name: /^\$?total = 0$/ })).toBeVisible();
     // The red mark is on the line it stopped on, and is a real breakpoint (not a greyed one).
     await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
     await expect(page.locator(".monaco-editor .cw-bp-unverified")).toHaveCount(0);
@@ -707,6 +709,13 @@ test("visualizer: a linked list built by hand is already there; the steps start 
       "class Node(val value: Int) {\n    var next: Node? = null\n}\n\nfun main() {\n    val head = Node(1)\n    val second = Node(2)\n    val third = Node(3)\n    head.next = second\n    second.next = third\n    var cur: Node? = head\n    var total = 0\n    while (cur != null) {\n        total += cur.value\n        cur = cur.next\n    }\n    println(total)\n}\n",
       13,
       "Main.kt",
+    ],
+    [
+      "PHP",
+      "<?php\nclass Node {\n    public $val;\n    public $next = null;\n    public function __construct($val) { $this->val = $val; }\n}\n\n$head = new Node(1);\n$second = new Node(2);\n$third = new Node(3);\n$head->next = $second;\n$second->next = $third;\n$cur = $head;\n$total = 0;\nwhile ($cur !== null) {\n    $total += $cur->val;\n    $cur = $cur->next;\n}\necho $total;\n",
+      // Like Ruby, PHP reports a while line once, then the lines of its body on each pass.
+      16,
+      "main.php",
     ],
     [
       "Go",

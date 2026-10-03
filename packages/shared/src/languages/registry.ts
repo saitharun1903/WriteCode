@@ -400,6 +400,9 @@ class Program
   },
 };
 
+/** php:8.4-cli-alpine with Xdebug (not loaded in normal runs) and Python (sandbox-images/php-xdebug), for debugging and visualizing PHP. */
+export const PHP_XDEBUG_IMAGE = "writecode/php-xdebug:8.4";
+
 const php: LanguageDefinition = {
   id: "php",
   name: "PHP",
@@ -424,6 +427,8 @@ echo "Hello World\n";
     // Errors once, on the error stream (the default prints them on both).
     command: ["php", "-d", "display_errors=stderr", "-d", "log_errors=0", "{entry}"],
   },
+  debugger: { protocol: "dbgp", supportLevel: "beta", image: PHP_XDEBUG_IMAGE },
+  visualizer: { supportLevel: "beta" },
 };
 
 const ruby: LanguageDefinition = {
