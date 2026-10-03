@@ -4,7 +4,13 @@ import { isTerminalStatus, redisKeys, type ExecutionStatus } from "@cw/shared";
 import { config } from "../config.js";
 import { REDIS } from "../infra/infra.module.js";
 
-export type RateDecision = { ok: true } | { ok: false; reason: "rate" | "concurrency"; retryAfterSeconds: number };
+export type RateDecision = { ok: true } | { ok: false; reason: "rate" | "concurrency"; scope: "browser" | "network"; retryAfterSeconds: number };
+
+/** Who is asking: a browser, and the network address it is on (the same key when the browser is unknown). */
+export interface ClientKeys {
+  browser: string;
+  ip: string;
+}
 
 /**
  * Entries older than this are treated as finished even if no completion was observed.
@@ -21,7 +27,14 @@ const ACTIVE_STALE_MS = 16 * 60 * 1000;
 export class RateLimiter {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-  async check(client: string, now = Date.now()): Promise<RateDecision> {
+  /** A browser has its own limits; its network address has wider ones (a classroom shares one). */
+  async check(keys: ClientKeys, now = Date.now()): Promise<RateDecision> {
+    const own = await this.checkOne(keys.browser, config.rateLimit.perMinute, config.rateLimit.concurrent, "browser", now);
+    if (!own.ok || keys.ip === keys.browser) return own;
+    return this.checkOne(keys.ip, config.rateLimit.ipPerMinute, config.rateLimit.ipConcurrent, "network", now);
+  }
+
+  private async checkOne(client: string, perMinute: number, concurrent: number, scope: "browser" | "network", now: number): Promise<RateDecision> {
     const window = Math.floor(now / 60_000);
     const rateKey = redisKeys.rateWindow(client, window);
     const activeKey = redisKeys.activeByClient(client);
@@ -36,18 +49,22 @@ export class RateLimiter {
     const count = Number(res?.[0]?.[1] ?? 0);
     const active = Number(res?.[3]?.[1] ?? 0);
 
-    if (count > config.rateLimit.perMinute) {
-      return { ok: false, reason: "rate", retryAfterSeconds: 60 - Math.floor((now % 60_000) / 1000) };
+    if (count > perMinute) {
+      return { ok: false, reason: "rate", scope, retryAfterSeconds: 60 - Math.floor((now % 60_000) / 1000) };
     }
-    if (active >= config.rateLimit.concurrent && (await this.stillActive(activeKey)) >= config.rateLimit.concurrent) {
-      return { ok: false, reason: "concurrency", retryAfterSeconds: 2 };
+    if (active >= concurrent && (await this.stillActive(activeKey)) >= concurrent) {
+      return { ok: false, reason: "concurrency", scope, retryAfterSeconds: 2 };
     }
     return { ok: true };
   }
 
-  async markActive(client: string, executionId: string, now = Date.now()): Promise<void> {
-    const key = redisKeys.activeByClient(client);
-    await this.redis.multi().zadd(key, now, executionId).expire(key, ACTIVE_STALE_MS / 1000).exec();
+  async markActive(keys: ClientKeys, executionId: string, now = Date.now()): Promise<void> {
+    const tx = this.redis.multi();
+    for (const client of new Set([keys.browser, keys.ip])) {
+      const key = redisKeys.activeByClient(client);
+      tx.zadd(key, now, executionId).expire(key, ACTIVE_STALE_MS / 1000);
+    }
+    await tx.exec();
   }
 
   /** Drops runs that have a final result but whose completion was missed (an API restart), and counts the rest. */
@@ -68,7 +85,9 @@ export class RateLimiter {
     return ids.length - finished.length;
   }
 
-  async markDone(client: string, executionId: string): Promise<void> {
-    await this.redis.zrem(redisKeys.activeByClient(client), executionId);
+  async markDone(keys: ClientKeys, executionId: string): Promise<void> {
+    const tx = this.redis.multi();
+    for (const client of new Set([keys.browser, keys.ip])) tx.zrem(redisKeys.activeByClient(client), executionId);
+    await tx.exec();
   }
 }

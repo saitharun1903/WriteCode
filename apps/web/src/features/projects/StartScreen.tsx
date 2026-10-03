@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ChevronDown, ClipboardList, Copy, FolderOpen, Hourglass, MoreHorizontal, Pencil, Plus, Search, ShieldAlert, Trash2 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { LANGUAGES, PRODUCT, getLanguage, type ProjectSummary } from "@cw/shared";
@@ -354,6 +355,11 @@ export function StartScreen() {
                 </a>
               </li>
             ))}
+            <li>
+              <Link href="/privacy" className="hover:text-fg hover:underline">
+                Privacy
+              </Link>
+            </li>
           </ul>
         </nav>
       </div>

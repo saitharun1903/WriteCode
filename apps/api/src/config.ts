@@ -45,8 +45,14 @@ export const config = {
   rateLimit: {
     /** Executions per client per minute. */
     perMinute: int("RATE_LIMIT_PER_MINUTE", 30),
-    /** Executions a client may have queued or running at once. */
+    /** Executions a client (a browser) may have queued or running at once. */
     concurrent: int("RATE_LIMIT_CONCURRENT", 3),
+    /**
+     * The same for a whole network address. Many browsers can share one (a classroom, an office),
+     * so it is wider; it still bounds one address that invents browser ids.
+     */
+    ipPerMinute: int("RATE_LIMIT_IP_PER_MINUTE", 300),
+    ipConcurrent: int("RATE_LIMIT_IP_CONCURRENT", 24),
     /** Global queue depth after which new executions are refused. */
     maxQueueDepth: int("MAX_QUEUE_DEPTH", 200),
   },

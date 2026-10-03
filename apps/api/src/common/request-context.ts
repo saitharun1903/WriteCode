@@ -29,6 +29,16 @@ export function requestContext(req: Request, res: Response, next: NextFunction) 
 }
 
 /** Stable, non-reversible client identifier used for rate limiting. Raw IPs are never stored. */
+/**
+ * The rate-limit keys of a request: its browser (the anonymous id the web app sends in
+ * X-Client-Id, with the address) and its network address. Without an id, both are the address.
+ */
+export function clientKeys(ip: string | undefined, browserId: unknown): { browser: string; ip: string } {
+  const byIp = clientHash(ip);
+  const id = typeof browserId === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(browserId) ? browserId : null;
+  return { browser: id ? clientHash(`${ip ?? "unknown"}|${id}`) : byIp, ip: byIp };
+}
+
 export function clientHash(ip: string | undefined): string {
   return createHash("sha256")
     .update(`${config.clientHashSalt}:${ip ?? "unknown"}`)

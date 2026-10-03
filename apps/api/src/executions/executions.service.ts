@@ -30,7 +30,7 @@ import { RunnerStatusService, UNAVAILABLE_MESSAGE } from "../health/runner-statu
 import { DEBUG_QUEUE_TOKEN, EXECUTION_QUEUE_TOKEN, PRISMA, REDIS, type ExecutionQueue } from "../infra/infra.module.js";
 import { createRedis } from "../infra/redis.js";
 import { ExecutionStore } from "./execution-store.js";
-import { RateLimiter } from "./rate-limiter.js";
+import { RateLimiter, type ClientKeys } from "./rate-limiter.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -81,9 +81,10 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
    * and typed input are accepted only with that token, so only the creator
    * can drive the program. The server keeps just the token's hash.
    */
-  async create(body: unknown, client: string): Promise<{ id: string; controlToken: string }> {
+  /** `client`: the rate-limit keys of whoever asks (a plain key stands for both browser and address). */
+  async create(body: unknown, client: string | ClientKeys): Promise<{ id: string; controlToken: string }> {
     try {
-      return await this.enqueue(body, client);
+      return await this.enqueue(body, typeof client === "string" ? { browser: client, ip: client } : client);
     } catch (e) {
       if (e instanceof HttpException) throw e;
       // Redis or Postgres unreachable: an outage, not a bug in the request.
@@ -92,7 +93,7 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async enqueue(body: unknown, client: string): Promise<{ id: string; controlToken: string }> {
+  private async enqueue(body: unknown, client: ClientKeys): Promise<{ id: string; controlToken: string }> {
     const parsed = validateExecutionRequest(body);
     if (!parsed.ok) throw new BadRequestException(parsed.error);
     const request = parsed.value;
@@ -107,9 +108,11 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
     const decision = await this.limiter.check(client);
     if (!decision.ok) {
       throw new HttpException(
-        decision.reason === "rate"
-          ? `Too many runs. You can start ${config.rateLimit.perMinute} per minute; try again in ${decision.retryAfterSeconds}s.`
-          : `You already have ${config.rateLimit.concurrent} runs in progress. Wait for one to finish.`,
+        decision.scope === "network"
+          ? `Many runs are starting from your network right now. Try again in ${decision.retryAfterSeconds}s.`
+          : decision.reason === "rate"
+            ? `Too many runs. You can start ${config.rateLimit.perMinute} per minute; try again in ${decision.retryAfterSeconds}s.`
+            : `You already have ${config.rateLimit.concurrent} runs in progress. Wait for one to finish.`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -129,11 +132,11 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
         sourceBytes: request.files.reduce((n, f) => n + utf8ByteLength(f.content), 0),
         interactive: request.interactive === true,
         runtimeVersion: lang.version,
-        clientHash: client,
+        clientHash: client.browser,
       },
     });
     const controlToken = randomBytes(24).toString("base64url");
-    await this.redis.set(`exec:${id}:client`, client, "EX", 3600);
+    await this.redis.set(`exec:${id}:client`, JSON.stringify(client), "EX", 3600);
     await this.redis.set(`exec:${id}:control`, sha256(controlToken), "EX", 3600);
     await this.limiter.markActive(client, id);
     await this.store.appendEvent({ type: "status", executionId: id, status: "QUEUED" });
@@ -220,8 +223,11 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async release(executionId: string) {
-    const client = await this.redis.get(`exec:${executionId}:client`);
-    if (client) await this.limiter.markDone(client, executionId);
+    const raw = await this.redis.get(`exec:${executionId}:client`);
+    if (!raw) return;
+    // Runs started before browsers had their own limits stored the address key alone.
+    const keys: ClientKeys = raw.startsWith("{") ? (JSON.parse(raw) as ClientKeys) : { browser: raw, ip: raw };
+    await this.limiter.markDone(keys, executionId);
   }
 
   private async onWorkerFailure(executionId: string) {

@@ -211,7 +211,10 @@ export function LandingPage({ page }: { page: Page }) {
             <LogoMark className="size-5" /> {SITE.name}
           </span>
           <span>Write, run, debug and share code in your browser.</span>
-          <Link href="/" className="ml-auto hover:text-fg">
+          <Link href="/privacy" className="ml-auto hover:text-fg">
+            Privacy
+          </Link>
+          <Link href="/" className="hover:text-fg">
             Open the editor
           </Link>
         </div>

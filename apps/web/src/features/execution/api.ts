@@ -23,12 +23,30 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * An anonymous id for this browser, so run limits are per person even when many share a network
+ * (a classroom). Random, kept in this browser only, and tied to nothing else.
+ */
+function browserId(): string {
+  try {
+    let id = localStorage.getItem("cw:client-id");
+    if (!id || !/^[A-Za-z0-9_-]{16,64}$/.test(id)) {
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => (b % 36).toString(36)).join("") + Date.now().toString(36);
+      localStorage.setItem("cw:client-id", id);
+    }
+    return id;
+  } catch {
+    return "";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
+    const id = typeof window === "undefined" ? "" : browserId();
     res = await fetch(`${API_URL}${path}`, {
       ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
+      headers: { "content-type": "application/json", ...(id ? { "x-client-id": id } : {}), ...init?.headers },
     });
   } catch {
     throw new ApiError("The execution service is unreachable.", 0);

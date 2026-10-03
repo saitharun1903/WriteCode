@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { LANGUAGES } from "@cw/shared";
-import { clientHash } from "../common/request-context.js";
+import { clientKeys } from "../common/request-context.js";
 import { ExecutionsService } from "./executions.service.js";
 
 @Controller()
@@ -11,7 +11,7 @@ export class ExecutionsController {
   @Post("executions")
   @HttpCode(202)
   create(@Body() body: unknown, @Req() req: Request) {
-    return this.executions.create(body, clientHash(req.ip));
+    return this.executions.create(body, clientKeys(req.ip, req.headers["x-client-id"]));
   }
 
   @Get("executions/:id")
