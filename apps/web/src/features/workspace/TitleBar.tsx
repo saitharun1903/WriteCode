@@ -302,8 +302,9 @@ export function TitleBar({ compact }: { compact: boolean }) {
         </>
       )}
 
+      {/* In the middle of the bar where it fits beside everything on the right: with a project open, that is a wide screen. */}
       {!compact && !restricted && (
-        <div className="pointer-events-none absolute inset-x-0 hidden justify-center xl:flex">
+        <div className={cn("pointer-events-none absolute inset-x-0 hidden justify-center", project ? "min-[1800px]:flex" : "xl:flex")}>
           <button
             onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}
             className="pointer-events-auto flex h-[34px] w-[min(440px,32vw)] items-center gap-2.5 rounded-[10px] border border-line-strong/70 bg-surface-2 px-3 text-[13px] text-fg-subtle shadow-[inset_0_1px_2px_rgb(0_0_0/0.05)] transition-colors hover:border-accent/50 hover:text-fg-muted"
@@ -346,7 +347,7 @@ export function TitleBar({ compact }: { compact: boolean }) {
           </button>
         )}
         {/* Where the centred search box does not fit. */}
-        <span className={cn(restricted ? "hidden" : compact ? (project ? "hidden sm:inline-flex" : "inline-flex") : "inline-flex xl:hidden")}>
+        <span className={cn(restricted ? "hidden" : compact ? (project ? "hidden sm:inline-flex" : "inline-flex") : project ? "inline-flex min-[1800px]:hidden" : "inline-flex xl:hidden")}>
           <IconButton label="Search everywhere" shortcut="Mod+Shift+P" onClick={() => runCommand(project ? "workbench.quickOpen" : "workbench.commandPalette")}>
             <Search />
           </IconButton>
