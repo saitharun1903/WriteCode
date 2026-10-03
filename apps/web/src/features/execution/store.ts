@@ -25,7 +25,7 @@ import { createId } from "@/lib/id";
 import { useDebug } from "@/features/debug/store";
 import { useVisualize } from "@/features/visualize/store";
 import { usePreview } from "@/features/preview/store";
-import { editorBridge } from "@/features/editor/bridge";
+import { UNKNOWN_PACKAGE_CODES, editorBridge } from "@/features/editor/bridge";
 import { ApiError, api, streamExecution, waitForResult, type ExecutionStream } from "./api";
 
 export type RunnerStatus = "unknown" | "online" | "offline" | "unavailable";
@@ -62,8 +62,10 @@ export interface RunState {
   result?: ExecutionResult;
   /** Someone else's run in a live session, shown here read-only. Their name. */
   watchedBy?: string;
-  /** Client-side failure (network, validation). Distinct from program errors. */
-  error?: { title: string; detail?: string; requestId?: string };
+  /** TypeScript: the type errors in the files when the run started (Node runs without checking types). */
+  typeErrors?: { file: string; line: number; message: string }[];
+  /** Client-side failure (network, validation). Distinct from program errors. `retry: false`: trying again cannot help. */
+  error?: { title: string; detail?: string; requestId?: string; retry?: false };
   startedAt: number;
 }
 
@@ -253,12 +255,12 @@ export const useExecution = create<ExecutionState>((set, get) => {
     }
   };
 
-  const fail = (title: string, detail?: string, requestId?: string) => {
+  const fail = (title: string, detail?: string, requestId?: string, retry?: false) => {
     flushLog();
     stream?.close();
     stream = null;
     if (get().run?.mode === "debug" && !get().run?.watchedBy) useDebug.getState().onEnded();
-    set((s) => ({ run: s.run ? { ...s.run, status: "SYSTEM_ERROR", error: { title, detail, requestId } } : s.run }));
+    set((s) => ({ run: s.run ? { ...s.run, status: "SYSTEM_ERROR", error: { title, detail, requestId, ...(retry === false ? { retry } : {}) } } : s.run }));
   };
 
   return {
@@ -419,11 +421,13 @@ export const useExecution = create<ExecutionState>((set, get) => {
         }
         files = [...files.filter((f) => f.path !== database.file), { path: database.file, content: sqlStateFile(project.database) }];
       }
+      const typeErrors = project.language === "typescript" && mode === "run" ? editorBridge.typeErrors(project.id, UNKNOWN_PACKAGE_CODES) : [];
       set({
         diagnostics: [],
         run: {
           projectId: project.id,
           entry: project.entryFile,
+          ...(typeErrors.length ? { typeErrors } : {}),
           ...(title ? { title } : {}),
           ...(query ? { query: true } : {}),
           mode,
@@ -458,6 +462,10 @@ export const useExecution = create<ExecutionState>((set, get) => {
           );
         }
         if (e instanceof ApiError && e.status === 429) return fail("Too many runs", "You are being rate limited. Wait a few seconds and retry.");
+        // The request itself is not acceptable (too large, too many files): the message says what to change.
+        if (e instanceof ApiError && (e.status === 400 || e.status === 413)) {
+          return fail("This project cannot run as it is", e.status === 413 ? "The project is too large to send. Delete the files it does not need." : e.message, undefined, false);
+        }
         return fail("Could not start execution", e instanceof Error ? e.message : String(e), e instanceof ApiError ? e.requestId : undefined);
       }
 

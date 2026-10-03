@@ -1,6 +1,7 @@
 "use client";
 
 import { loader, type Monaco } from "@monaco-editor/react";
+import { NODE_TYPES } from "./node-types";
 
 // Monaco is copied into /public by scripts/copy-monaco.mjs, so the editor
 // never depends on a third-party CDN.
@@ -21,6 +22,7 @@ let themesDefined = false;
 export function defineThemes(monaco: Monaco) {
   if (themesDefined) return;
   themesDefined = true;
+  configureTypeScript(monaco);
 
   monaco.editor.defineTheme("cw-dark", {
     base: "vs-dark",
@@ -176,6 +178,30 @@ export function defineThemes(monaco: Monaco) {
       "editorOverviewRuler.border": "#00000000",
     },
   });
+}
+
+/**
+ * The editor checks TypeScript as Node runs it: each file is a module, modern
+ * syntax, and Node's own modules and globals are known, so reading input with
+ * require("fs") or node:readline is not marked as an error.
+ */
+function configureTypeScript(monaco: Monaco) {
+  const ts = monaco.languages.typescript;
+  ts.typescriptDefaults.setCompilerOptions({
+    ...ts.typescriptDefaults.getCompilerOptions(),
+    target: ts.ScriptTarget.ESNext,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeJs,
+    // Each file is its own module, as Node runs it: two files may both have a `const n`.
+    moduleDetection: 3,
+    allowNonTsExtensions: true,
+    allowImportingTsExtensions: true,
+    esModuleInterop: true,
+    strict: true,
+    noEmit: true,
+  });
+  ts.typescriptDefaults.addExtraLib(NODE_TYPES, "file:///node_modules/@types/node/index.d.ts");
+  ts.javascriptDefaults.addExtraLib(NODE_TYPES, "file:///node_modules/@types/node/index.d.ts");
 }
 
 /** Monaco model URI for a project file. Keeping one model per file preserves undo history across tabs. */

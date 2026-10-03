@@ -44,13 +44,13 @@ test("Kotlin, Go, Rust, C#, PHP, Ruby, SQL and Bash: the starter runs, input is 
   // [language, what the starter prints, a program that reads a number and doubles it, a program with a mistake on line `line`, has the debugger and visualizer]
   const programs: [string, string, string | null, string, number, boolean][] = [
     ["Kotlin", "Hello World", "fun main() {\n    val n = readln().toInt()\n    println(n * 2)\n}\n", 'fun main() {\n    val n: Int = "text"\n}\n', 2, true],
-    ["Go", "Hello World", 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\tfmt.Println(n * 2)\n}\n', 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println(missing)\n}\n', 6, false],
-    ["Rust", "Hello World", 'use std::io;\n\nfn main() {\n    let mut line = String::new();\n    io::stdin().read_line(&mut line).unwrap();\n    let n: i32 = line.trim().parse().unwrap();\n    println!("{}", n * 2);\n}\n', 'fn main() {\n    let n: i32 = "text";\n    println!("{}", n);\n}\n', 2, false],
-    ["C#", "Hello World", "using System;\n\nclass Program\n{\n    static void Main()\n    {\n        int n = int.Parse(Console.ReadLine());\n        Console.WriteLine(n * 2);\n    }\n}\n", 'class Program\n{\n    static void Main()\n    {\n        int n = "text";\n    }\n}\n', 5, false],
-    ["PHP", "Hello World", '<?php\n$n = (int) trim(fgets(STDIN));\necho $n * 2, "\\n";\n', "<?php\necho 1\necho 2;\n", 3, false],
-    ["Ruby", "Hello World", "n = gets.to_i\nputs n * 2\n", 'def f\n  raise "boom"\nend\nf\n', 2, false],
+    ["Go", "Hello World", 'package main\n\nimport "fmt"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\tfmt.Println(n * 2)\n}\n', 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println(missing)\n}\n', 6, true],
+    ["Rust", "Hello World", 'use std::io;\n\nfn main() {\n    let mut line = String::new();\n    io::stdin().read_line(&mut line).unwrap();\n    let n: i32 = line.trim().parse().unwrap();\n    println!("{}", n * 2);\n}\n', 'fn main() {\n    let n: i32 = "text";\n    println!("{}", n);\n}\n', 2, true],
+    ["C#", "Hello World", "using System;\n\nclass Program\n{\n    static void Main()\n    {\n        int n = int.Parse(Console.ReadLine());\n        Console.WriteLine(n * 2);\n    }\n}\n", 'class Program\n{\n    static void Main()\n    {\n        int n = "text";\n    }\n}\n', 5, true],
+    ["PHP", "Hello World", '<?php\n$n = (int) trim(fgets(STDIN));\necho $n * 2, "\\n";\n', "<?php\necho 1\necho 2;\n", 3, true],
+    ["Ruby", "Hello World", "n = gets.to_i\nputs n * 2\n", 'def f\n  raise "boom"\nend\nf\n', 2, true],
     ["SQL", "Hyderabad", null, "CREATE TABLE t (id INTEGER);\n\nSELECT * FROM missing;\n", 3, false],
-    ["Bash", "Hello World", "read n\necho $(( n * 2 ))\n", "echo start\nnosuchcommand\n", 2, false],
+    ["Bash", "Hello World", "read n\necho $(( n * 2 ))\n", "echo start\nnosuchcommand\n", 2, true],
   ];
   for (const [language, hello, doubles, broken, line, tools] of programs) {
     await freshProject(page, language, language === "SQL" ? "CREATE TABLE" : "Hello World");
@@ -208,6 +208,36 @@ test("SQL: the project has a database, as in a database tool: it keeps its table
   await page.getByRole("dialog", { name: "Empty the database?" }).getByRole("button", { name: "Empty the database" }).click();
   await expect(database(page)).toContainText("No tables yet");
   await expect(page.getByRole("treeitem", { name: /queries\.sql/ })).toBeVisible();
+});
+
+test("TypeScript: Node's modules are known to the editor, and a type error is reported beside the run", async ({ page }) => {
+  test.skip(!process.env.E2E_EXECUTION, "needs the API, worker and Docker");
+  await freshProject(page, "TypeScript", "Hello World");
+  const markers = () =>
+    page.evaluate(() =>
+      (window as unknown as { monaco: { editor: { getModelMarkers(f: object): { severity: number; message: string; startLineNumber: number }[] } } }).monaco.editor
+        .getModelMarkers({})
+        .filter((m) => m.severity === 8)
+        .map((m) => `${m.startLineNumber}: ${m.message}`),
+    );
+  // Reading input the ways people do: none of it is an error. (A file with import is a module, where require is not.)
+  await setCode(page, 'import { createInterface } from "node:readline";\nconst rl = createInterface({ input: process.stdin });\nrl.on("line", (line) => console.log(line.length));\n');
+  await expect.poll(markers, { timeout: 15_000 }).toEqual([]);
+  await setCode(page, 'const data: string = require("fs").readFileSync(0, "utf8");\nconsole.log(data.trim().length, process.argv.length > 0);\n');
+  await expect.poll(markers, { timeout: 15_000 }).toEqual([]);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await page.getByRole("button", { name: "Send EOF" }).click();
+  await expect(output(page)).toContainText("0 true", { timeout: 120_000 });
+  await expect(page.getByRole("note", { name: "Type errors" })).toHaveCount(0);
+
+  // A real type error: Node still runs the program, and the error is said beside its output, with a link to its line.
+  await setCode(page, 'const n: number = "seven";\nconsole.log(n);\n');
+  await expect.poll(markers, { timeout: 15_000 }).toEqual([expect.stringContaining("1: Type 'string' is not assignable to type 'number'")]);
+  await page.getByRole("button", { name: "Run program" }).click();
+  await expect(output(page)).toContainText("seven", { timeout: 120_000 });
+  const note = page.getByRole("note", { name: "Type errors" });
+  await expect(note).toContainText("TypeScript found a type error");
+  await expect(note).toContainText("main.ts:1 Type 'string' is not assignable to type 'number'.");
 });
 
 test("SQL: what the assistant writes goes into the file that is open, not into another one", async ({ page }) => {

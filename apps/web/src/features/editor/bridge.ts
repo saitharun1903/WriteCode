@@ -17,6 +17,9 @@ interface CursorState {
 
 export const useCursor = create<CursorState>(() => ({ line: 1, column: 1 }));
 
+/** TypeScript diagnostics about the editor not knowing a package, not about the program: Node finds those. */
+export const UNKNOWN_PACKAGE_CODES = new Set([2307, 2580, 2591, 2592, 2792, 7016]);
+
 /** Pixels at the bottom of the editor hidden under a panel (a sheet on a phone); the editor leaves that much room after its last line. */
 export const useCoveredBelow = create<{ px: number }>(() => ({ px: 0 }));
 
@@ -114,6 +117,24 @@ export const editorBridge = {
     const sel = instance?.getSelection();
     if (!model || !sel || sel.isEmpty()) return null;
     return { startLine: sel.startLineNumber, endLine: sel.endLineNumber, text: model.getValueInRange(sel) };
+  },
+  /**
+   * The TypeScript checker's errors in a project's files (not the ones about a
+   * package the editor does not know: Node finds those). Node runs TypeScript
+   * without checking types, so these are shown beside the run's output.
+   */
+  typeErrors(projectId: string, ignore: Set<number>): { file: string; line: number; message: string }[] {
+    const monaco = monacoInstance;
+    if (!monaco) return [];
+    const out: { file: string; line: number; message: string }[] = [];
+    for (const m of monaco.editor.getModelMarkers({ owner: "typescript" })) {
+      const parts = m.resource.path.split("/");
+      if (parts[1] !== projectId || m.severity !== monaco.MarkerSeverity.Error) continue;
+      const code = Number(typeof m.code === "object" ? m.code?.value : m.code);
+      if (ignore.has(code)) continue;
+      out.push({ file: decodeURIComponent(parts.slice(2).join("/")), line: m.startLineNumber, message: m.message.split("\n")[0]! });
+    }
+    return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
   },
   /** Path (within its project) of the file shown in the editor, or null. */
   currentPath(): string | null {

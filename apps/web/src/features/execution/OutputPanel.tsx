@@ -182,6 +182,25 @@ function Epilogue({ run, statements = false }: { run: RunState; statements?: boo
         </p>
       )}
       {line}
+      {/* Node runs TypeScript without checking its types: what the checker found is said here, not lost. */}
+      {run.typeErrors && run.typeErrors.length > 0 && (
+        <div role="note" aria-label="Type errors" className="my-2 max-w-3xl whitespace-normal rounded-md border-l-2 border-warning bg-warning-soft px-3 py-1.5 font-sans text-[13px] leading-5 text-fg">
+          <p className="flex items-center gap-2">
+            <TriangleAlert className="size-3.5 shrink-0 text-warning" />
+            TypeScript found {run.typeErrors.length === 1 ? "a type error" : `${run.typeErrors.length} type errors`}. Node.js runs TypeScript without checking types, so the program ran anyway.
+          </p>
+          <ul className="mt-1 space-y-0.5 font-mono text-[12.5px]">
+            {run.typeErrors.slice(0, 8).map((e, i) => (
+              <li key={i}>
+                <button type="button" onClick={() => goToLocation(e.file, e.line)} className="text-left underline decoration-current/40 underline-offset-2 hover:text-accent-ink">
+                  {e.file}:{e.line}
+                </button>{" "}
+                {e.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {failed && aiOn && (
         <button
           type="button"
@@ -276,9 +295,11 @@ export function ConsoleView({ query = "", wrap = true, follow = true }: { query?
               <p className="text-danger">{run.error.title}</p>
               {run.error.detail && <p className="text-fg-subtle">{run.error.detail}</p>}
               {run.error.requestId && <p className="font-mono text-xs text-fg-faint">Request ID: {run.error.requestId}</p>}
-              <button onClick={() => runCommand("run.execute")} className="mt-1 text-accent-ink hover:underline">
-                Retry
-              </button>
+              {run.error.retry !== false && (
+                <button onClick={() => runCommand("run.execute")} className="mt-1 text-accent-ink hover:underline">
+                  Retry
+                </button>
+              )}
             </div>
           )}
           {run.databaseNote && (

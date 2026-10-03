@@ -10,6 +10,9 @@ const SAFE_SEGMENT = /^[A-Za-z0-9_.-]+$/;
  * Accepts only relative paths made of safe segments. Rejects absolute paths,
  * `..`, backslashes and hidden files so nothing can escape the sandbox workdir.
  */
+/** Bytes as whole kilobytes, rounded up, for messages. */
+const kb = (bytes: number) => Math.ceil(bytes / 1024);
+
 export function isSafeRelativePath(path: string): boolean {
   if (!path || path.length > REQUEST_BOUNDS.maxPathLength) return false;
   const segments = path.split("/");
@@ -46,7 +49,7 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     return { ok: false, error: "At least one file is required." };
   }
   if (body.files.length > REQUEST_BOUNDS.maxFiles) {
-    return { ok: false, error: `Too many files (max ${REQUEST_BOUNDS.maxFiles}).` };
+    return { ok: false, error: `This project has ${body.files.length} files; a run can take at most ${REQUEST_BOUNDS.maxFiles}. Delete the files it does not need.` };
   }
 
   const files: ExecutionRequest["files"] = [];
@@ -61,12 +64,16 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
     if (seen.has(path)) return { ok: false, error: `Duplicate file path: ${path}` };
     if (typeof content !== "string") return { ok: false, error: `File content must be a string: ${path}` };
     const size = byteLength(content);
-    if (size > REQUEST_BOUNDS.maxFileBytes) return { ok: false, error: `File too large: ${path}` };
+    if (size > REQUEST_BOUNDS.maxFileBytes) {
+      return { ok: false, error: `${path} is ${kb(size)} KB; a file can be at most ${kb(REQUEST_BOUNDS.maxFileBytes)} KB. Make it smaller, or split it into several files.` };
+    }
     total += size;
     seen.add(path);
     files.push({ path, content });
   }
-  if (total > REQUEST_BOUNDS.maxTotalBytes) return { ok: false, error: "Project too large to execute." };
+  if (total > REQUEST_BOUNDS.maxTotalBytes) {
+    return { ok: false, error: `The project's files add up to ${kb(total)} KB; a run can take at most ${kb(REQUEST_BOUNDS.maxTotalBytes)} KB. Delete the files it does not need.` };
+  }
 
   if (typeof body.entry !== "string" || !seen.has(body.entry)) {
     return { ok: false, error: "Entry file must be one of the submitted files." };
@@ -75,7 +82,7 @@ export function validateExecutionRequest(input: unknown): ValidationResult {
   let stdin: string | undefined;
   if (body.stdin !== undefined) {
     if (typeof body.stdin !== "string") return { ok: false, error: "stdin must be a string." };
-    if (byteLength(body.stdin) > REQUEST_BOUNDS.maxStdinBytes) return { ok: false, error: "stdin too large." };
+    if (byteLength(body.stdin) > REQUEST_BOUNDS.maxStdinBytes) return { ok: false, error: `The program's input can be at most ${kb(REQUEST_BOUNDS.maxStdinBytes)} KB.` };
     stdin = body.stdin;
   }
 
