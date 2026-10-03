@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { LogoMark } from "@/features/workspace/Logo";
+import { LegalPage, type LegalSection } from "@/features/seo/LegalPage";
 import { SITE } from "@/features/seo/pages";
 
 export const metadata: Metadata = {
@@ -9,7 +8,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/privacy" },
 };
 
-const SECTIONS: { h: string; p: string[] }[] = [
+const SECTIONS: LegalSection[] = [
   {
     h: "No account",
     p: ["WriteCode has no sign-up and no account. There is no profile, password or email address to keep."],
@@ -51,34 +50,5 @@ const SECTIONS: { h: string; p: string[] }[] = [
 ];
 
 export default function PrivacyPage() {
-  return (
-    <div className="min-h-screen bg-surface-2">
-      <header className="border-b border-line">
-        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-4">
-          <Link href="/" className="flex items-center gap-2 font-semibold text-fg">
-            <LogoMark className="size-6" /> {SITE.name}
-          </Link>
-        </div>
-      </header>
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-[30px] font-bold tracking-tight text-fg">Privacy</h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-fg-muted">What {SITE.name} keeps, for how long, and who else sees it.</p>
-        {SECTIONS.map((s) => (
-          <section key={s.h} className="mt-8">
-            <h2 className="text-lg font-semibold text-fg">{s.h}</h2>
-            {s.p.map((t, i) => (
-              <p key={i} className="mt-2 text-[15px] leading-relaxed text-fg-muted">
-                {t}
-              </p>
-            ))}
-          </section>
-        ))}
-        <p className="mt-10 text-[13px] text-fg-subtle">
-          <Link href="/" className="text-accent-ink hover:underline">
-            Back to the editor
-          </Link>
-        </p>
-      </main>
-    </div>
-  );
+  return <LegalPage title="Privacy" intro={`What ${SITE.name} keeps, for how long, and who else sees it.`} updated="3 October 2026" sections={SECTIONS} />;
 }

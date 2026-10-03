@@ -214,6 +214,9 @@ export function LandingPage({ page }: { page: Page }) {
           <Link href="/privacy" className="ml-auto hover:text-fg">
             Privacy
           </Link>
+          <Link href="/terms" className="hover:text-fg">
+            Terms
+          </Link>
           <Link href="/" className="hover:text-fg">
             Open the editor
           </Link>

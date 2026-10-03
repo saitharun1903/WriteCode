@@ -14,5 +14,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: p.kind === "language" ? 0.9 : 0.8,
     })),
     { url: `${SITE.url}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE.url}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
   ];
 }

@@ -19,6 +19,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { LANGUAGES, basename, getLanguage, type DebugFrame, type DebugVariable } from "@cw/shared";
 import { Button, IconButton } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Kbd } from "@/components/ui/kbd";
 import { canDebug, primaryShortcut, runCommand } from "@/features/commands/registry";
 import { goToLocation } from "@/features/editor/navigate";
@@ -123,7 +124,7 @@ function VariableRow({ variable, depth }: { variable: DebugVariable; depth: numb
         </span>
         {changed && <span className="shrink-0 truncate text-[11px] text-fg-subtle">was {shortValue(before!, 24)}</span>}
         {variable.type && (
-          <span className="ml-auto shrink-0 rounded bg-hover px-1.5 font-sans text-[10.5px] leading-4 text-fg-subtle opacity-70 group-hover:opacity-100">
+          <span className="ml-auto shrink-0 pl-2 font-sans text-[11px] text-fg-faint group-hover:text-fg-subtle">
             {shortType(variable.type)}
           </span>
         )}
@@ -233,19 +234,20 @@ function Variables() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <SectionTitle extra={<span className="font-normal normal-case tracking-normal text-fg-faint">values right now</span>}>Variables</SectionTitle>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           useDebug.getState().addWatch(draft);
           setDraft("");
         }}
-        className="mx-2 mt-2 flex h-8 shrink-0 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 pl-2.5 pr-1 focus-within:border-accent"
+        className="mx-2 mb-1 flex h-8 shrink-0 items-center gap-2 rounded-lg border border-line bg-surface-2/60 pl-2.5 pr-1 focus-within:border-accent"
       >
         <Eye className="size-3.5 shrink-0 text-fg-subtle" />
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Evaluate an expression or add a watch"
+          placeholder="Watch an expression, e.g. arr[mid]"
           aria-label="Add watch expression"
           maxLength={500}
           spellCheck={false}
@@ -255,7 +257,7 @@ function Variables() {
           <Plus className="size-3.5" /> Watch
         </button>
       </form>
-      <div role="tree" aria-label="Variables" className="min-h-0 flex-1 overflow-auto pb-1 pt-1">
+      <div role="tree" aria-label="Variables" className="min-h-0 flex-1 overflow-auto pb-1">
         <WatchRows />
         {!paused ? (
           <p className="px-3 py-1 text-sm text-fg-subtle">Variables are shown while the program is paused.</p>
@@ -285,17 +287,7 @@ function Frames({ stop }: { stop: StopInfo | null }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SectionTitle
-        extra={
-          stop && (
-            <span className="ml-auto flex items-center gap-1.5 rounded-full bg-warning-soft px-2 py-px font-sans text-[10.5px] font-medium normal-case tracking-normal text-warning">
-              <span className="size-1.5 rounded-full bg-warning" />“{stop.thread}”: PAUSED
-            </span>
-          )
-        }
-      >
-        Call stack
-      </SectionTitle>
+      <SectionTitle extra={<span className="font-normal normal-case tracking-normal text-fg-faint">how the program got here</span>}>Call stack</SectionTitle>
       <ul aria-label="Call stack" className="min-h-0 flex-1 space-y-0.5 overflow-auto px-1.5 pb-1.5">
         {frames.map((f, i) => {
           if (!f.file && !showLibrary && i !== selected) return null;
@@ -340,43 +332,62 @@ function Frames({ stop }: { stop: StopInfo | null }) {
   );
 }
 
-/** Where the program is paused and what changed since the last pause. */
+/** Why and where the program stopped, the line that runs next, and what changed since the last pause. */
 function WhereBar({ stop }: { stop: StopInfo }) {
   const selected = useDebug((s) => s.selectedFrame);
   const frame = stop.frames[selected];
   const localsRef = frame?.localsRef ?? 0;
   const locals = useDebug((s) => s.variables[localsRef]);
   const previous = useDebug((s) => (s.previous?.frame === frameKey(stop.frames, selected) ? s.previous.values : null));
+  const code = useWorkspace((s) => (frame?.file ? s.project?.files.find((f) => f.path === frame.file)?.content.split("\n")[frame.line - 1]?.trim() : undefined));
   if (!frame) return null;
   const { method } = splitName(frame);
   const changes =
     previous && locals?.status === "ready"
       ? locals.variables.filter((v) => previous[v.name] !== undefined && previous[v.name] !== v.value).map((v) => ({ name: v.name, from: previous[v.name]!, to: v.value }))
       : [];
+  const exception = stop.reason === "exception";
   return (
-    <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-surface-2/40 px-3 py-1.5 text-[12.5px]">
-      <span className="flex items-center gap-1.5 text-fg">
-        <Pause className="size-3.5 fill-current text-warning" />
-        Paused in <code className="rounded bg-hover px-1 font-mono text-[12px]">{method}</code>
-        {frame.file && (
-          <>
-            at
-            <button onClick={() => goToLocation(frame.file!, frame.line)} className="font-mono text-[12px] text-accent-ink hover:underline">
-              {basename(frame.file)}:{frame.line}
-            </button>
-          </>
-        )}
-      </span>
-      {changes.length > 0 && (
-        <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-fg-subtle" aria-label="Changed since the last pause">
-          Changed:
-          {changes.slice(0, 4).map((c) => (
-            <span key={c.name} className="cw-viz-changed rounded-md px-1.5 font-mono text-[12px] text-fg">
-              {c.name} <span className="text-fg-subtle">{shortValue(c.from, 16)} →</span> {shortValue(c.to, 16)}
-            </span>
-          ))}
-          {changes.length > 4 && <span>+{changes.length - 4} more</span>}
+    <div className="shrink-0 border-b border-line px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+        <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full", exception ? "bg-danger-soft text-danger" : "bg-warning-soft text-warning")}>
+          {exception ? <AlertTriangle className="size-3" /> : <Pause className="size-3 fill-current" />}
         </span>
+        <span className="font-semibold text-fg">{reasonLabel[stop.reason]}</span>
+        <span className="text-fg-subtle">
+          in <code className="font-mono text-[12.5px] text-fg">{method}()</code>
+          {frame.file && (
+            <>
+              {" · "}
+              <button onClick={() => goToLocation(frame.file!, frame.line)} className="text-accent-ink hover:underline">
+                {basename(frame.file)}, line {frame.line}
+              </button>
+            </>
+          )}
+        </span>
+        {changes.length > 0 && (
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-[12px] text-fg-subtle" aria-label="Changed since the last pause">
+            <span className="ml-1">Changed:</span>
+            {changes.slice(0, 4).map((c) => (
+              <span key={c.name} className="cw-viz-changed rounded-md px-1.5 font-mono text-[12px] text-fg">
+                {c.name} <span className="text-fg-subtle">{shortValue(c.from, 16)} →</span> {shortValue(c.to, 16)}
+              </span>
+            ))}
+            {changes.length > 4 && <span>+{changes.length - 4} more</span>}
+          </span>
+        )}
+      </div>
+      {code && selected === 0 && (
+        <button
+          type="button"
+          onClick={() => goToLocation(frame.file!, frame.line)}
+          aria-label={`Next line to run: ${code}`}
+          className="mt-1.5 flex w-full min-w-0 items-center gap-2.5 rounded-md bg-surface-2 px-2.5 py-1 text-left hover:bg-hover"
+        >
+          <span className="shrink-0 text-[11px] font-medium uppercase tracking-wider text-fg-subtle">Next</span>
+          <span className="shrink-0 font-mono text-[12px] tabular-nums text-fg-faint">{frame.line}</span>
+          <code className="min-w-0 truncate font-mono text-[12.5px] text-fg">{code}</code>
+        </button>
       )}
     </div>
   );
@@ -464,7 +475,7 @@ const reasonLabel: Record<StopInfo["reason"], string> = {
   entry: "Paused on entry",
 };
 
-/** Debug tool window (bottom), with a controls toolbar and Threads & Variables / Console tabs. */
+/** Debug tool window (bottom), with a controls toolbar and Variables / Console tabs. */
 export function DebugToolWindow() {
   const phase = useDebug((s) => s.phase);
   const stop = useDebug((s) => s.stop);
@@ -506,20 +517,32 @@ export function DebugToolWindow() {
       {icon}
     </IconButton>
   );
+  // Stepping, with its name beside the icon where the panel is wide enough.
+  const step = (id: string, label: string, hint: string, icon: ReactNode) => (
+    <Tooltip content={`${label}: ${hint}`} shortcut={primaryShortcut(id)}>
+      <button
+        type="button"
+        aria-label={label}
+        disabled={!paused}
+        onClick={() => runCommand(id)}
+        className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] text-fg-muted transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4 [[data-touch]_&]:h-9"
+      >
+        {icon}
+        <span className="@max-[760px]/dbg:hidden">{label}</span>
+      </button>
+    </Tooltip>
+  );
 
   return (
     <aside aria-label="Debugger" className="@container/dbg flex h-full min-h-0 flex-col">
       <div role="toolbar" aria-label="Debug controls" className="flex min-h-11 shrink-0 flex-wrap items-center gap-1 border-b border-line px-2 @max-[640px]/dbg:gap-y-1.5 @max-[640px]/dbg:py-1.5">
-        {tool("debug.restart", "Restart", <RotateCw />, active, "text-success")}
-        {tool("run.cancel", "Stop", <Square className={cn(active && "fill-current")} />, active, cn(active && "text-danger"))}
-        <span className="mx-1 h-5 w-px bg-line-strong" />
         {paused ? (
           <button
             type="button"
             aria-label="Continue"
-            title={`Continue (${primaryShortcut("debug.startOrContinue") ?? "F5"})`}
+            title={`Continue to the next breakpoint (${primaryShortcut("debug.startOrContinue") ?? "F5"})`}
             onClick={() => runCommand("debug.startOrContinue")}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-success px-3 text-[12.5px] font-medium text-white transition-transform hover:brightness-110 active:scale-95"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-success px-3 text-[12.5px] font-medium text-white transition-transform hover:brightness-110 active:scale-95 [[data-touch]_&]:h-9"
           >
             <Play className="size-3.5 fill-current" /> Continue
           </button>
@@ -529,30 +552,50 @@ export function DebugToolWindow() {
             aria-label="Pause"
             title={`Pause (${primaryShortcut("debug.pause") ?? "F6"})`}
             onClick={() => runCommand("debug.pause")}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-warning px-3 text-[12.5px] font-medium text-black/80 transition-transform hover:brightness-110 active:scale-95"
+            className="flex h-7 items-center gap-1.5 rounded-md bg-warning px-3 text-[12.5px] font-medium text-black/80 transition-transform hover:brightness-110 active:scale-95 [[data-touch]_&]:h-9"
           >
             <Pause className="size-3.5 fill-current" /> Pause
           </button>
         ) : (
           tool("debug.startOrContinue", "Resume Program", <Play />, false)
         )}
-        <div className="ml-1 flex items-center rounded-lg bg-surface-2 p-0.5" aria-label="Stepping">
-          {tool("debug.stepOver", "Step Over", <Redo2 />, paused)}
-          {tool("debug.stepIn", "Step Into", <ArrowDownToDot />, paused)}
-          {tool("debug.stepOut", "Step Out", <ArrowUpFromDot />, paused)}
+        <div className="flex items-center" aria-label="Stepping">
+          {step("debug.stepOver", "Step Over", "run this line", <Redo2 />)}
+          {step("debug.stepIn", "Step Into", "go inside the call on this line", <ArrowDownToDot />)}
+          {step("debug.stepOut", "Step Out", "finish this function", <ArrowUpFromDot />)}
         </div>
         <span className="mx-1 h-5 w-px bg-line-strong" />
+        {tool("debug.restart", "Restart", <RotateCw />, active)}
+        {tool("run.cancel", "Stop", <Square className={cn(active && "fill-current")} />, active, cn(active && "text-danger"))}
         <button
           type="button"
           aria-label="View Breakpoints"
           title="View Breakpoints"
           onClick={() => setBreakpointsOpen(true)}
-          className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted hover:bg-hover hover:text-fg"
+          className="flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] text-fg-muted hover:bg-hover hover:text-fg [[data-touch]_&]:h-9"
         >
           <CircleDot className="size-4 text-danger" />
-          {breakpointCount > 0 && <span className="tabular-nums">{breakpointCount}</span>}
+          {breakpointCount > 0 && (
+            <span className="tabular-nums">
+              {breakpointCount}
+              <span className="@max-[760px]/dbg:hidden"> breakpoint{breakpointCount === 1 ? "" : "s"}</span>
+            </span>
+          )}
         </button>
-        <div role="tablist" className="ml-2 flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5">
+        {/* While running or starting, a pill says so; when paused the header below says why. */}
+        {(tone === "running" || tone === "starting") && (
+          <span
+            className={cn(
+              "flex items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px] @max-[420px]/dbg:hidden",
+              tone === "running" && "bg-success-soft text-fg",
+              tone === "starting" && "bg-accent-soft/60 text-fg",
+            )}
+          >
+            <span className={cn("size-2 shrink-0 animate-pulse rounded-full", tone === "running" ? "bg-success" : "bg-accent")} />
+            {status}
+          </span>
+        )}
+        <div role="tablist" className="ml-auto flex items-center gap-0.5 rounded-lg bg-surface-2 p-0.5">
           {(
             [
               ["frames", "Variables"],
@@ -566,31 +609,10 @@ export function DebugToolWindow() {
               onClick={() => setTab(id)}
               className={cn("whitespace-nowrap rounded-md px-2.5 py-1 text-[12.5px] transition-colors", tab === id ? "bg-canvas text-fg shadow-sm" : "text-fg-subtle hover:text-fg")}
             >
-              {/* The full name where it fits. */}
-              {id === "frames" && <span className="@max-[640px]/dbg:hidden">Threads &amp; </span>}
               {label}
             </button>
           ))}
         </div>
-        {/* No pill while idle: the empty view already says how to start. */}
-        {tone !== "idle" && <span
-          className={cn(
-            "ml-auto flex items-center gap-1.5 truncate rounded-full px-2.5 py-1 text-[12px] @max-[420px]/dbg:hidden",
-            tone === "paused" && "bg-warning-soft text-fg",
-            tone === "running" && "bg-success-soft text-fg",
-            tone === "starting" && "bg-accent-soft/60 text-fg",
-          )}
-        >
-          <span
-            className={cn(
-              "size-2 shrink-0 rounded-full",
-              tone === "paused" && "bg-warning",
-              tone === "running" && "animate-pulse bg-success",
-              tone === "starting" && "animate-pulse bg-accent",
-            )}
-          />
-          {status}
-        </span>}
       </div>
 
       {!supported ? (
@@ -601,13 +623,12 @@ export function DebugToolWindow() {
         </div>
       ) : (
         <>
+          {paused && stop && <WhereBar stop={stop} />}
           {paused && stop?.reason === "exception" && stop.description && (
-            <div role="alert" className="flex shrink-0 items-start gap-2.5 border-b border-danger/30 bg-danger-soft px-3 py-2 text-sm text-fg">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-              <span className="break-words font-mono text-[12.5px]">{stop.description}</span>
+            <div role="alert" className="shrink-0 border-b border-danger/30 bg-danger-soft px-3 py-2">
+              <span className="break-words font-mono text-[12.5px] text-fg">{stop.description}</span>
             </div>
           )}
-          {paused && stop && <WhereBar stop={stop} />}
           {!active && phase !== "paused" ? (
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center text-sm text-fg-subtle">
               <CircleDot className="size-6 text-danger/70" />

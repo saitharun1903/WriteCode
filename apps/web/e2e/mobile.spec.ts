@@ -162,7 +162,7 @@ test.describe("phone", () => {
       await expect(page.locator(".monaco-editor .cw-bp")).toHaveCount(1);
       await page.getByRole("button", { name: "Debug program" }).click();
       const debug = page.getByRole("complementary", { name: "Debugger" });
-      await expect(debug.getByText("Paused in")).toBeVisible({ timeout: 120_000 });
+      await expect(debug.getByText("Paused on breakpoint")).toBeVisible({ timeout: 120_000 });
       // The line it is paused on is above the sheet, not under it.
       const line = page.locator(".monaco-editor .cw-debug-line").first();
       await expect(line).toBeVisible();
